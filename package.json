@@ -1,0 +1,24 @@
+{
+  "name": "epiphan-pearl",
+  "version": "1.0.0",
+  "manufacturer": "Epiphan",
+  "product": "Pearl",
+  "shortname": "pearl",
+  "homepage": "https://www.epiphan.com/products/pearl/",
+  "description": "Epiphan Pearl module for Companion",
+  "keywords": [
+    "Stream",
+    "Encode",
+    "Recording"
+  ],
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Marc Hagen <hello@marchagen.nl>",
+  "license": "MIT",
+  "dependencies": {
+    "request": "^2.88.0"
+  },
+  "devDependencies": {}
+}
