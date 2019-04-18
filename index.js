@@ -50,18 +50,6 @@ class EpiphanPearl extends instance_skel {
 			'channelChangeLayout': {
 				label: 'Change channel layout',
 				options: [
-					// {
-					// 	type: 'dropdown',
-					// 	id: 'id',
-					// 	label: 'Channel ID',
-					// 	choices: this.CHOICES_CHANNELS
-					// },
-					// {
-					// 	type: 'dropdown',
-					// 	id: 'layoutId',
-					// 	label: 'Layout ID',
-					// 	choices: this.CHOICES_CHANNELS_LAYOUTS
-					// },
 					{
 						type: 'dropdown',
 						id: 'channelIdlayoutId',
@@ -344,7 +332,7 @@ class EpiphanPearl extends instance_skel {
 	_sendRequest(type, url, body, callback) {
 		let self      = this;
 		const apiHost = this.config.host,
-					baseUrl = 'http://' + apiHost;
+			  baseUrl = 'http://' + apiHost;
 
 		if (url === null || url === '') {
 			return false;
@@ -508,8 +496,8 @@ class EpiphanPearl extends instance_skel {
 	 * @since 1.0.0
 	 */
 	_init_interval() {
-		// Poll data from PDS every 5 secs
-		this.timer = setInterval(this._dataPoller.bind(this), 5000);
+		// Poll data from pearl every 10 secs
+		this.timer = setInterval(this._dataPoller.bind(this), 10000);
 	}
 
 
@@ -536,6 +524,7 @@ class EpiphanPearl extends instance_skel {
 			}
 		})
 
+		self.CHOICES_CHANNELS_LAYOUTS = []
 		for (let a in this.CHOICES_CHANNELS) {
 			let channel = this.CHOICES_CHANNELS[a];
 
@@ -543,21 +532,16 @@ class EpiphanPearl extends instance_skel {
 				for (let b in layouts) {
 					let layout = layouts[b];
 
-					self.CHOICES_CHANNELS[a].layouts[layout.id] = {
+					layout = {
 						id: channel.id + '-' + layout.id,
 						label: channel.label + ' - ' + layout.name
 					}
-				}
-			});
-		}
 
-		this.CHOICES_CHANNELS_LAYOUTS = []
-		for (let a in this.CHOICES_CHANNELS) {
-			let channel = this.CHOICES_CHANNELS[a];
-			for (let b in channel.layouts) {
-				let layout = channel.layouts[b];
-				this.CHOICES_CHANNELS_LAYOUTS.push(layout)
-			}
+					self.CHOICES_CHANNELS[a].layouts[layout.id] = layout
+					self.CHOICES_CHANNELS_LAYOUTS.push(layout)
+				}
+				self.actions();
+			});
 		}
 
 
