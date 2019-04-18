@@ -524,6 +524,7 @@ class EpiphanPearl extends instance_skel {
 			}
 		})
 
+		// For every channel get layouts and populate/update actions()
 		self.CHOICES_CHANNELS_LAYOUTS = []
 		for (let a in this.CHOICES_CHANNELS) {
 			let channel = this.CHOICES_CHANNELS[a];
@@ -545,7 +546,7 @@ class EpiphanPearl extends instance_skel {
 		}
 
 
-		// GET- /api/channels/
+		// GET- /api/channels
 		// GET- /api/channels/status?publishers=yes&encoders=yes
 		// GET- /api/channels/<id>/status
 		// GET- /api/channels/<id>/layouts
