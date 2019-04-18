@@ -11,7 +11,7 @@ let debug, log;
 class EpiphanPearl extends instance_skel {
 
 	/**
-	 * Create an instance of a Radio DJ module.
+	 * Create an instance of a EpiphanPearl module.
 	 *
 	 * @param {EventEmitter} system - the brains of the operation
 	 * @param {string} id - the instance ID
@@ -74,11 +74,10 @@ class EpiphanPearl extends instance_skel {
 				label: 'Start channel recording',
 				options: [
 					{
-						type: 'textinput',
-						id: 'id',
-						label: 'Channel ID',
-						default: 0,
-						regex: this.REGEX_NUMBER,
+						type: 'dropdown',
+						id: 'channelId',
+						label: 'Channel',
+						choices: this.CHOICES_CHANNELS
 					},
 				],
 			},
@@ -86,11 +85,10 @@ class EpiphanPearl extends instance_skel {
 				label: 'Stop channel recording',
 				options: [
 					{
-						type: 'textinput',
-						id: 'id',
-						label: 'Channel ID',
-						default: 0,
-						regex: this.REGEX_NUMBER,
+						type: 'dropdown',
+						id: 'channelId',
+						label: 'Channel',
+						choices: this.CHOICES_CHANNELS
 					},
 				],
 			},
@@ -98,11 +96,10 @@ class EpiphanPearl extends instance_skel {
 				label: 'Start channel streaming',
 				options: [
 					{
-						type: 'textinput',
-						id: 'id',
-						label: 'Channel ID',
-						default: 0,
-						regex: this.REGEX_NUMBER,
+						type: 'dropdown',
+						id: 'channelId',
+						label: 'Channel',
+						choices: this.CHOICES_CHANNELS
 					},
 				],
 			},
@@ -110,11 +107,10 @@ class EpiphanPearl extends instance_skel {
 				label: 'Stop channel streaming',
 				options: [
 					{
-						type: 'textinput',
-						id: 'id',
-						label: 'Channel ID',
-						default: 0,
-						regex: this.REGEX_NUMBER,
+						type: 'dropdown',
+						id: 'channelId',
+						label: 'Channel',
+						choices: this.CHOICES_CHANNELS
 					},
 				],
 			},
@@ -157,54 +153,43 @@ class EpiphanPearl extends instance_skel {
 
 		switch (action.action) {
 			case 'channelChangeLayout':
-				// type = 'put';
-				// url  = '/api/channels/' +
-				// 	encodeURIComponent(action.options.id) +
-				// 	'/layouts/active';
-				// body = {id: action.options.layoutId};
-				// break;
 				let [channelId, layoutId] = action.options.channelIdlayoutId.split('-')
-
-				type = 'put';
-				url  = '/api/channels/' + channelId + '/layouts/active';
-				body = {id: layoutId};
+				type                      = 'put';
+				url                       = '/api/channels/' + channelId + '/layouts/active';
+				body                      = {id: layoutId};
 				break;
 			case 'channelStartRecording':
 				type = 'post';
-				url  = '/api/recorders/' +
-					encodeURIComponent(action.options.id) + '/control/start';
+				//url  = '/api/channels/' + action.options.channelId + '/control/start';
 				break;
 			case 'channelStopRecording':
 				type = 'post';
-				url  = '/api/recorders/' +
-					encodeURIComponent(action.options.id) + '/control/stop';
+				//url  = '/api/channels/' + action.options.channelId + '/control/stop';
 				break;
 			case 'recorderStartRecording':
 				type = 'post';
-				url  = '/api/recorders/' +
-					encodeURIComponent(action.options.id) + '/control/start';
+				//url  = '/api/recorders/' + action.options.channelId + '/control/start';
 				break;
 			case 'recorderStopRecording':
 				type = 'post';
-				url  = '/api/recorders/' +
-					encodeURIComponent(action.options.id) + '/control/stop';
+				//url  = '/api/recorders/' + action.options.channelId + '/control/stop';
 				break;
 			case 'channelStartStreaming':
 				type = 'post';
-				url  = '/api/recorders/' +
-					encodeURIComponent(action.options.id) + '/control/start';
+				//url  = '/api/recorders/' + action.options.channelId + '/control/start';
 				break;
 			case 'channelStopStreaming':
 				type = 'post';
-				url  = '/api/recorders/' +
-					encodeURIComponent(action.options.id) + '/control/start';
+				//url  = '/api/recorders/' + action.options.channelId + '/control/start';
 				break;
 			default:
 				return;
 		}
 
 		// Send request
-		this._sendRequest(type, url, body);
+		if (url) {
+			this._sendRequest(type, url, body);
+		}
 	}
 
 	/**
@@ -352,7 +337,7 @@ class EpiphanPearl extends instance_skel {
 	 * @param {String} url - Full URL to send request to
 	 * @param {Object} body - Optional body to send
 	 * @param {Function} callback - Callback function for data
-	 * @returns {boolean}
+	 * @returns {boolean} False on errors
 	 * @private
 	 * @since 1.0.0
 	 */
@@ -383,7 +368,8 @@ class EpiphanPearl extends instance_skel {
 		}
 
 		if (callback === undefined) {
-			callback = function(err, data){}
+			callback = function (err, data) {
+			}
 		}
 
 		this.debug('info', 'Starting request to: ' + url);
@@ -392,7 +378,7 @@ class EpiphanPearl extends instance_skel {
 				uri: baseUrl + url,
 				json: body
 			},
-			function(error, response, body) {
+			function (error, response, body) {
 				self.debug('info', JSON.stringify(error));
 				self.debug('info', JSON.stringify(response));
 				self.debug('info', JSON.stringify(body));
@@ -403,12 +389,14 @@ class EpiphanPearl extends instance_skel {
 					callback(error)
 					return;
 				}
+
 				if (error && error.connect === true) {
 					self.status(self.STATE_ERROR);
 					self.log('error', 'Read timeout waiting for response from: ' + url);
 					callback(error)
 					return;
 				}
+
 				if (response &&
 					(response.statusCode < 200 || response.statusCode > 299)) {
 					self.status(self.STATE_ERROR);
@@ -536,9 +524,10 @@ class EpiphanPearl extends instance_skel {
 		let self = this;
 
 		// Get all channels availble
-		this._sendRequest('get', '/api/channels', {},function(err, channels) {
+		this._sendRequest('get', '/api/channels', {}, function (err, channels) {
 			for (let a in channels) {
 				let channel = channels[a];
+
 				self.CHOICES_CHANNELS[channel.id] = {
 					id: channel.id,
 					label: channel.name,
@@ -553,6 +542,7 @@ class EpiphanPearl extends instance_skel {
 			this._sendRequest('get', '/api/channels/' + channel.id + '/layouts', {}, function (err, layouts) {
 				for (let b in layouts) {
 					let layout = layouts[b];
+
 					self.CHOICES_CHANNELS[a].layouts[layout.id] = {
 						id: channel.id + '-' + layout.id,
 						label: channel.label + ' - ' + layout.name
