@@ -58,74 +58,74 @@ class EpiphanPearl extends instance_skel {
 					},
 				],
 			},
-			'channelStartRecording': {
-				label: 'Start channel recording',
-				options: [
-					{
-						type: 'dropdown',
-						id: 'channelId',
-						label: 'Channel',
-						choices: this.CHOICES_CHANNELS
-					},
-				],
-			},
-			'channelStopRecording': {
-				label: 'Stop channel recording',
-				options: [
-					{
-						type: 'dropdown',
-						id: 'channelId',
-						label: 'Channel',
-						choices: this.CHOICES_CHANNELS
-					},
-				],
-			},
-			'channelStartStreaming': {
-				label: 'Start channel streaming',
-				options: [
-					{
-						type: 'dropdown',
-						id: 'channelId',
-						label: 'Channel',
-						choices: this.CHOICES_CHANNELS
-					},
-				],
-			},
-			'channelStopStreaming': {
-				label: 'Stop channel streaming',
-				options: [
-					{
-						type: 'dropdown',
-						id: 'channelId',
-						label: 'Channel',
-						choices: this.CHOICES_CHANNELS
-					},
-				],
-			},
-			'recorderStartRecording': {
-				label: 'Start recorder recording',
-				options: [
-					{
-						type: 'textinput',
-						id: 'id',
-						label: 'Recorder ID',
-						default: 0,
-						regex: this.REGEX_NUMBER,
-					},
-				],
-			},
-			'recorderStopRecording': {
-				label: 'Stop recorder recording',
-				options: [
-					{
-						type: 'textinput',
-						id: 'id',
-						label: 'Recorder ID',
-						default: 0,
-						regex: this.REGEX_NUMBER,
-					},
-				],
-			},
+			// 'channelStartRecording': {
+			// 	label: 'Start channel recording',
+			// 	options: [
+			// 		{
+			// 			type: 'dropdown',
+			// 			id: 'channelId',
+			// 			label: 'Channel',
+			// 			choices: this.CHOICES_CHANNELS
+			// 		},
+			// 	],
+			// },
+			// 'channelStopRecording': {
+			// 	label: 'Stop channel recording',
+			// 	options: [
+			// 		{
+			// 			type: 'dropdown',
+			// 			id: 'channelId',
+			// 			label: 'Channel',
+			// 			choices: this.CHOICES_CHANNELS
+			// 		},
+			// 	],
+			// },
+			// 'channelStartStreaming': {
+			// 	label: 'Start channel streaming',
+			// 	options: [
+			// 		{
+			// 			type: 'dropdown',
+			// 			id: 'channelId',
+			// 			label: 'Channel',
+			// 			choices: this.CHOICES_CHANNELS
+			// 		},
+			// 	],
+			// },
+			// 'channelStopStreaming': {
+			// 	label: 'Stop channel streaming',
+			// 	options: [
+			// 		{
+			// 			type: 'dropdown',
+			// 			id: 'channelId',
+			// 			label: 'Channel',
+			// 			choices: this.CHOICES_CHANNELS
+			// 		},
+			// 	],
+			// },
+			// 'recorderStartRecording': {
+			// 	label: 'Start recorder recording',
+			// 	options: [
+			// 		{
+			// 			type: 'textinput',
+			// 			id: 'id',
+			// 			label: 'Recorder ID',
+			// 			default: 0,
+			// 			regex: this.REGEX_NUMBER,
+			// 		},
+			// 	],
+			// },
+			// 'recorderStopRecording': {
+			// 	label: 'Stop recorder recording',
+			// 	options: [
+			// 		{
+			// 			type: 'textinput',
+			// 			id: 'id',
+			// 			label: 'Recorder ID',
+			// 			default: 0,
+			// 			regex: this.REGEX_NUMBER,
+			// 		},
+			// 	],
+			// },
 		});
 	}
 
