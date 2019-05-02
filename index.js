@@ -49,15 +49,13 @@ class EpiphanPearl extends instance_skel {
 		this.setActions({
 			'channelChangeLayout': {
 				label: 'Change channel layout',
-				options: [
-					{
+				options: [{
 						type: 'dropdown',
 						id: 'channelIdlayoutId',
 						label: 'Change layout to:',
 						choices: this.CHOICES_CHANNELS_LAYOUTS
-					},
-				],
-			},
+					}]
+			}
 			// 'channelStartRecording': {
 			// 	label: 'Start channel recording',
 			// 	options: [
@@ -141,7 +139,7 @@ class EpiphanPearl extends instance_skel {
 
 		switch (action.action) {
 			case 'channelChangeLayout':
-				let [channelId, layoutId] = action.options.channelIdlayoutId.split('-')
+				let [channelId, layoutId] = action.options.channelIdlayoutId.split('-');
 				type                      = 'put';
 				url                       = '/api/channels/' + channelId + '/layouts/active';
 				body                      = {id: layoutId};
@@ -332,7 +330,7 @@ class EpiphanPearl extends instance_skel {
 	_sendRequest(type, url, body, callback) {
 		let self      = this;
 		const apiHost = this.config.host,
-			  baseUrl = 'http://' + apiHost;
+				baseUrl = 'http://' + apiHost;
 
 		if (url === null || url === '') {
 			return false;
