@@ -523,7 +523,7 @@ class EpiphanPearl extends instance_skel {
 		})
 
 		// For every channel get layouts and populate/update actions()
-		self.CHOICES_CHANNELS_LAYOUTS = []
+		let temp_channel = []
 		for (let a in this.CHOICES_CHANNELS) {
 			let channel = this.CHOICES_CHANNELS[a];
 
@@ -536,9 +536,14 @@ class EpiphanPearl extends instance_skel {
 						label: channel.label + ' - ' + layout.name
 					}
 
+					// Update internal names/ids
 					self.CHOICES_CHANNELS[a].layouts[layout.id] = layout
-					self.CHOICES_CHANNELS_LAYOUTS.push(layout)
+					// Push to channel selector
+					temp_channel.push(layout)
 				}
+				// Update the master channel selector
+				self.CHOICES_CHANNELS_LAYOUTS = temp_channel.slice();
+				// Update dropdowns
 				self.actions();
 			});
 		}
