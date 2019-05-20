@@ -7,6 +7,9 @@ let debug, log;
  * Companion instance class for the Epiphan Pearl.
  *
  * @extends instance_skel
+ * @version 1.0.0
+ * @since 1.0.0
+ * @author Marc Hagen <hello@marchagen.nl>
  */
 class EpiphanPearl extends instance_skel {
 
@@ -24,16 +27,23 @@ class EpiphanPearl extends instance_skel {
 
 		/**
 		 * Array with channel objects containing channel information like layouts
-		 * @type {Array}
+		 * @type {Array<Object>}
 		 */
-		this.CHOICES_CHANNELS = {};
-		this.CHOICES_CHANNELS_LAYOUTS = [];
+		this.CHOICES_CHANNELS = [];
+		this.CHOICES_CHANNELS_LAYOUTS    = [];
+		this.CHOICES_CHANNELS_PUBLISHERS = [];
 
 		/**
 		 * Array with recorders objects
-		 * @type {Array}
+		 * @type {Array<Object>}
 		 */
-		this.CHOICES_RECORDERS = {};
+		this.CHOICES_RECORDERS = [];
+
+		this.CHOICES_STARTSTOP = [
+			{id: 1, label: 'Start'},
+			{id: 0, label: 'Stop'}
+		];
+
 
 		this.actions();
 	}
@@ -50,80 +60,67 @@ class EpiphanPearl extends instance_skel {
 			'channelChangeLayout': {
 				label: 'Change channel layout',
 				options: [{
+					type: 'dropdown',
+					id: 'channelIdlayoutId',
+					label: 'Change layout to:',
+					choices: this.CHOICES_CHANNELS_LAYOUTS
+				}]
+			},
+			'channelRecording': {
+				label: 'Channel start/stop recording',
+				options: [
+					{
 						type: 'dropdown',
-						id: 'channelIdlayoutId',
-						label: 'Change layout to:',
-						choices: this.CHOICES_CHANNELS_LAYOUTS
-					}]
-			}
-			// 'channelStartRecording': {
-			// 	label: 'Start channel recording',
-			// 	options: [
-			// 		{
-			// 			type: 'dropdown',
-			// 			id: 'channelId',
-			// 			label: 'Channel',
-			// 			choices: this.CHOICES_CHANNELS
-			// 		},
-			// 	],
-			// },
-			// 'channelStopRecording': {
-			// 	label: 'Stop channel recording',
-			// 	options: [
-			// 		{
-			// 			type: 'dropdown',
-			// 			id: 'channelId',
-			// 			label: 'Channel',
-			// 			choices: this.CHOICES_CHANNELS
-			// 		},
-			// 	],
-			// },
-			// 'channelStartStreaming': {
-			// 	label: 'Start channel streaming',
-			// 	options: [
-			// 		{
-			// 			type: 'dropdown',
-			// 			id: 'channelId',
-			// 			label: 'Channel',
-			// 			choices: this.CHOICES_CHANNELS
-			// 		},
-			// 	],
-			// },
-			// 'channelStopStreaming': {
-			// 	label: 'Stop channel streaming',
-			// 	options: [
-			// 		{
-			// 			type: 'dropdown',
-			// 			id: 'channelId',
-			// 			label: 'Channel',
-			// 			choices: this.CHOICES_CHANNELS
-			// 		},
-			// 	],
-			// },
-			// 'recorderStartRecording': {
-			// 	label: 'Start recorder recording',
-			// 	options: [
-			// 		{
-			// 			type: 'textinput',
-			// 			id: 'id',
-			// 			label: 'Recorder ID',
-			// 			default: 0,
-			// 			regex: this.REGEX_NUMBER,
-			// 		},
-			// 	],
-			// },
-			// 'recorderStopRecording': {
-			// 	label: 'Stop recorder recording',
-			// 	options: [
-			// 		{
-			// 			type: 'textinput',
-			// 			id: 'id',
-			// 			label: 'Recorder ID',
-			// 			default: 0,
-			// 			regex: this.REGEX_NUMBER,
-			// 		},
-			// 	],
-			// },
+						id: 'channelId',
+						label: 'Channel',
+						choices: this.CHOICES_CHANNELS
+					},
+					{
+						type: 'dropdown',
+						id: 'channelAction',
+						label: 'Action',
+						choices: this.CHOICES_STARTSTOP
+					},
+				],
+			},
+			'channelStreaming': {
+				label: 'Channel start/stop streaming',
+				options: [
+					{
+						type: 'dropdown',
+						id: 'channelIdpublisherId',
+						label: 'Channel publishers',
+						choices: [].concat(
+							[{id: 'all', label: 'All'}],
+							this.CHOICES_CHANNELS_PUBLISHERS
+						),
+						tooltip: 'If a channel has only one "publisher" or "stream" then you jst select all. Else you can pick the "publisher" you want to start/stop'
+					},
+					{
+						type: 'dropdown',
+						id: 'channelAction',
+						label: 'Action',
+						choices: this.CHOICES_STARTSTOP
+					},
+				],
+			},
+			'recorderRecording': {
+				label: 'Recorder start/stop recording',
+				options: [
+					{
+						type: 'dropdown',
+						id: 'recorderId',
+						label: 'Recorder',
+						choices: this.CHOICES_RECORDERS
+					},
+					{
+						type: 'dropdown',
+						id: 'recorderAction',
+						label: 'Action',
+						choices: this.CHOICES_STARTSTOP
+					},
+				],
+			},
 		});
 	}
 
@@ -135,42 +132,38 @@ class EpiphanPearl extends instance_skel {
 	 * @since 1.0.0
 	 */
 	action(action) {
-		let type = 'get', url, body = {};
-
 		switch (action.action) {
 			case 'channelChangeLayout':
 				let [channelId, layoutId] = action.options.channelIdlayoutId.split('-');
 				type                      = 'put';
 				url                       = '/api/channels/' + channelId + '/layouts/active';
-				body                      = {id: layoutId};
+				body                      = JSON.stringify({id: layoutId});
 				break;
-			case 'channelStartRecording':
+			case 'channelStreaming':
+				let channelId     = action.options.channelId,
+					channelAction = action.options.channelAction;
+				type              = 'post';
+				url               = '/api/channels/' + channelId + '/publishers/control/' + channelAction;
+
+				// Check if channel has only one publisher
+				//url  = '/api/channels/' + channelId + '/publishers/' + publishersId + '/control/' + action;
+				// else
+				//url  = '/api/channels/' + channelId + '/publishers/control/' + action;
+
+				break;
+			case 'channelRecording':
 				type = 'post';
 				//url  = '/api/channels/' + action.options.channelId + '/control/start';
 				break;
-			case 'channelStopRecording':
-				type = 'post';
-				//url  = '/api/channels/' + action.options.channelId + '/control/stop';
-				break;
-			case 'recorderStartRecording':
-				type = 'post';
-				//url  = '/api/recorders/' + action.options.channelId + '/control/start';
-				break;
-			case 'recorderStopRecording':
-				type = 'post';
-				//url  = '/api/recorders/' + action.options.channelId + '/control/stop';
-				break;
-			case 'channelStartStreaming':
-				type = 'post';
-				//url  = '/api/recorders/' + action.options.channelId + '/control/start';
-				break;
-			case 'channelStopStreaming':
+			case 'recorderRecording':
 				type = 'post';
 				//url  = '/api/recorders/' + action.options.channelId + '/control/start';
 				break;
 			default:
 				return;
 		}
+
+		let type = 'get', url, body = {};
 
 		// Send request
 		if (url) {
@@ -190,35 +183,6 @@ class EpiphanPearl extends instance_skel {
 	feedback(feedback, bank) {
 		let out   = {};
 		const opt = feedback.options;
-
-		if (feedback.type === 'program_bg') {
-			if (this.states['program_bg'] ===
-				parseInt(feedback.options.input)) {
-				return {
-					color: feedback.options.fg,
-					bgcolor: feedback.options.bg,
-				};
-			}
-		}
-
-		if (feedback.type === 'preview_bg') {
-			if (this.states['preview_bg'] ===
-				parseInt(feedback.options.input)) {
-				return {
-					color: feedback.options.fg,
-					bgcolor: feedback.options.bg,
-				};
-			}
-		}
-
-		if (feedback.type === 'logo_bg') {
-			if (this.states['logo_bg'] === parseInt(feedback.options.input)) {
-				return {
-					color: feedback.options.fg,
-					bgcolor: feedback.options.bg,
-				};
-			}
-		}
 
 		return out;
 	}
@@ -282,9 +246,7 @@ class EpiphanPearl extends instance_skel {
 
 		this.states = {};
 		this._init_feedbacks();
-
 		this._init_request();
-
 		this._init_interval();
 	}
 
@@ -322,29 +284,29 @@ class EpiphanPearl extends instance_skel {
 	 * @param {String} type - post, get, put
 	 * @param {String} url - Full URL to send request to
 	 * @param {Object} body - Optional body to send
-	 * @param {Function} callback - Callback function for data
+	 * @param {?Function} callback - Callback function for data
 	 * @returns {boolean} False on errors
 	 * @private
 	 * @since 1.0.0
 	 */
-	_sendRequest(type, url, body, callback) {
+	_sendRequest(type, url, body, callback = null) {
 		let self      = this;
 		const apiHost = this.config.host,
-				baseUrl = 'http://' + apiHost;
+			  baseUrl = 'http://' + apiHost;
 
 		if (url === null || url === '') {
 			return false;
 		}
 
 		if (this.defaultRequest === undefined) {
-			this.status(this.STATE_ERROR, 'Error, no request interface...');
+			this.status(this.STATUS_ERROR, 'Error, no request interface...');
 			this.log('error', 'Error, no request interface...');
 			return false;
 		}
 
 		type = type.toUpperCase();
 		if (['GET', 'POST', 'PUT'].indexOf(type) === -1) {
-			this.status(this.STATE_ERROR, 'Wrong request type: ' + type);
+			this.status(this.STATUS_ERROR, 'Wrong request type: ' + type);
 			this.log('error', 'Wrong request type: ' + type);
 			return false;
 		}
@@ -353,9 +315,8 @@ class EpiphanPearl extends instance_skel {
 			body = {};
 		}
 
-		if (callback === undefined) {
-			callback = function (err, data) {
-			}
+		if (callback === undefined || callback == null) {
+			callback = () => {}
 		}
 
 		this.debug('info', 'Starting request to: ' + url);
@@ -370,28 +331,29 @@ class EpiphanPearl extends instance_skel {
 				self.debug('info', JSON.stringify(body));
 
 				if (error && error.code === 'ETIMEDOUT') {
-					self.status(self.STATE_ERROR);
+					self.status(self.STATUS_ERROR);
 					self.log('error', 'Connection timeout while connecting to ' + apiHost);
-					callback(error)
+					callback(error);
 					return;
 				}
 
 				if (error && error.connect === true) {
-					self.status(self.STATE_ERROR);
+					self.status(self.STATUS_ERROR);
 					self.log('error', 'Read timeout waiting for response from: ' + url);
-					callback(error)
+					callback(error);
 					return;
 				}
 
 				if (response &&
 					(response.statusCode < 200 || response.statusCode > 299)) {
-					self.status(self.STATE_ERROR);
+					self.status(self.STATUS_ERROR);
 					self.log('error', 'Non-successful response status code: ' +
 						http.STATUS_CODES[response.statusCode]);
-					callback(error)
+					callback(error);
 					return;
 				}
 
+				this.status(this.STATUS_OK);
 				callback(null, body.result);
 			});
 	}
@@ -423,9 +385,8 @@ class EpiphanPearl extends instance_skel {
 				},
 				{
 					type: 'dropdown',
-					label: 'Input',
+					label: 'Channel',
 					id: 'input',
-					default: 1,
 					choices: this.CHOICES_CHANNELS,
 				},
 			],
@@ -449,9 +410,8 @@ class EpiphanPearl extends instance_skel {
 				},
 				{
 					type: 'dropdown',
-					label: 'Input',
+					label: 'Recorders',
 					id: 'input',
-					default: 1,
 					choices: this.CHOICES_RECORDERS,
 				},
 			],
@@ -475,9 +435,8 @@ class EpiphanPearl extends instance_skel {
 				},
 				{
 					type: 'dropdown',
-					label: 'Input',
+					label: 'Channels',
 					id: 'input',
-					default: 1,
 					choices: this.CHOICES_CHANNELS,
 				},
 			],
@@ -509,8 +468,11 @@ class EpiphanPearl extends instance_skel {
 	_dataPoller() {
 		let self = this;
 
-		// Get all channels availble
+		// Get all channels available
 		this._sendRequest('get', '/api/channels', {}, function (err, channels) {
+			if (err) {
+				return;
+			}
 			for (let a in channels) {
 				let channel = channels[a];
 
@@ -520,26 +482,29 @@ class EpiphanPearl extends instance_skel {
 					layouts: {}
 				}
 			}
-		})
+		});
 
 		// For every channel get layouts and populate/update actions()
-		let temp_channel = []
+		let temp_channel = [];
 		for (let a in this.CHOICES_CHANNELS) {
 			let channel = this.CHOICES_CHANNELS[a];
 
 			this._sendRequest('get', '/api/channels/' + channel.id + '/layouts', {}, function (err, layouts) {
+				if (err) {
+					return;
+				}
 				for (let b in layouts) {
 					let layout = layouts[b];
 
 					layout = {
 						id: channel.id + '-' + layout.id,
 						label: channel.label + ' - ' + layout.name
-					}
+					};
 
 					// Update internal names/ids
-					self.CHOICES_CHANNELS[a].layouts[layout.id] = layout
+					self.CHOICES_CHANNELS[a].layouts[layout.id] = layout;
 					// Push to channel selector
-					temp_channel.push(layout)
+					temp_channel.push(layout);
 				}
 
 				self.debug('info', "Updating CHOICES and call actions()");
