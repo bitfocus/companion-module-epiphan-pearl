@@ -541,6 +541,8 @@ class EpiphanPearl extends instance_skel {
 					// Push to channel selector
 					temp_channel.push(layout)
 				}
+
+				self.debug('info', "Updating CHOICES and call actions()");
 				// Update the master channel selector
 				self.CHOICES_CHANNELS_LAYOUTS = temp_channel.slice();
 				// Update dropdowns
