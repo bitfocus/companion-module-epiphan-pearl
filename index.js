@@ -91,7 +91,6 @@ class EpiphanPearl extends instance_skel {
 						id: 'channelIdpublisherId',
 						label: 'Channel publishers',
 						choices: [].concat(
-							[{id: 'all', label: 'All'}],
 							this.CHOICES_CHANNELS_PUBLISHERS
 						),
 						tooltip: 'If a channel has only one "publisher" or "stream" then you jst select all. Else you can pick the "publisher" you want to start/stop'
@@ -132,23 +131,27 @@ class EpiphanPearl extends instance_skel {
 	 * @since 1.0.0
 	 */
 	action(action) {
+		let type = 'get', url, body = {};
+		let channelId, layoutId, channelAction, publishersId;
+
 		switch (action.action) {
 			case 'channelChangeLayout':
-				let [channelId, layoutId] = action.options.channelIdlayoutId.split('-');
-				type                      = 'put';
-				url                       = '/api/channels/' + channelId + '/layouts/active';
-				body                      = JSON.stringify({id: layoutId});
+				[channelId, layoutId] = action.options.channelIdlayoutId.split('-');
+				type                  = 'put';
+				url                   = '/api/channels/' + channelId + '/layouts/active';
+				body                  = JSON.stringify({id: layoutId});
 				break;
 			case 'channelStreaming':
-				let channelId     = action.options.channelId,
-					channelAction = action.options.channelAction;
-				type              = 'post';
-				url               = '/api/channels/' + channelId + '/publishers/control/' + channelAction;
+				[channelId, publishersId] = action.options.channelIdpublisherId.split('-');
+				channelAction             = action.options.channelAction;
+				type                      = 'post';
 
-				// Check if channel has only one publisher
-				//url  = '/api/channels/' + channelId + '/publishers/' + publishersId + '/control/' + action;
-				// else
-				//url  = '/api/channels/' + channelId + '/publishers/control/' + action;
+				if (publishersId !== 'all') {
+					url = '/api/channels/' + channelId + '/publishers/' + publishersId + '/control/' + action;
+				}
+				else {
+					url = '/api/channels/' + channelId + '/publishers/control/' + channelAction;
+				}
 
 				break;
 			case 'channelRecording':
@@ -162,8 +165,6 @@ class EpiphanPearl extends instance_skel {
 			default:
 				return;
 		}
-
-		let type = 'get', url, body = {};
 
 		// Send request
 		if (url) {
@@ -247,6 +248,7 @@ class EpiphanPearl extends instance_skel {
 		this.states = {};
 		this._init_feedbacks();
 		this._init_request();
+		this._dataPoller.bind(this);
 		this._init_interval();
 	}
 
@@ -319,7 +321,8 @@ class EpiphanPearl extends instance_skel {
 			callback = () => {}
 		}
 
-		this.debug('info', 'Starting request to: ' + url);
+		this.debug('info', 'Starting request to: ' + type + ' ' + baseUrl+url);
+		this.debug('info', JSON.parse(body));
 		this.defaultRequest({
 				method: type,
 				uri: baseUrl + url,
@@ -327,7 +330,7 @@ class EpiphanPearl extends instance_skel {
 			},
 			function (error, response, body) {
 				self.debug('info', JSON.stringify(error));
-				self.debug('info', JSON.stringify(response));
+				//self.debug('info', JSON.stringify(response));
 				self.debug('info', JSON.stringify(body));
 
 				if (error && error.code === 'ETIMEDOUT') {
@@ -353,8 +356,13 @@ class EpiphanPearl extends instance_skel {
 					return;
 				}
 
-				this.status(this.STATUS_OK);
-				callback(null, body.result);
+				let result = body;
+				if (body.result){
+					result = body.result;
+				}
+
+				self.status(this.STATUS_OK);
+				callback(null, result);
 			});
 	}
 
@@ -486,15 +494,15 @@ class EpiphanPearl extends instance_skel {
 
 		// For every channel get layouts and populate/update actions()
 		let temp_channel = [];
-		for (let a in this.CHOICES_CHANNELS) {
-			let channel = this.CHOICES_CHANNELS[a];
+		for (let b in this.CHOICES_CHANNELS) {
+			let channel = this.CHOICES_CHANNELS[b];
 
 			this._sendRequest('get', '/api/channels/' + channel.id + '/layouts', {}, function (err, layouts) {
 				if (err) {
 					return;
 				}
-				for (let b in layouts) {
-					let layout = layouts[b];
+				for (let c in layouts) {
+					let layout = layouts[c];
 
 					layout = {
 						id: channel.id + '-' + layout.id,
@@ -502,7 +510,7 @@ class EpiphanPearl extends instance_skel {
 					};
 
 					// Update internal names/ids
-					self.CHOICES_CHANNELS[a].layouts[layout.id] = layout;
+					self.CHOICES_CHANNELS[b].layouts[layout.id] = layout;
 					// Push to channel selector
 					temp_channel.push(layout);
 				}
