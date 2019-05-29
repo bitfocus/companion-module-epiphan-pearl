@@ -90,9 +90,7 @@ class EpiphanPearl extends instance_skel {
 						type: 'dropdown',
 						id: 'channelIdpublisherId',
 						label: 'Channel publishers',
-						choices: [].concat(
-							this.CHOICES_CHANNELS_PUBLISHERS
-						),
+						choices: this.CHOICES_CHANNELS_PUBLISHERS,
 						tooltip: 'If a channel has only one "publisher" or "stream" then you jst select all. Else you can pick the "publisher" you want to start/stop'
 					},
 					{
@@ -143,13 +141,12 @@ class EpiphanPearl extends instance_skel {
 				break;
 			case 'channelStreaming':
 				[channelId, publishersId] = action.options.channelIdpublisherId.split('-');
-				channelAction             = action.options.channelAction;
+				channelAction             = this.CHOICES_STARTSTOP.find(function (e) { return e.id === action.options.channelAction; });
 				type                      = 'post';
 
 				if (publishersId !== 'all') {
-					url = '/api/channels/' + channelId + '/publishers/' + publishersId + '/control/' + action;
-				}
-				else {
+					url = '/api/channels/' + channelId + '/publishers/' + publishersId + '/control/' + channelAction;
+				} else {
 					url = '/api/channels/' + channelId + '/publishers/control/' + channelAction;
 				}
 
@@ -248,7 +245,6 @@ class EpiphanPearl extends instance_skel {
 		this.states = {};
 		this._init_feedbacks();
 		this._init_request();
-		this._dataPoller.bind(this);
 		this._init_interval();
 	}
 
@@ -318,14 +314,16 @@ class EpiphanPearl extends instance_skel {
 		}
 
 		if (callback === undefined || callback == null) {
-			callback = () => {}
+			callback = () => {
+			}
 		}
 
-		this.debug('info', 'Starting request to: ' + type + ' ' + baseUrl+url);
-		this.debug('info', JSON.parse(body));
+		let requestUrl = baseUrl + url;
+		this.debug('info', 'Starting request to: ' + type + ' ' + baseUrl + url);
+		this.debug('info', body);
 		this.defaultRequest({
 				method: type,
-				uri: baseUrl + url,
+				uri: requestUrl,
 				json: body
 			},
 			function (error, response, body) {
@@ -335,14 +333,21 @@ class EpiphanPearl extends instance_skel {
 
 				if (error && error.code === 'ETIMEDOUT') {
 					self.status(self.STATUS_ERROR);
-					self.log('error', 'Connection timeout while connecting to ' + apiHost);
+					self.log('error', 'Connection timeout while connecting to ' + requestUrl);
+					callback(error);
+					return;
+				}
+
+				if (error && error.code === 'ECONNREFUSED') {
+					self.status(self.STATUS_ERROR);
+					self.log('error', 'Connection refused for ' + requestUrl);
 					callback(error);
 					return;
 				}
 
 				if (error && error.connect === true) {
 					self.status(self.STATUS_ERROR);
-					self.log('error', 'Read timeout waiting for response from: ' + url);
+					self.log('error', 'Read timeout waiting for response from: ' + requestUrl);
 					callback(error);
 					return;
 				}
@@ -350,14 +355,20 @@ class EpiphanPearl extends instance_skel {
 				if (response &&
 					(response.statusCode < 200 || response.statusCode > 299)) {
 					self.status(self.STATUS_ERROR);
-					self.log('error', 'Non-successful response status code: ' +
-						http.STATUS_CODES[response.statusCode]);
+					self.log('error', 'Non-successful response status code: ' + http.STATUS_CODES[response.statusCode] + ' ' + requestUrl);
+					callback(error);
+					return;
+				}
+
+				if (body.status && body.status !== 'ok') {
+					self.status(self.STATUS_ERROR);
+					self.log('error', 'Non-successful response from pearl: ' + requestUrl + ' - ' + (body.message ? body.message : 'No error message'));
 					callback(error);
 					return;
 				}
 
 				let result = body;
-				if (body.result){
+				if (body.result) {
 					result = body.result;
 				}
 
@@ -461,6 +472,8 @@ class EpiphanPearl extends instance_skel {
 	 * @since 1.0.0
 	 */
 	_init_interval() {
+		// Run first
+		this._dataPoller(this);
 		// Poll data from pearl every 10 secs
 		this.timer = setInterval(this._dataPoller.bind(this), 10000);
 	}
@@ -470,61 +483,101 @@ class EpiphanPearl extends instance_skel {
 	 * INTERNAL: The data poller will activally make requests to update feedbacks and dropdown options.
 	 * Polling data such as channels, recorders, layouts and status
 	 *
+	 * @param {EventEmitter} system - the brains of the operation
 	 * @private
 	 * @since 1.0.0
 	 */
-	_dataPoller() {
+	_dataPoller(system) {
 		let self = this;
 
 		// Get all channels available
-		this._sendRequest('get', '/api/channels', {}, function (err, channels) {
+		let temp_channel = [];
+		this._sendRequest('get', '/api/channels', {}, (err, channels) => {
 			if (err) {
 				return;
 			}
 			for (let a in channels) {
 				let channel = channels[a];
-
-				self.CHOICES_CHANNELS[channel.id] = {
+				temp_channel.push({
 					id: channel.id,
 					label: channel.name,
-					layouts: {}
-				}
+					layouts: [],
+					publishers: [],
+					encoders: []
+				});
 			}
+
+			self.debug('info', 'Updating CHOICES_CHANNELS and call actions()');
+			// Update the master channel selector
+			self.CHOICES_CHANNELS = temp_channel.slice();
+			// Update dropdowns
+			self.actions(system);
 		});
 
 		// For every channel get layouts and populate/update actions()
-		let temp_channel = [];
+		let temp_layout = [];
 		for (let b in this.CHOICES_CHANNELS) {
 			let channel = this.CHOICES_CHANNELS[b];
 
-			this._sendRequest('get', '/api/channels/' + channel.id + '/layouts', {}, function (err, layouts) {
+			this._sendRequest('get', '/api/channels/' + channel.id + '/layouts', {}, (err, layouts) => {
 				if (err) {
 					return;
 				}
 				for (let c in layouts) {
 					let layout = layouts[c];
-
-					layout = {
+					temp_layout.push({
 						id: channel.id + '-' + layout.id,
 						label: channel.label + ' - ' + layout.name
-					};
-
-					// Update internal names/ids
-					self.CHOICES_CHANNELS[b].layouts[layout.id] = layout;
-					// Push to channel selector
-					temp_channel.push(layout);
+					});
 				}
 
-				self.debug('info', "Updating CHOICES and call actions()");
+				self.debug('info', 'Updating CHANNEL_LAYOUTS and call actions()');
 				// Update the master channel selector
-				self.CHOICES_CHANNELS_LAYOUTS = temp_channel.slice();
+				self.CHOICES_CHANNELS_LAYOUTS = temp_layout.slice();
 				// Update dropdowns
-				self.actions();
+				self.actions(system);
 			});
 		}
 
+		// For get publishers and encoders
+		let temp_publishers = [];
+		this._sendRequest('get', '/api/channels/status?publishers=yes&encoders=yes', {}, (err, channels) => {
+			if (err) {
+				return;
+			}
+			for (let a = 0; a < channels.length; a++) {
+				let channel = this.CHOICES_CHANNELS[a];
+				if (!channel) {
+					return;
+				}
+
+				temp_publishers.push({
+					id: 'all',
+					label: channel.label + ' - All'
+				});
+				for (let b in channels[a].publishers) {
+					let publisher = channels[a].publishers[b];
+					if (!publisher) {
+						return;
+					}
+					temp_publishers.push({
+						id: channel.id + '-' + publisher.id,
+						// TODO: Check the /api/channels/?publishers=yes for names?
+						label: channel.label + ' - Stream ' + publisher.id
+					});
+				}
+			}
+
+			self.debug('info', 'Updating CHANNELS_PUBLISHERS and call actions()');
+			// Update the master channel selector
+			self.CHOICES_CHANNELS_PUBLISHERS = temp_publishers.slice();
+			// Update dropdowns
+			self.actions(system);
+		});
+
 
 		// GET- /api/channels
+		// GET- /api/channels/?publishers=yes
 		// GET- /api/channels/status?publishers=yes&encoders=yes
 		// GET- /api/channels/<id>/status
 		// GET- /api/channels/<id>/layouts
