@@ -545,7 +545,7 @@ class EpiphanPearl extends instance_skel {
 			if (err) {
 				return;
 			}
-			for (let a = 0; a < channels.length; a++) {
+			for (let a in channels) {
 				let channel = this.CHOICES_CHANNELS[a];
 				if (!channel) {
 					return;
