@@ -5,7 +5,7 @@ GET /api/channels/<id>/layouts
 {"status":"ok","result":[{"id":"1","name":"Web+Barco+Cams","active":false},{"id":"2","name":"Barco+Cams","active":false},{"id":"3","name":"Cams","active":true}]}
 
 GET /api/channels/?publishers=yes
-
+{"status":"ok","result":[{"id":"7","name":"Summer courses RECORDING","type":"local","publishers":[]},{"id":"10","name":"overflow","type":"local","publishers":[]},{"id":"11","name":"REGIE","type":"local","publishers":[]}]}
 
 GET /api/channels/status?publishers=yes&encoders=yes
 {"status":"ok","result":[{"id":"4","status":[],"publishers":[],"encoders":[{"id":"0","status":{"bitrate":2073600,"resolution":"1280x720"}},{"id":"1","status":{"bitrate":64}}]},{"id":"5","status":[],"publishers":[],"encoders":[{"id":"0","status":{"bitrate":5598720,"resolution":"1920x1080"}},{"id":"1","status":{"bitrate":320}}]},{"id":"6","status":[],"publishers":[],"encoders":[{"id":"0","status":{"bitrate":5598720,"resolution":"1920x1080"}},{"id":"1","status":{"bitrate":320}}]},{"id":"7","status":[],"publishers":[{"id":"0","status":{"started":true,"state":"started","duration":18118}}],"encoders":[{"id":"0","status":{"bitrate":2488320,"resolution":"1280x720"}},{"id":"1","status":{"bitrate":160}}]},{"id":"8","status":[],"publishers":[],"encoders":[{"id":"0","status":{"bitrate":5598720,"resolution":"1920x1080"}}]},{"id":"9","status":[],"publishers":[],"encoders":[{"id":"0","status":{"bitrate":5598720,"resolution":"1920x1080"}}]}]}

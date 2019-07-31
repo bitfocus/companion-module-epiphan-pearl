@@ -1,17 +1,19 @@
-const instance_skel = require('../../instance_skel');
-const http          = require('http');
-const request       = require('request');
-var debug, log;
+const instanceSkel = require('../../instance_skel');
+const http         = require('http');
+const request      = require('request');
+let debug, log;
+
+const feedbacks = require('./feedbacks');
 
 /**
  * Companion instance class for the Epiphan Pearl.
  *
- * @extends instance_skel
+ * @extends instanceSkel
  * @version 1.0.0
  * @since 1.0.0
  * @author Marc Hagen <hello@marchagen.nl>
  */
-class EpiphanPearl extends instance_skel {
+class EpiphanPearl extends instanceSkel {
 
 	/**
 	 * Create an instance of a EpiphanPearl module.
@@ -27,9 +29,15 @@ class EpiphanPearl extends instance_skel {
 
 		/**
 		 * Array with channel objects containing channel information like layouts
+		 * recorders and encoders with the states of these properties
 		 * @type {Array<Object>}
 		 */
-		this.CHOICES_CHANNELS = [];
+		this.CHANNEL_STATES = [];
+
+		/*
+		 * Array with channel objects containing channel information like layouts
+		 * @type {Array<Object>}
+		 */
 		this.CHOICES_CHANNELS_LAYOUTS    = [];
 		this.CHOICES_CHANNELS_PUBLISHERS = [];
 
@@ -44,8 +52,12 @@ class EpiphanPearl extends instance_skel {
 			{id: 0, label: 'Stop', action: 'stop'}
 		];
 
-
-		this.actions();
+		Object.assign(this, {
+			//...actions,
+			...feedbacks,
+			//...presets,
+			//...variables
+		});
 	}
 
 	/**
@@ -55,7 +67,7 @@ class EpiphanPearl extends instance_skel {
 	 * @access public
 	 * @since 1.0.0
 	 */
-	actions(system) {
+	actions(system = null) {
 		const startStopOption = {
 			type: 'dropdown',
 			id: 'startStopAction',
@@ -78,8 +90,8 @@ class EpiphanPearl extends instance_skel {
 				options: [
 					{
 						type: 'dropdown',
-						id: 'channelIdpublisherId',
 						label: 'Channel publishers',
+						id: 'channelIdpublisherId',
 						choices: this.CHOICES_CHANNELS_PUBLISHERS,
 						tooltip: 'If a channel has only one "publisher" or "stream" then you jst select all. Else you can pick the "publisher" you want to start/stop'
 					},
@@ -91,8 +103,8 @@ class EpiphanPearl extends instance_skel {
 				options: [
 					{
 						type: 'dropdown',
-						id: 'recorderId',
 						label: 'Recorder',
+						id: 'recorderId',
 						choices: this.CHOICES_RECORDERS
 					},
 					startStopOption
@@ -110,19 +122,19 @@ class EpiphanPearl extends instance_skel {
 	 */
 	action(action) {
 		let type = 'get', url, body = {};
-		let channelId, layoutId, optionAction, publishersId, startStopAction;
 
 		switch (action.action) {
-			case 'channelChangeLayout':
-				[channelId, layoutId] = action.options.channelIdlayoutId.split('-');
+			case 'channelChangeLayout': {
+				let [channelId, layoutId] = action.options.channelIdlayoutId.split('-');
 
 				type = 'put';
 				url  = '/api/channels/' + channelId + '/layouts/active';
 				body = {id: layoutId};
 				break;
-			case 'channelStreaming':
-				[channelId, publishersId] = action.options.channelIdpublisherId.split('-');
-				startStopAction           = this._getStartStopActionFromOptions(action.options);
+			}
+			case 'channelStreaming': {
+				let [channelId, publishersId] = action.options.channelIdpublisherId.split('-');
+				let startStopAction           = this._getStartStopActionFromOptions(action.options);
 
 				type = 'post';
 				if (publishersId !== 'all') {
@@ -131,12 +143,14 @@ class EpiphanPearl extends instance_skel {
 					url = '/api/channels/' + channelId + '/publishers/control/' + startStopAction;
 				}
 				break;
-			case 'recorderRecording':
-				startStopAction = this._getStartStopActionFromOptions(action.options);
+			}
+			case 'recorderRecording': {
+				let startStopAction = this._getStartStopActionFromOptions(action.options);
 
 				type = 'post';
 				url  = '/api/recorders/' + action.options.recorderId + '/control/' + startStopAction;
 				break;
+			}
 			default:
 				return;
 		}
@@ -145,22 +159,6 @@ class EpiphanPearl extends instance_skel {
 		if (url) {
 			this._sendRequest(type, url, body);
 		}
-	}
-
-	/**
-	 * Processes a feedback state.
-	 *
-	 * @param {Object} feedback - the feedback type to process
-	 * @param {Object} bank - the bank this feedback is associated with
-	 * @returns {Object} feedback information for the bank
-	 * @access public
-	 * @since 1.0.0
-	 */
-	feedback(feedback, bank) {
-		let out   = {};
-		const opt = feedback.options;
-
-		return out;
 	}
 
 	/**
@@ -220,10 +218,8 @@ class EpiphanPearl extends instance_skel {
 
 		this.status(this.STATUS_UNKNOWN);
 
-		this.states = {};
-		this._init_feedbacks();
-		this._init_request();
-		this._init_interval();
+		this._initRequest();
+		this._initInterval();
 	}
 
 	/**
@@ -235,7 +231,7 @@ class EpiphanPearl extends instance_skel {
 	 */
 	updateConfig(config) {
 		this.config = config;
-		this._init_request();
+		this._initRequest();
 	}
 
 	/**
@@ -244,7 +240,7 @@ class EpiphanPearl extends instance_skel {
 	 * @private
 	 * @since 1.0.0
 	 */
-	_init_request() {
+	_initRequest() {
 		this.defaultRequest = request.defaults({
 			auth: {
 				user: this.config.username,
@@ -261,7 +257,6 @@ class EpiphanPearl extends instance_skel {
 	 * @since 1.0.0
 	 */
 	_setStatus(level, message = '') {
-		this.debug('debug', '_set_status(level, message):(' + level + ',' + message + ')');
 		this.status(level, message);
 	}
 
@@ -278,6 +273,17 @@ class EpiphanPearl extends instance_skel {
 	}
 
 	/**
+	 * INTERNAL: Get action from the options for start and stop
+	 *
+	 * @private
+	 * @since 1.0.0
+	 */
+	_updateSystem() {
+		this.actions();
+		this._updateFeedbacks();
+	}
+
+	/**
 	 * INTERNAL: Setup and send request
 	 *
 	 * @param {String} type - post, get, put
@@ -290,7 +296,7 @@ class EpiphanPearl extends instance_skel {
 	 */
 	_sendRequest(type, url, body = {}, callback = () => {
 	}) {
-		let self      = this;
+		const self    = this;
 		const apiHost = this.config.host,
 			  baseUrl = 'http://' + apiHost;
 
@@ -325,17 +331,17 @@ class EpiphanPearl extends instance_skel {
 		}
 
 		let requestUrl = baseUrl + url;
-		this.debug('info', 'Starting request to: ' + type + ' ' + baseUrl + url);
-		this.debug('info', body);
+		this.debug('Starting request to: ' + type + ' ' + baseUrl + url);
+		this.debug(body);
 		this.defaultRequest({
 				method: type,
 				uri: requestUrl,
 				json: body
 			},
 			(error, response, body) => {
-				self.debug('info', JSON.stringify(error));
-				//self.debug('info', JSON.stringify(response));
-				self.debug('info', JSON.stringify(body));
+				self.debug(JSON.stringify(error));
+				//self.debug(JSON.stringify(response));
+				self.debug(JSON.stringify(body));
 
 				if (error && error.code === 'ETIMEDOUT') {
 					self._setStatus(self.STATUS_ERROR, 'Connection timeout while connecting to ' + requestUrl);
@@ -389,85 +395,8 @@ class EpiphanPearl extends instance_skel {
 	 * @private
 	 * @since 1.0.0
 	 */
-	_init_feedbacks() {
-		const feedbacks = {};
-
-		feedbacks['channel_layout'] = {
-			label: 'Change colors on channel layout change',
-			description: 'If the current layout is active, change color of the bank',
-			options: [
-				{
-					type: 'colorpicker',
-					label: 'Foreground color',
-					id: 'fg',
-					default: this.rgb(255, 255, 255),
-				},
-				{
-					type: 'colorpicker',
-					label: 'Background color',
-					id: 'bg',
-					default: this.rgb(255, 0, 0),
-				},
-				{
-					type: 'dropdown',
-					label: 'Channel',
-					id: 'input',
-					choices: this.CHOICES_CHANNELS,
-				},
-			],
-		};
-
-		feedbacks['recording'] = {
-			label: 'Change colors if recording',
-			description: 'If channel/recorder is recording, change colors of the bank',
-			options: [
-				{
-					type: 'colorpicker',
-					label: 'Foreground color',
-					id: 'fg',
-					default: this.rgb(255, 255, 255),
-				},
-				{
-					type: 'colorpicker',
-					label: 'Background color',
-					id: 'bg',
-					default: this.rgb(0, 255, 0),
-				},
-				{
-					type: 'dropdown',
-					label: 'Recorders',
-					id: 'input',
-					choices: this.CHOICES_RECORDERS,
-				},
-			],
-		};
-
-		feedbacks['streaming'] = {
-			label: 'Change colors if streaming',
-			description: 'If channel is streaming, change colors of the bank',
-			options: [
-				{
-					type: 'colorpicker',
-					label: 'Foreground color',
-					id: 'fg',
-					default: this.rgb(255, 255, 255),
-				},
-				{
-					type: 'colorpicker',
-					label: 'Background color',
-					id: 'bg',
-					default: this.rgb(0, 255, 0),
-				},
-				{
-					type: 'dropdown',
-					label: 'Channels',
-					id: 'input',
-					choices: this.CHOICES_CHANNELS,
-				},
-			],
-		};
-
-		this.setFeedbackDefinitions(feedbacks);
+	_updateFeedbacks() {
+		this.setFeedbackDefinitions(this.getFeedbacks());
 	}
 
 	/**
@@ -477,9 +406,9 @@ class EpiphanPearl extends instance_skel {
 	 * @private
 	 * @since 1.0.0
 	 */
-	_init_interval() {
-		// Run first
-		this._dataPoller(this);
+	_initInterval() {
+		// Run 2 times first
+		this._dataPoller();
 		// Poll data from pearl every 10 secs
 		this.timer = setInterval(this._dataPoller.bind(this), 10000);
 	}
@@ -489,84 +418,148 @@ class EpiphanPearl extends instance_skel {
 	 * INTERNAL: The data poller will activally make requests to update feedbacks and dropdown options.
 	 * Polling data such as channels, recorders, layouts and status
 	 *
-	 * @param {EventEmitter} system - the brains of the operation
 	 * @private
 	 * @since 1.0.0
 	 */
-	_dataPoller(system) {
-		let self = this;
+	_dataPoller() {
+		const self = this;
 
 		// Get all channels available
-		let temp_channels = [];
 		this._sendRequest('get', '/api/channels', {}, (err, channels) => {
 			if (err) {
 				return;
 			}
 			for (let a in channels) {
 				let channel = channels[a];
-				temp_channels.push({
-					id: channel.id,
-					label: channel.name,
-					layouts: [],
-					publishers: [],
-					encoders: []
+
+				let channelUpdate = {
+					id: parseInt(channel.id),
+					label: channel.name
+				};
+
+				let currentChannel = self.CHANNEL_STATES.find(obj => obj.id === parseInt(channelUpdate.id));
+				if (currentChannel === undefined) {
+					self.CHANNEL_STATES.push({
+						...channelUpdate,
+						...{
+							layouts: [],
+							publishers: [],
+							encoders: []
+						}
+					});
+				} else {
+					currentChannel = {...currentChannel, ...channelUpdate};
+				}
+			}
+
+			self.debug('Updating CHANNEL_STATES and call _updateSystem()');
+			self._updateSystem(system);
+
+			// Update layouts and publishers
+			self._updateChannelLayouts();
+			self._updateChannelPublishers();
+		});
+
+		// Get all recorders
+		let tempRecoders = [];
+		this._sendRequest('get', '/api/recorders', {}, (err, recoders) => {
+			if (err) {
+				return;
+			}
+			for (let a in recoders) {
+				let recoder = recoders[a];
+				tempRecoders.push({
+					id: recoder.id,
+					label: recoder.name
 				});
 			}
 
-			self.debug('info', 'Updating CHOICES_CHANNELS and call actions()');
+			self.debug('Updating CHOICES_RECORDERS and then call _updateSystem()');
 			// Update the master channel selector
-			self.CHOICES_CHANNELS = temp_channels.slice();
+			self.CHOICES_RECORDERS = tempRecoders.slice();
 			// Update dropdowns
-			self.actions(system);
+			self._updateSystem(system);
 		});
+	}
+
+	/**
+	 * INTERNAL: Update the layout data from every tracked channel
+	 *
+	 * @private
+	 * @since 1.0.0
+	 */
+	_updateChannelLayouts() {
+		const self = this;
 
 		// For every channel get layouts and populate/update actions()
-		let temp_layouts = [];
-		for (let b in this.CHOICES_CHANNELS) {
-			let channel = this.CHOICES_CHANNELS[b];
+		let tempLayouts = [];
+		for (let b in this.CHANNEL_STATES) {
+			let channel = self.CHANNEL_STATES[b];
 
 			this._sendRequest('get', '/api/channels/' + channel.id + '/layouts', {}, (err, layouts) => {
 				if (err) {
 					return;
 				}
 				for (let c in layouts) {
-					let layout = layouts[c];
-					temp_layouts.push({
+					const layout = layouts[c];
+					tempLayouts.push({
 						id: channel.id + '-' + layout.id,
 						label: channel.label + ' - ' + layout.name
 					});
+
+					const objIndex = channel.layouts.findIndex(obj => obj.id === parseInt(layout.id));
+					const updatedLayout = {
+						id: parseInt(layout.id),
+						label: layout.name,
+						active: layout.active
+					};
+					if (objIndex === -1) {
+						channel.layouts.push(updatedLayout);
+					} else {
+						channel.layouts[objIndex] = updatedLayout;
+					}
 				}
 
-				self.debug('info', 'Updating CHANNEL_LAYOUTS and call actions()');
+				self.debug('Updating CHOICES_CHANNELS_LAYOUTS');
 				// Update the master channel selector
-				self.CHOICES_CHANNELS_LAYOUTS = temp_layouts.slice();
-				// Update dropdowns
-				self.actions(system);
+				self.CHOICES_CHANNELS_LAYOUTS = tempLayouts.slice();
+				self.checkFeedbacks('channel_layout');
+				self._updateSystem(system);
 			});
 		}
+	}
+
+	/**
+	 * INTERNAL: Update the publisher data from every tracked channel
+	 *
+	 * @private
+	 * @since 1.0.0
+	 */
+	_updateChannelPublishers() {
+		const self = this;
 
 		// For get publishers and encoders
-		let temp_publishers = [];
+		let tempPublishers = [];
 		this._sendRequest('get', '/api/channels/status?publishers=yes&encoders=yes', {}, (err, channels) => {
 			if (err) {
 				return;
 			}
 			for (let a in channels) {
-				let channel = this.CHOICES_CHANNELS[a];
+				const channel = this.CHANNEL_STATES[a];
 				if (!channel) {
-					return;
+					continue;
 				}
 
-				temp_publishers.push({
+				tempPublishers.push({
 					id: channel.id + '-all',
 					label: channel.label + ' - All'
 				});
 				for (let b in channels[a].publishers) {
-					let publisher = channels[a].publishers[b];
+					const publisher = channels[a].publishers[b];
 					if (!publisher) {
-						return;
+						continue;
 					}
-					temp_publishers.push({
+					tempPublishers.push({
 						id: channel.id + '-' + publisher.id,
 						// TODO: Check the /api/channels/?publishers=yes for names?
 						label: channel.label + ' - Stream ' + publisher.id
@@ -574,32 +567,11 @@ class EpiphanPearl extends instance_skel {
 				}
 			}
 
-			self.debug('info', 'Updating CHANNELS_PUBLISHERS and call actions()');
+			self.debug('Updating CHOICES_CHANNELS_PUBLISHERS');
 			// Update the master channel selector
-			self.CHOICES_CHANNELS_PUBLISHERS = temp_publishers.slice();
-			// Update dropdowns
-			self.actions(system);
-		});
-
-		// Get all recorders
-		let temp_recoders = [];
-		this._sendRequest('get', '/api/recorders', {}, (err, recoders) => {
-			if (err) {
-				return;
-			}
-			for (let a in recoders) {
-				let recoder = recoders[a];
-				temp_recoders.push({
-					id: recoder.id,
-					label: recoder.name
-				});
-			}
-
-			self.debug('info', 'Updating CHOICES_RECORDERS and call actions()');
-			// Update the master channel selector
-			self.CHOICES_RECORDERS = temp_recoders.slice();
-			// Update dropdowns
-			self.actions(system);
+			self.CHOICES_CHANNELS_PUBLISHERS = tempPublishers.slice();
+			// this.checkFeedbacks('recording');
+			self._updateSystem(system);
 		});
 	}
 }
