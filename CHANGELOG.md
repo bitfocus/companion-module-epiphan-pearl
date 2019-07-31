@@ -13,9 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Actions:
 * Change channel layout
-* Start/Stop channel recording
-* Start/Stop channel streaming (per stream)
-* Start/Stop recorder recording
+* Start/Stop streaming (per stream or all)
+* Start/Stop recording
 
 Feedback:
 * Active channel layout

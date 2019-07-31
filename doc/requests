@@ -13,12 +13,14 @@ GET /api/channels/status?publishers=yes&encoders=yes
 {id: layoutId} PUT /api/channels/<id>/layouts/active
 {"status":"ok"}
 
+# Start/Stop recorders
 empty POST /api/recorders/<id>/control/stop
 {"status":"ok"}
 
 empty POST /api/recorders/<id>/control/start
 {"status":"ok"}
 
+# Start/Stop streaming
 empty POST /api/channels/<id>/publishers/control/stop
 {"status":"ok"}
 
@@ -27,3 +29,6 @@ empty POST /api/channels/<id>/publishers/control/start
 
 GET /api/recorders/status
 {"status":"ok","result":[{"id":"4","status":{"state":"stopped"}},{"id":"5","status":{"state":"stopped"}},{"id":"6","status":{"state":"stopped"}},{"id":"m1","status":{"state":"stopped"}}]}
+
+GET /api/recorders
+{"status":"ok","result":[{"id":"7","name":"Summer courses RECORDING","multisource":false},{"id":"10","name":"overflow","multisource":false},{"id":"11","name":"REGIE","multisource":false},{"id":"m1","name":"All CAM","multisource":true}]}
