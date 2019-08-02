@@ -2,9 +2,9 @@ module.exports = {
 	/**
 	 * INTERNAL: Get the available feedbacks.
 	 *
-	 * @returns {Object[]} the available feedbacks
 	 * @access protected
 	 * @since 1.0.0
+	 * @returns {Object[]} - the available feedbacks
 	 */
 	getFeedbacks() {
 		let feedbacks = {};
@@ -33,12 +33,8 @@ module.exports = {
 				},
 			],
 			callback: (feedback, bank) => {
-				// TODO: move to function
-				let [channelId, layoutId] = feedback.options.channelIdlayoutId.split('-');
-				const channel = this.CHANNEL_STATES.find(obj => obj.id === parseInt(channelId));
-				if (!channel) return;
-
-				const layout = channel.layouts.find(obj => obj.id === parseInt(layoutId));
+				const [channelId, layoutId] = feedback.options.channelIdlayoutId.split('-');
+				const layout = this._getLayoutFromChannelById(this._getChannelById(channelId), layoutId);
 				if (!layout) return;
 
 				if (layout.active) {

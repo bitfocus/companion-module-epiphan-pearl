@@ -18,11 +18,11 @@ class EpiphanPearl extends instanceSkel {
 	/**
 	 * Create an instance of a EpiphanPearl module.
 	 *
+	 * @access public
+	 * @since 1.0.0
 	 * @param {EventEmitter} system - the brains of the operation
 	 * @param {string} id - the instance ID
 	 * @param {Object} config - saved user configuration parameters
-	 * @access public
-	 * @since 1.0.0
 	 */
 	constructor(system, id, config) {
 		super(system, id, config);
@@ -63,9 +63,9 @@ class EpiphanPearl extends instanceSkel {
 	/**
 	 * Setup the actions.
 	 *
-	 * @param {EventEmitter} system - the brains of the operation
 	 * @access public
 	 * @since 1.0.0
+	 * @param {EventEmitter} system - the brains of the operation
 	 */
 	actions(system = null) {
 		const startStopOption = {
@@ -116,25 +116,30 @@ class EpiphanPearl extends instanceSkel {
 	/**
 	 * Executes the provided action.
 	 *
-	 * @param {Object} action - the action to be executed
 	 * @access public
 	 * @since 1.0.0
+	 * @param {Object} action - the action to be executed
 	 */
 	action(action) {
-		let type = 'get', url, body = {};
+		let type = 'get', url, body, callback;
 
 		switch (action.action) {
 			case 'channelChangeLayout': {
-				let [channelId, layoutId] = action.options.channelIdlayoutId.split('-');
+				const [channelId, layoutId] = action.options.channelIdlayoutId.split('-');
 
-				type = 'put';
-				url  = '/api/channels/' + channelId + '/layouts/active';
-				body = {id: layoutId};
+				type     = 'put';
+				url      = '/api/channels/' + channelId + '/layouts/active';
+				body     = {id: layoutId};
+				callback = (err, response) => {
+					if (response.status === 'ok') {
+						this._updateActiveChannelLayout(channelId, layoutId);
+					}
+				};
 				break;
 			}
 			case 'channelStreaming': {
-				let [channelId, publishersId] = action.options.channelIdpublisherId.split('-');
-				let startStopAction           = this._getStartStopActionFromOptions(action.options);
+				const [channelId, publishersId] = action.options.channelIdpublisherId.split('-');
+				const startStopAction           = this._getStartStopActionFromOptions(action.options);
 
 				type = 'post';
 				if (publishersId !== 'all') {
@@ -145,10 +150,16 @@ class EpiphanPearl extends instanceSkel {
 				break;
 			}
 			case 'recorderRecording': {
-				let startStopAction = this._getStartStopActionFromOptions(action.options);
+				const startStopAction = this._getStartStopActionFromOptions(action.options);
+				const recorderId	= action.options.recorderId;
 
-				type = 'post';
-				url  = '/api/recorders/' + action.options.recorderId + '/control/' + startStopAction;
+				type     = 'post';
+				url      = '/api/recorders/' + recorderId + '/control/' + startStopAction;
+				callback = (err, response) => {
+					if (response.status === 'ok') {
+						this._updateRecorderStatus(recorderId);
+					}
+				};
 				break;
 			}
 			default:
@@ -157,16 +168,16 @@ class EpiphanPearl extends instanceSkel {
 
 		// Send request
 		if (url) {
-			this._sendRequest(type, url, body);
+			this._sendRequest(type, url, body, callback);
 		}
 	}
 
 	/**
 	 * Creates the configuration fields for web config.
 	 *
-	 * @returns {Array} the config fields
 	 * @access public
 	 * @since 1.0.0
+	 * @returns {Array} the config fields
 	 */
 	config_fields() {
 		return [
@@ -225,9 +236,9 @@ class EpiphanPearl extends instanceSkel {
 	/**
 	 * Process an updated configuration array.
 	 *
-	 * @param {Object} config - the new configuration
 	 * @access public
 	 * @since 1.0.0
+	 * @param {Object} config - the new configuration
 	 */
 	updateConfig(config) {
 		this.config = config;
@@ -255,6 +266,8 @@ class EpiphanPearl extends instanceSkel {
 	 *
 	 * @private
 	 * @since 1.0.0
+	 * @param {Number} level
+	 * @param {?String} message
 	 */
 	_setStatus(level, message = '') {
 		this.status(level, message);
@@ -265,11 +278,107 @@ class EpiphanPearl extends instanceSkel {
 	 *
 	 * @private
 	 * @since 1.0.0
+	 * @param {Object} options - Option object gotten from a performed action [action()]
 	 */
 	_getStartStopActionFromOptions(options) {
 		return this.CHOICES_STARTSTOP.find((e) => {
 			return e.id === parseInt(options.startStopAction);
 		}).action;
+	}
+
+	/**
+	 * INTERNAL: Get channel by id
+	 *
+	 * @private
+	 * @since 1.0.0
+	 * @param {String|Number} id
+	 */
+	_getChannelById(id) {
+		if (!id) {
+			return;
+		}
+		return this.CHANNEL_STATES.find(obj => obj.id === parseInt(id))
+	}
+
+
+	/**
+	 * INTERNAL: Get layout by id from channel
+	 *
+	 * @private
+	 * @since 1.0.0
+	 * @param {Object|Number} channel
+	 * @param {String|Number} id
+	 */
+	_getLayoutFromChannelById(channel, id) {
+		if (!channel || !id) {
+			return;
+		} else if (typeof channel === 'number') {
+			let channel = this._getChannelById(channel);
+			if (!channel) {
+				return;
+			}
+		}
+
+		return channel.layouts.find(obj => obj.id === parseInt(id))
+	}
+
+	/**
+	 * INTERNAL: Get current active layout for channel
+	 *
+	 * @private
+	 * @since 1.0.0
+	 * @param {Object} channel
+	 */
+	_getActiveLayoutFromChannel(channel) {
+		if (!channel) {
+			return;
+		}
+		return channel.layouts.find(obj => obj.active === true)
+	}
+
+	/**
+	 * INTERNAL: Update current active layout for a channel to the new active layout
+	 *
+	 * @private
+	 * @since 1.0.0
+	 * @param {String|Number} channelId
+	 * @param {String|Number} newLayoutId
+	 */
+	_updateActiveChannelLayout(channelId, newLayoutId) {
+		let channel            = this._getChannelById(channelId);
+		let activeLayout       = this._getActiveLayoutFromChannel(channel);
+		activeLayout.active    = false;
+		let newActiveLayout    = this._getLayoutFromChannelById(channel, newLayoutId);
+		newActiveLayout.active = true;
+		this.checkFeedbacks('channel_layout');
+	}
+
+	/**
+	 * INTERNAL: Get channel by id
+	 *
+	 * @private
+	 * @since 1.0.0
+	 * @param {String|Number} id
+	 */
+	_getRecorderById(id) {
+		if (!id) {
+			return;
+		}
+		return this.CHANNEL_STATES.find(obj => {
+			return obj.id === parseInt(id);
+		})
+	}
+
+	/**
+	 * INTERNAL: Update status of a recorder
+	 *
+	 * @private
+	 * @since 1.0.0
+	 * @param {String|Number} recorderId
+	 */
+	_updateRecorderStatus(recorderId) {
+		let recorder = this._getRecorderById(recorderId);
+		// TODO:
 	}
 
 	/**
@@ -286,13 +395,12 @@ class EpiphanPearl extends instanceSkel {
 	/**
 	 * INTERNAL: Setup and send request
 	 *
-	 * @param {String} type - post, get, put
-	 * @param {String} url - Full URL to send request to
-	 * @param {Object} body - Optional body to send
-	 * @param {?Function} callback - Callback function for data
-	 * @returns {boolean} False on errors
 	 * @private
 	 * @since 1.0.0
+	 * @param {String} type - post, get, put
+	 * @param {String} url - Full URL to send request to
+	 * @param {?Object} body - Optional body to send
+	 * @param {?Function} callback - Optional callback function for data
 	 */
 	_sendRequest(type, url, body = {}, callback = () => {
 	}) {
@@ -330,7 +438,7 @@ class EpiphanPearl extends instanceSkel {
 			};
 		}
 
-		let requestUrl = baseUrl + url;
+		const requestUrl = baseUrl + url;
 		this.debug('Starting request to: ' + type + ' ' + baseUrl + url);
 		this.debug(body);
 		this.defaultRequest({
@@ -429,10 +537,10 @@ class EpiphanPearl extends instanceSkel {
 			if (err) {
 				return;
 			}
-			for (let a in channels) {
+			for (const a in channels) {
 				let channel = channels[a];
 
-				let channelUpdate = {
+				const channelUpdate = {
 					id: parseInt(channel.id),
 					label: channel.name
 				};
@@ -466,7 +574,7 @@ class EpiphanPearl extends instanceSkel {
 			if (err) {
 				return;
 			}
-			for (let a in recoders) {
+			for (const a in recoders) {
 				let recoder = recoders[a];
 				tempRecoders.push({
 					id: recoder.id,
@@ -493,21 +601,21 @@ class EpiphanPearl extends instanceSkel {
 
 		// For every channel get layouts and populate/update actions()
 		let tempLayouts = [];
-		for (let b in this.CHANNEL_STATES) {
-			let channel = self.CHANNEL_STATES[b];
+		for (const a in this.CHANNEL_STATES) {
+			let channel = self.CHANNEL_STATES[a];
 
 			this._sendRequest('get', '/api/channels/' + channel.id + '/layouts', {}, (err, layouts) => {
 				if (err) {
 					return;
 				}
-				for (let c in layouts) {
-					const layout = layouts[c];
+				for (const b in layouts) {
+					const layout = layouts[b];
 					tempLayouts.push({
 						id: channel.id + '-' + layout.id,
 						label: channel.label + ' - ' + layout.name
 					});
 
-					const objIndex = channel.layouts.findIndex(obj => obj.id === parseInt(layout.id));
+					const objIndex      = channel.layouts.findIndex(obj => obj.id === parseInt(layout.id));
 					const updatedLayout = {
 						id: parseInt(layout.id),
 						label: layout.name,
@@ -544,7 +652,7 @@ class EpiphanPearl extends instanceSkel {
 			if (err) {
 				return;
 			}
-			for (let a in channels) {
+			for (const a in channels) {
 				const channel = this.CHANNEL_STATES[a];
 				if (!channel) {
 					continue;
@@ -554,7 +662,7 @@ class EpiphanPearl extends instanceSkel {
 					id: channel.id + '-all',
 					label: channel.label + ' - All'
 				});
-				for (let b in channels[a].publishers) {
+				for (const b in channels[a].publishers) {
 					const publisher = channels[a].publishers[b];
 					if (!publisher) {
 						continue;
