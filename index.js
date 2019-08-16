@@ -5,6 +5,9 @@ let debug, log;
 
 const feedbacks = require('./feedbacks');
 
+const TYPE_LAYOUT    = 1;
+const TYPE_PUBLISHER = 2;
+
 /**
  * Companion instance class for the Epiphan Pearl.
  *
@@ -33,6 +36,7 @@ class EpiphanPearl extends instanceSkel {
 		 * @type {Array<Object>}
 		 */
 		this.CHANNEL_STATES = [];
+		this.RECORDER_STATES = [];
 
 		/*
 		 * Array with channel objects containing channel information like layouts
@@ -151,7 +155,7 @@ class EpiphanPearl extends instanceSkel {
 			}
 			case 'recorderRecording': {
 				const startStopAction = this._getStartStopActionFromOptions(action.options);
-				const recorderId	= action.options.recorderId;
+				const recorderId      = action.options.recorderId;
 
 				type     = 'post';
 				url      = '/api/recorders/' + recorderId + '/control/' + startStopAction;
@@ -297,7 +301,44 @@ class EpiphanPearl extends instanceSkel {
 		if (!id) {
 			return;
 		}
-		return this.CHANNEL_STATES.find(obj => obj.id === parseInt(id))
+		if (typeof id !== 'number') {
+			id = parseInt(id);
+		}
+		return this.CHANNEL_STATES.find(obj => obj.id === id)
+	}
+
+	/**
+	 * INTERNAL: Get publisher by id from channel
+	 *
+	 * @private
+	 * @since 1.0.0
+	 * @param {Number} type - 1 for layout, 2 for publisher. Use const.
+	 * @param {Object|Number} channel
+	 * @param {String|Number} id
+	 */
+	_getTypeFromChannelById(type, channel, id) {
+		if (!channel || !id) {
+			return;
+		} else if (typeof channel === 'number') {
+			let channel = this._getChannelById(channel);
+			if (!channel) {
+				return;
+			}
+		}
+
+		if (typeof id !== 'number') {
+			id = parseInt(id)
+		}
+
+		if (type === TYPE_LAYOUT) {
+			type = channel.layouts
+		} else if (type === TYPE_PUBLISHER) {
+			type = channel.publishers
+		} else {
+			return;
+		}
+
+		return type.find(obj => obj.id === id)
 	}
 
 
@@ -310,16 +351,7 @@ class EpiphanPearl extends instanceSkel {
 	 * @param {String|Number} id
 	 */
 	_getLayoutFromChannelById(channel, id) {
-		if (!channel || !id) {
-			return;
-		} else if (typeof channel === 'number') {
-			let channel = this._getChannelById(channel);
-			if (!channel) {
-				return;
-			}
-		}
-
-		return channel.layouts.find(obj => obj.id === parseInt(id))
+		return this._getTypeFromChannelById(TYPE_LAYOUT, channel, id);
 	}
 
 	/**
@@ -345,12 +377,62 @@ class EpiphanPearl extends instanceSkel {
 	 * @param {String|Number} newLayoutId
 	 */
 	_updateActiveChannelLayout(channelId, newLayoutId) {
-		let channel            = this._getChannelById(channelId);
-		let activeLayout       = this._getActiveLayoutFromChannel(channel);
+		let channel = this._getChannelById(channelId);
+		if (!channel) {
+			return;
+		}
+
+		let activeLayout    = this._getActiveLayoutFromChannel(channel);
+		let newActiveLayout = this._getLayoutFromChannelById(channel, newLayoutId);
+		if (!activeLayout || !newActiveLayout) {
+			return
+		}
+
+		// Be positive and switch channels in advance.
 		activeLayout.active    = false;
-		let newActiveLayout    = this._getLayoutFromChannelById(channel, newLayoutId);
 		newActiveLayout.active = true;
 		this.checkFeedbacks('channel_layout');
+	}
+
+	/**
+	 * INTERNAL: Get publisher by id from channel
+	 *
+	 * @private
+	 * @since 1.0.0
+	 * @param {Object|Number} channel
+	 * @param {String|Number} id
+	 */
+	_getPublisherFromChannelById(channel, id) {
+		return this._getTypeFromChannelById(TYPE_PUBLISHER, channel, id);
+	}
+
+	/**
+	 * INTERNAL: Get active publishers for channel
+	 *
+	 * @private
+	 * @since 1.0.0
+	 * @param {Object} publisher
+	 */
+	_isPublisherStreaming(publisher) {
+		if (!publisher) {
+			return false;
+		}
+
+		return publisher.status.isStreaming ? publisher.status.isStreaming : false;
+	}
+
+	/**
+	 * INTERNAL: Get active publishers for channel
+	 *
+	 * @private
+	 * @since 1.0.0
+	 * @param {Object} channel
+	 */
+	_getActivePublishersFromChannel(channel) {
+		if (!channel) {
+			return;
+		}
+		return channel.publishers.find(obj => obj.status.isStreaming === true)
 	}
 
 	/**
@@ -364,21 +446,24 @@ class EpiphanPearl extends instanceSkel {
 		if (!id) {
 			return;
 		}
-		return this.CHANNEL_STATES.find(obj => {
-			return obj.id === parseInt(id);
-		})
+		if (typeof id !== 'number') {
+			id = parseInt(id)
+		}
+		return this.RECORDER_STATES.find(obj => obj.id === id);
 	}
 
 	/**
-	 * INTERNAL: Update status of a recorder
+	 * INTERNAL: Is recorder recording?
 	 *
 	 * @private
 	 * @since 1.0.0
-	 * @param {String|Number} recorderId
+	 * @param {Object} recorder
 	 */
-	_updateRecorderStatus(recorderId) {
-		let recorder = this._getRecorderById(recorderId);
-		// TODO:
+	_isRecorderRecording(recorder) {
+		if (!recorder) {
+			return false;
+		}
+		return recorder.status.isRecording ? recorder.status.isRecording : false;
 	}
 
 	/**
@@ -480,7 +565,7 @@ class EpiphanPearl extends instanceSkel {
 					return;
 				}
 
-				if (body.status && body.status !== 'ok') {
+				if (body && body.status && body.status !== 'ok') {
 					self._setStatus(self.STATUS_ERROR, 'Non-successful response from pearl: ' + requestUrl + ' - ' + (body.message ? body.message : 'No error message'));
 					self.log('error', 'Non-successful response from pearl: ' + requestUrl + ' - ' + (body.message ? body.message : 'No error message'));
 					callback(error);
@@ -488,7 +573,7 @@ class EpiphanPearl extends instanceSkel {
 				}
 
 				let result = body;
-				if (body.result) {
+				if (body && body.result) {
 					result = body.result;
 				}
 
@@ -523,6 +608,7 @@ class EpiphanPearl extends instanceSkel {
 
 
 	/**
+	 * Part of poller
 	 * INTERNAL: The data poller will activally make requests to update feedbacks and dropdown options.
 	 * Polling data such as channels, recorders, layouts and status
 	 *
@@ -533,30 +619,54 @@ class EpiphanPearl extends instanceSkel {
 		const self = this;
 
 		// Get all channels available
-		this._sendRequest('get', '/api/channels', {}, (err, channels) => {
+		this._sendRequest('get', '/api/channels?publishers=yes&encoders=yes', {}, (err, channels) => {
 			if (err) {
 				return;
 			}
 			for (const a in channels) {
-				let channel = channels[a];
+				const channel = channels[a];
 
 				const channelUpdate = {
 					id: parseInt(channel.id),
 					label: channel.name
 				};
 
-				let currentChannel = self.CHANNEL_STATES.find(obj => obj.id === parseInt(channelUpdate.id));
+				let currentChannel = self._getChannelById(channelUpdate.id);
 				if (currentChannel === undefined) {
-					self.CHANNEL_STATES.push({
+					currentChannel = {
 						...channelUpdate,
 						...{
 							layouts: [],
 							publishers: [],
 							encoders: []
 						}
-					});
+					};
+					self.CHANNEL_STATES.push(currentChannel);
 				} else {
 					currentChannel = {...currentChannel, ...channelUpdate};
+				}
+
+				for (const b in channel.publishers) {
+					const publisher      = channel.publishers[b];
+					let currentPublisher = currentChannel.publishers.find(obj => obj.id === parseInt(publisher.id));
+
+					const updatedPublisher = {
+						id: parseInt(publisher.id),
+						label: publisher.name,
+					};
+					if (currentPublisher === undefined) {
+						currentChannel.publishers.push({
+							...updatedPublisher,
+							...{
+								status: {
+									isStreaming: false,
+									duration: 0
+								}
+							}
+						});
+					} else {
+						currentPublisher = {...currentPublisher, ...updatedPublisher};
+					}
 				}
 			}
 
@@ -569,28 +679,47 @@ class EpiphanPearl extends instanceSkel {
 		});
 
 		// Get all recorders
-		let tempRecoders = [];
+		let tempRecorders = [];
 		this._sendRequest('get', '/api/recorders', {}, (err, recoders) => {
 			if (err) {
 				return;
 			}
+
 			for (const a in recoders) {
-				let recoder = recoders[a];
-				tempRecoders.push({
-					id: recoder.id,
+				const recoder         = recoders[a];
+				const updatedRecorder = {
+					id: parseInt(recoder.id),
 					label: recoder.name
-				});
+				};
+				tempRecorders.push(updatedRecorder);
+
+				let currentRecoder = self._getRecorderById(updatedRecorder.id);
+				if (currentRecoder === undefined) {
+					self.RECORDER_STATES.push({
+						...updatedRecorder,
+						...{
+							status: {
+								isRecording: false,
+								duration: 0
+							}
+						}
+					});
+				} else {
+					currentRecoder = {...currentRecoder, ...updatedRecorder};
+				}
 			}
 
-			self.debug('Updating CHOICES_RECORDERS and then call _updateSystem()');
-			// Update the master channel selector
-			self.CHOICES_RECORDERS = tempRecoders.slice();
-			// Update dropdowns
-			self._updateSystem(system);
+			self.debug('Updating RECORDER_STATES and then call _updateSystem()');
+			self.CHOICES_RECORDERS = tempRecorders.slice();
+			self._updateSystem();
+
+			// Update status
+			self._updateRecorderStatus();
 		});
 	}
 
 	/**
+	 * Part of poller
 	 * INTERNAL: Update the layout data from every tracked channel
 	 *
 	 * @private
@@ -628,16 +757,16 @@ class EpiphanPearl extends instanceSkel {
 					}
 				}
 
-				self.debug('Updating CHOICES_CHANNELS_LAYOUTS');
-				// Update the master channel selector
+				self.debug('Updating CHOICES_CHANNELS_LAYOUTS and then call _updateSystem()');
 				self.CHOICES_CHANNELS_LAYOUTS = tempLayouts.slice();
 				self.checkFeedbacks('channel_layout');
-				self._updateSystem(system);
+				self._updateSystem();
 			});
 		}
 	}
 
 	/**
+	 * Part of poller
 	 * INTERNAL: Update the publisher data from every tracked channel
 	 *
 	 * @private
@@ -653,33 +782,76 @@ class EpiphanPearl extends instanceSkel {
 				return;
 			}
 			for (const a in channels) {
-				const channel = this.CHANNEL_STATES[a];
-				if (!channel) {
-					continue;
+				const apiChannel     = channels[a];
+				const currentChannel = self._getChannelById(apiChannel.id);
+				if (!currentChannel) {
+					continue
 				}
 
 				tempPublishers.push({
-					id: channel.id + '-all',
-					label: channel.label + ' - All'
+					id: currentChannel.id + '-all',
+					label: currentChannel.label + ' - All'
 				});
-				for (const b in channels[a].publishers) {
-					const publisher = channels[a].publishers[b];
-					if (!publisher) {
+				for (const b in apiChannel.publishers) {
+					const publisher        = apiChannel.publishers[b];
+					const currentPublisher = currentChannel.publishers.find(obj => obj.id === parseInt(publisher.id));
+					if (!currentPublisher) {
 						continue;
 					}
+
 					tempPublishers.push({
-						id: channel.id + '-' + publisher.id,
-						// TODO: Check the /api/channels/?publishers=yes for names?
-						label: channel.label + ' - Stream ' + publisher.id
+						id: currentChannel.id + '-' + currentPublisher.id,
+						label: currentChannel.label + ' - ' + currentPublisher.label
 					});
+
+					const status            = publisher.status;
+					currentPublisher.status = {
+						isStreaming: status.started && status.state === 'started',
+						duration: status.started && status.state === 'started' ? parseInt(status.duration) : 0,
+					}
 				}
 			}
 
-			self.debug('Updating CHOICES_CHANNELS_PUBLISHERS');
-			// Update the master channel selector
+			self.debug('Updating CHOICES_CHANNELS_PUBLISHERS and then call _updateSystem()');
 			self.CHOICES_CHANNELS_PUBLISHERS = tempPublishers.slice();
-			// this.checkFeedbacks('recording');
-			self._updateSystem(system);
+			self.checkFeedbacks('streaming');
+			self._updateSystem();
+		});
+	}
+
+	/**
+	 * Part of poller
+	 * INTERNAL: Update the recorder status
+	 *
+	 * @private
+	 * @since 1.0.0
+	 */
+	_updateRecorderStatus() {
+		const self = this;
+
+		// For get status for recorders
+		this._sendRequest('get', '/api/recorders/status', {}, (err, recoders) => {
+			if (err) {
+				return;
+			}
+
+			for (const a in recoders) {
+				const recoder        = recoders[a];
+				const currentRecoder = self._getRecorderById(recoder.id);
+				if (currentRecoder === undefined) {
+					continue;
+				}
+
+				const status          = recoder.status;
+				currentRecoder.status = {
+					isRecording: status.state !== 'stopped',
+					duration: status.state !== 'stopped' ? parseInt(status.duration) : 0,
+				}
+			}
+
+			self.debug('Updating RECORDER_STATES and then call _updateSystem()');
+			self.checkFeedbacks('recording');
+			self._updateSystem();
 		});
 	}
 }
