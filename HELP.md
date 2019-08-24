@@ -9,5 +9,5 @@ Should work with the all Epiphan Pearl models and versions.
 
 
 ## Module is under delevopment!
-Because the Epiphan has not documented the endpoint very clear,  
+Because the Epiphan has not documented the endpoint very clear,
 there is allot of troubleshooting to do.

@@ -97,7 +97,7 @@ class EpiphanPearl extends instanceSkel {
 						label: 'Channel publishers',
 						id: 'channelIdpublisherId',
 						choices: this.CHOICES_CHANNELS_PUBLISHERS,
-						tooltip: 'If a channel has only one "publisher" or "stream" then you jst select all. Else you can pick the "publisher" you want to start/stop'
+						tooltip: 'If a channel has only one "publisher" or "stream" then you just select all. Else you can pick the "publisher" you want to start/stop'
 					},
 					startStopOption
 				],
@@ -491,7 +491,7 @@ class EpiphanPearl extends instanceSkel {
 	}) {
 		const self    = this;
 		const apiHost = this.config.host,
-			  baseUrl = 'http://' + apiHost;
+				baseUrl = 'http://' + apiHost;
 
 		if (url === null || url === '') {
 			this._setStatus(this.STATUS_ERROR, 'No URL given for _sendRequest');
