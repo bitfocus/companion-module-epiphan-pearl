@@ -14,3 +14,8 @@ Please see [CHANGELOG](CHANGELOG.md) for more information on what has changed re
 ### License
 
 The MIT License (MIT). Please see [License File](LICENSE) for more information.
+
+### Development
+
+This module has a `develop` branch with the latest changes.
+The `master` branch is for "releases" for [companion](https://github.com/bitfocus/companion)

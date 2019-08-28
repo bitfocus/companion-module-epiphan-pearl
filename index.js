@@ -4,6 +4,7 @@ const request      = require('request');
 let debug, log;
 
 const feedbacks = require('./feedbacks');
+const presets   = require('./presets');
 
 const TYPE_LAYOUT    = 1;
 const TYPE_PUBLISHER = 2;
@@ -59,7 +60,7 @@ class EpiphanPearl extends instanceSkel {
 		Object.assign(this, {
 			//...actions,
 			...feedbacks,
-			//...presets,
+			...presets,
 			//...variables
 		});
 	}
@@ -123,8 +124,9 @@ class EpiphanPearl extends instanceSkel {
 	 * @access public
 	 * @since 1.0.0
 	 * @param {Object} action - the action to be executed
+	 * @param {Object} deviceInfo - information from where the button was pressed...
 	 */
-	action(action) {
+	action(action, deviceInfo) {
 		let type = 'get', url, body, callback;
 
 		switch (action.action) {
@@ -135,7 +137,7 @@ class EpiphanPearl extends instanceSkel {
 				url      = '/api/channels/' + channelId + '/layouts/active';
 				body     = {id: layoutId};
 				callback = (err, response) => {
-					if (response.status === 'ok') {
+					if (response && response.status === 'ok') {
 						this._updateActiveChannelLayout(channelId, layoutId);
 					}
 				};
@@ -160,7 +162,7 @@ class EpiphanPearl extends instanceSkel {
 				type     = 'post';
 				url      = '/api/recorders/' + recorderId + '/control/' + startStopAction;
 				callback = (err, response) => {
-					if (response.status === 'ok') {
+					if (response && response.status === 'ok') {
 						this._updateRecorderStatus(recorderId);
 					}
 				};
@@ -391,7 +393,7 @@ class EpiphanPearl extends instanceSkel {
 		// Be positive and switch channels in advance.
 		activeLayout.active    = false;
 		newActiveLayout.active = true;
-		this.checkFeedbacks('channel_layout');
+		this.checkFeedbacks('channelLayout');
 	}
 
 	/**
@@ -475,6 +477,7 @@ class EpiphanPearl extends instanceSkel {
 	_updateSystem() {
 		this.actions();
 		this._updateFeedbacks();
+		this._updatePresets();
 	}
 
 	/**
@@ -491,7 +494,7 @@ class EpiphanPearl extends instanceSkel {
 	}) {
 		const self    = this;
 		const apiHost = this.config.host,
-				baseUrl = 'http://' + apiHost;
+			  baseUrl = 'http://' + apiHost;
 
 		if (url === null || url === '') {
 			this._setStatus(this.STATUS_ERROR, 'No URL given for _sendRequest');
@@ -590,6 +593,16 @@ class EpiphanPearl extends instanceSkel {
 	 */
 	_updateFeedbacks() {
 		this.setFeedbackDefinitions(this.getFeedbacks());
+	}
+
+	/**
+	 * INTERNAL: initialize presets.
+	 *
+	 * @private
+	 * @since [Unreleased]
+	 */
+	_updatePresets() {
+		this.setPresetDefinitions(this.getPresets());
 	}
 
 	/**
@@ -741,7 +754,9 @@ class EpiphanPearl extends instanceSkel {
 					const layout = layouts[b];
 					tempLayouts.push({
 						id: channel.id + '-' + layout.id,
-						label: channel.label + ' - ' + layout.name
+						label: channel.label + ' - ' + layout.name,
+						channelLabel: channel.label,
+						layoutLabel: layout.name
 					});
 
 					const objIndex      = channel.layouts.findIndex(obj => obj.id === parseInt(layout.id));
@@ -759,7 +774,7 @@ class EpiphanPearl extends instanceSkel {
 
 				self.debug('Updating CHOICES_CHANNELS_LAYOUTS and then call _updateSystem()');
 				self.CHOICES_CHANNELS_LAYOUTS = tempLayouts.slice();
-				self.checkFeedbacks('channel_layout');
+				self.checkFeedbacks('channelLayout');
 				self._updateSystem();
 			});
 		}
@@ -790,7 +805,9 @@ class EpiphanPearl extends instanceSkel {
 
 				tempPublishers.push({
 					id: currentChannel.id + '-all',
-					label: currentChannel.label + ' - All'
+					label: currentChannel.label + ' - All',
+					channelLabel: currentChannel.label,
+					publisherLabel: 'All'
 				});
 				for (const b in apiChannel.publishers) {
 					const publisher        = apiChannel.publishers[b];
@@ -801,7 +818,9 @@ class EpiphanPearl extends instanceSkel {
 
 					tempPublishers.push({
 						id: currentChannel.id + '-' + currentPublisher.id,
-						label: currentChannel.label + ' - ' + currentPublisher.label
+						label: currentChannel.label + ' - ' + currentPublisher.label,
+						channelLabel: currentChannel.label,
+						publisherLabel: currentPublisher.label
 					});
 
 					const status            = publisher.status;
@@ -814,7 +833,7 @@ class EpiphanPearl extends instanceSkel {
 
 			self.debug('Updating CHOICES_CHANNELS_PUBLISHERS and then call _updateSystem()');
 			self.CHOICES_CHANNELS_PUBLISHERS = tempPublishers.slice();
-			self.checkFeedbacks('streaming');
+			self.checkFeedbacks('channelStreaming');
 			self._updateSystem();
 		});
 	}
@@ -850,7 +869,7 @@ class EpiphanPearl extends instanceSkel {
 			}
 
 			self.debug('Updating RECORDER_STATES and then call _updateSystem()');
-			self.checkFeedbacks('recording');
+			self.checkFeedbacks('recorderRecording');
 			self._updateSystem();
 		});
 	}

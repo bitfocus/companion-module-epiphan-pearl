@@ -6,11 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [Unreleased]
 
-1.0.0 (Work In Progress)
+---
 
+## [1.0.1] (2019-08-28)
 ## New Features
+### Dynamic generated preset
+With this new feature we have added presets to the module.
+These presets are, for now, dynamically updated for every channel, 
+publisher and recoreder that is configured on the Pearl.
 
+## Bug Fixes
+* [#1](https://github.com/bitfocus/companion-module-epiphan-pearl/issues/1) - Error on feedback channel layout
+
+---
+
+## [1.0.0] (2019-08-18)
+## New Features
 Actions:
 * Change channel layout
 * Start/Stop streaming (per stream or all)

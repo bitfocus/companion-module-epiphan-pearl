@@ -1,4 +1,5 @@
 module.exports = {
+	
 	/**
 	 * INTERNAL: Get the available feedbacks.
 	 *
@@ -9,7 +10,7 @@ module.exports = {
 	getFeedbacks() {
 		let feedbacks = {};
 
-		feedbacks['channel_layout'] = {
+		feedbacks['channelLayout'] = {
 			label: 'Change colors on channel layout change',
 			description: 'If the current layout is active, change color of the bank',
 			options: [
@@ -33,6 +34,10 @@ module.exports = {
 				},
 			],
 			callback: (feedback, bank) => {
+				if (!feedback.options.channelIdlayoutId) {
+					return {};
+				}
+
 				const [channelId, layoutId] = feedback.options.channelIdlayoutId.split('-');
 				const layout                = this._getLayoutFromChannelById(this._getChannelById(channelId), layoutId);
 				if (!layout) {
@@ -49,7 +54,7 @@ module.exports = {
 			}
 		};
 
-		feedbacks['streaming'] = {
+		feedbacks['channelStreaming'] = {
 			label: 'Change colors if streaming',
 			description: 'If channel is streaming, change colors of the bank',
 			options: [
@@ -73,6 +78,10 @@ module.exports = {
 				},
 			],
 			callback: (feedback, bank) => {
+				if (!feedback.options.channelIdpublisherId) {
+					return {};
+				}
+
 				const [channelId, publisherId] = feedback.options.channelIdpublisherId.split('-');
 				const channel                  = this._getChannelById(channelId);
 				if (!channel) {
@@ -95,7 +104,7 @@ module.exports = {
 			}
 		};
 
-		feedbacks['recording'] = {
+		feedbacks['recorderRecording'] = {
 			label: 'Change colors if recording',
 			description: 'If channel/recorder is recording, change colors of the bank',
 			options: [
@@ -119,8 +128,7 @@ module.exports = {
 				},
 			],
 			callback: (feedback, bank) => {
-				const recorderId = feedback.options.recorderId;
-				const recorder   = this._getRecorderById(recorderId);
+				const recorder = this._getRecorderById(feedback.options.recorderId);
 				if (this._isRecorderRecording(recorder)) {
 					return {
 						color: feedback.options.fg,
