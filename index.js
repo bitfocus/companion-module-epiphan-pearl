@@ -219,6 +219,9 @@ class EpiphanPearl extends instanceSkel {
 	 * @since 1.0.0
 	 */
 	destroy() {
+		clearInterval(this.timer);
+                this.status(this.STATUS_UNKNOWN);
+		this.defaultRequest = null;
 		this.debug('destroy', this.id);
 	}
 
