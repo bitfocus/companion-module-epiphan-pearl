@@ -1,4 +1,5 @@
 # companion-module-epiphan-pearl
+See HELP.md and LICENSE
 
 [Epiphan Pearl](https://www.epiphan.com/products/pearl/) module for [Companion](https://github.com/bitfocus/companion).
 This module is written in ES6 format (no self and use of =>).
