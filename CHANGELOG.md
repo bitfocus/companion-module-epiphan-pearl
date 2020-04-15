@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.2] (2020-04-15)
+
+## Bug Fixes
+* Stop polling for information if instance gets disabled.
+
+---
+
 ## [1.0.1] (2019-08-28)
 ## New Features
 ### Dynamic generated preset
