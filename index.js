@@ -13,7 +13,7 @@ const TYPE_PUBLISHER = 2;
  * Companion instance class for the Epiphan Pearl.
  *
  * @extends instanceSkel
- * @version 1.0.0
+ * @version 1.0.3
  * @since 1.0.0
  * @author Marc Hagen <hello@marchagen.nl>
  */
@@ -132,6 +132,22 @@ class EpiphanPearl extends instanceSkel {
 		switch (action.action) {
 			case 'channelChangeLayout': {
 				const [channelId, layoutId] = action.options.channelIdlayoutId.split('-');
+				if (!this._getChannelById(channelId)) {
+					this._setStatus(
+						this.STATUS_ERROR,
+						'Action on non existing channel! Please review you\'re button config'
+					);
+					this.log('error', 'Action on non existing channel: ' + channelId);
+					break;
+				}
+				if (!this._checkValidLayoutId(channelId, layoutId)) {
+					this._setStatus(
+						this.STATUS_ERROR,
+						'Action on non existing layout! Please review you\'re button config'
+					);
+					this.log('error', 'Action on non existing layout ' + layoutId + ' on channel ' + channelId);
+					break;
+				}
 
 				type     = 'put';
 				url      = '/api/channels/' + channelId + '/layouts/active';
@@ -145,7 +161,32 @@ class EpiphanPearl extends instanceSkel {
 			}
 			case 'channelStreaming': {
 				const [channelId, publishersId] = action.options.channelIdpublisherId.split('-');
-				const startStopAction           = this._getStartStopActionFromOptions(action.options);
+				if (!this._getChannelById(channelId)) {
+					this._setStatus(
+						this.STATUS_ERROR,
+						'Action on non existing channel! Please review you\'re button config.'
+					);
+					this.log('error', 'Action on non existing channel: ' + channelId);
+					break;
+				}
+				if (!this._checkValidPublisherId(channelId, publishersId)) {
+					this._setStatus(
+						this.STATUS_ERROR,
+						'Action on non existing publisher! Please review you\'re button config.'
+					);
+					this.log('error', 'Action on non existing publisher ' + publishersId + ' on channel ' + channelId);
+					break;
+				}
+
+				const startStopAction = this._getStartStopActionFromOptions(action.options);
+				if (startStopAction === null) {
+					this._setStatus(
+						this.STATUS_ERROR,
+						'The was called for a unknow action! Please review you\'re button config.'
+					);
+					this.log('error', 'The was called for a unknow action: ' + action.options.startStopAction);
+					break;
+				}
 
 				type = 'post';
 				if (publishersId !== 'all') {
@@ -156,8 +197,25 @@ class EpiphanPearl extends instanceSkel {
 				break;
 			}
 			case 'recorderRecording': {
+				const recorderId  = action.options.recorderId;
+				if (!this._getRecorderById(recorderId)) {
+					this._setStatus(
+						this.STATUS_ERROR,
+						'Action on non existing recorder! Please review you\'re button config.'
+					);
+					this.log('error', 'Action on non existing recorder ' + recorderId);
+					break;
+				}
+
 				const startStopAction = this._getStartStopActionFromOptions(action.options);
-				const recorderId      = action.options.recorderId;
+				if (startStopAction === null) {
+					this._setStatus(
+						this.STATUS_ERROR,
+						'The was called for a unknow action! Please review you\'re button config.'
+					);
+					this.log('error', 'The was called for a unknow action: ' + action.options.startStopAction);
+					break;
+				}
 
 				type     = 'post';
 				url      = '/api/recorders/' + recorderId + '/control/' + startStopAction;
@@ -290,9 +348,12 @@ class EpiphanPearl extends instanceSkel {
 	 * @param {Object} options - Option object gotten from a performed action [action()]
 	 */
 	_getStartStopActionFromOptions(options) {
-		return this.CHOICES_STARTSTOP.find((e) => {
-			return e.id === parseInt(options.startStopAction);
-		}).action;
+		const startStopActionId = parseInt(options.startStopAction);
+		const action = this.CHOICES_STARTSTOP.find((e) => {
+			return e.id === startStopActionId;
+		}).action
+
+		return action ? action : null;
 	}
 
 	/**
@@ -469,6 +530,40 @@ class EpiphanPearl extends instanceSkel {
 			return false;
 		}
 		return recorder.status.isRecording ? recorder.status.isRecording : false;
+	}
+
+	/**
+	 * INTERNAL: Check if the publisher id we get from the button is valid.
+	 *
+	 * @private
+	 * @since 1.0.3
+	 * @param {String|Number} channelId
+	 * @param {String|Number} publisherId
+	 */
+	_checkValidPublisherId(channelId, publisherId) {
+		const channel = this._getChannelById(channelId);
+		if (!channel) {
+			return;
+		}
+
+		return this._getTypeFromChannelById(TYPE_PUBLISHER, channel, publisherId)
+	}
+
+	/**
+	 * INTERNAL: Check if the layout id we get from the button is valid.
+	 *
+	 * @private
+	 * @since 1.0.3
+	 * @param {String|Number} channelId
+	 * @param {String|Number} layoutId
+	 */
+	_checkValidLayoutId(channelId, layoutId) {
+		const channel = this._getChannelById(channelId);
+		if (!channel) {
+			return;
+		}
+
+		return this._getTypeFromChannelById(TYPE_LAYOUT, channel, layoutId)
 	}
 
 	/**
