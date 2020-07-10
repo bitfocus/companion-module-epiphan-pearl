@@ -1,5 +1,5 @@
 module.exports = {
-	
+
 	/**
 	 * INTERNAL: Get the available feedbacks.
 	 *

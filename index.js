@@ -23,6 +23,7 @@ class EpiphanPearl extends instanceSkel {
 	 * Create an instance of a EpiphanPearl module.
 	 *
 	 * @access public
+	 * @companion
 	 * @since 1.0.0
 	 * @param {EventEmitter} system - the brains of the operation
 	 * @param {string} id - the instance ID
@@ -53,8 +54,8 @@ class EpiphanPearl extends instanceSkel {
 		this.CHOICES_RECORDERS = [];
 
 		this.CHOICES_STARTSTOP = [
-			{id: 1, label: 'Start', action: 'start'},
-			{id: 0, label: 'Stop', action: 'stop'}
+			{id: '1', label: 'Start', action: 'start'},
+			{id: '0', label: 'Stop', action: 'stop'}
 		];
 
 		Object.assign(this, {
@@ -69,6 +70,7 @@ class EpiphanPearl extends instanceSkel {
 	 * Setup the actions.
 	 *
 	 * @access public
+	 * @companion
 	 * @since 1.0.0
 	 * @param {EventEmitter} system - the brains of the operation
 	 */
@@ -122,6 +124,7 @@ class EpiphanPearl extends instanceSkel {
 	 * Executes the provided action.
 	 *
 	 * @access public
+	 * @companion
 	 * @since 1.0.0
 	 * @param {Object} action - the action to be executed
 	 * @param {Object} deviceInfo - information from where the button was pressed...
@@ -260,6 +263,7 @@ class EpiphanPearl extends instanceSkel {
 	 * Creates the configuration fields for web config.
 	 *
 	 * @access public
+	 * @companion
 	 * @since 1.0.0
 	 * @returns {Array} the config fields
 	 */
@@ -294,6 +298,7 @@ class EpiphanPearl extends instanceSkel {
 	 * Clean up the instance before it is destroyed.
 	 *
 	 * @access public
+	 * @companion
 	 * @since 1.0.0
 	 */
 	destroy() {
@@ -307,6 +312,7 @@ class EpiphanPearl extends instanceSkel {
 	 * is OK to start doing things.
 	 *
 	 * @access public
+	 * @companion
 	 * @since 1.0.0
 	 */
 	init() {
@@ -322,6 +328,7 @@ class EpiphanPearl extends instanceSkel {
 	 * Process an updated configuration array.
 	 *
 	 * @access public
+	 * @companion
 	 * @since 1.0.0
 	 * @param {Object} config - the new configuration
 	 */
@@ -336,6 +343,7 @@ class EpiphanPearl extends instanceSkel {
 	 * @since 1.0.0
 	 * @param {Number} level
 	 * @param {?String} message
+	 * @returns void
 	 */
 	_setStatus(level, message = '') {
 		this.status(level, message);
@@ -353,12 +361,13 @@ class EpiphanPearl extends instanceSkel {
 	 * @private
 	 * @since 1.0.0
 	 * @param {Object} options - Option object gotten from a performed action [action()]
+	 * @returns {boolean}
 	 */
 	_getStartStopActionFromOptions(options) {
-		const startStopActionId  = parseInt(options.startStopAction);
+		const startStopActionId  = options.startStopAction;
 		const startStopActionObj = this.CHOICES_STARTSTOP.find(obj => obj.id === startStopActionId);
 
-		return typeof startStopActionObj !== "undefined" ? startStopActionObj.action : null;
+		return typeof startStopActionObj !== 'undefined' ? startStopActionObj.action : null;
 	}
 
 	/**
@@ -366,15 +375,14 @@ class EpiphanPearl extends instanceSkel {
 	 *
 	 * @private
 	 * @since 1.0.0
-	 * @param {String|Number} id
+	 * @param {String} id
+	 * @returns {Object|undefined}
 	 */
 	_getChannelById(id) {
 		if (!id) {
 			return;
 		}
-		if (typeof id !== 'number') {
-			id = parseInt(id);
-		}
+
 		return this.CHANNEL_STATES.find(obj => obj.id === id)
 	}
 
@@ -384,21 +392,18 @@ class EpiphanPearl extends instanceSkel {
 	 * @private
 	 * @since 1.0.0
 	 * @param {Number} type - 1 for layout, 2 for publisher. Use const.
-	 * @param {Object|Number} channel
-	 * @param {String|Number} id
+	 * @param {Object} channel
+	 * @param {String} id
+	 * @returns {Object|undefined}
 	 */
 	_getTypeFromChannelById(type, channel, id) {
 		if (!channel || !id) {
 			return;
-		} else if (typeof channel === 'number') {
+		} else if (typeof channel !== 'object') {
 			let channel = this._getChannelById(channel);
-			if (!channel) {
+			if (!channel || typeof channel !== 'object') {
 				return;
 			}
-		}
-
-		if (typeof id !== 'number') {
-			id = parseInt(id)
 		}
 
 		if (type === TYPE_LAYOUT) {
@@ -418,8 +423,9 @@ class EpiphanPearl extends instanceSkel {
 	 *
 	 * @private
 	 * @since 1.0.0
-	 * @param {Object|Number} channel
-	 * @param {String|Number} id
+	 * @param {Object} channel
+	 * @param {String} id
+	 * @returns {Object|undefined}
 	 */
 	_getLayoutFromChannelById(channel, id) {
 		return this._getTypeFromChannelById(TYPE_LAYOUT, channel, id);
@@ -431,9 +437,10 @@ class EpiphanPearl extends instanceSkel {
 	 * @private
 	 * @since 1.0.0
 	 * @param {Object} channel
+	 * @returns {Object|undefined}
 	 */
 	_getActiveLayoutFromChannel(channel) {
-		if (!channel) {
+		if (!channel || typeof channel !== 'object') {
 			return;
 		}
 		return channel.layouts.find(obj => obj.active === true)
@@ -444,8 +451,9 @@ class EpiphanPearl extends instanceSkel {
 	 *
 	 * @private
 	 * @since 1.0.0
-	 * @param {String|Number} channelId
-	 * @param {String|Number} newLayoutId
+	 * @param {String} channelId
+	 * @param {String} newLayoutId
+	 * @returns void
 	 */
 	_updateActiveChannelLayout(channelId, newLayoutId) {
 		let channel = this._getChannelById(channelId);
@@ -470,8 +478,9 @@ class EpiphanPearl extends instanceSkel {
 	 *
 	 * @private
 	 * @since 1.0.0
-	 * @param {Object|Number} channel
-	 * @param {String|Number} id
+	 * @param {Object} channel
+	 * @param {String} id
+	 * @returns {Object|undefined}
 	 */
 	_getPublisherFromChannelById(channel, id) {
 		return this._getTypeFromChannelById(TYPE_PUBLISHER, channel, id);
@@ -483,12 +492,12 @@ class EpiphanPearl extends instanceSkel {
 	 * @private
 	 * @since 1.0.0
 	 * @param {Object} publisher
+	 * @returns {boolean}
 	 */
 	_isPublisherStreaming(publisher) {
 		if (!publisher) {
 			return false;
 		}
-
 		return publisher.status.isStreaming ? publisher.status.isStreaming : false;
 	}
 
@@ -511,15 +520,11 @@ class EpiphanPearl extends instanceSkel {
 	 *
 	 * @private
 	 * @since 1.0.0
-	 * @param {String|Number} id Can have a "m" in the id
+	 * @param {String} id
 	 */
 	_getRecorderById(id) {
 		if (!id) {
 			return;
-		}
-		if (typeof id !== 'number' && !id.includes('m')) {
-			// recorders can have a m in there name as id...
-			id = parseInt(id)
 		}
 		return this.RECORDER_STATES.find(obj => obj.id === id);
 	}
@@ -543,8 +548,8 @@ class EpiphanPearl extends instanceSkel {
 	 *
 	 * @private
 	 * @since 1.0.3
-	 * @param {String|Number} channelId
-	 * @param {String|Number} publisherId
+	 * @param {String} channelId
+	 * @param {String} publisherId
 	 */
 	_checkValidPublisherId(channelId, publisherId) {
 		const channel = this._getChannelById(channelId);
@@ -565,8 +570,9 @@ class EpiphanPearl extends instanceSkel {
 	 *
 	 * @private
 	 * @since 1.0.3
-	 * @param {String|Number} channelId
-	 * @param {String|Number} layoutId
+	 * @param {String} channelId
+	 * @param {String} layoutId
+	 * @returns {Object|undefined}
 	 */
 	_checkValidLayoutId(channelId, layoutId) {
 		const channel = this._getChannelById(channelId);
@@ -585,7 +591,7 @@ class EpiphanPearl extends instanceSkel {
 	 */
 	_updateSystem() {
 		this.actions();
-		this._updateFeedbacks();
+		this._updateFeedback();
 		this._updatePresets();
 	}
 
@@ -597,6 +603,7 @@ class EpiphanPearl extends instanceSkel {
 	 * @param {String} type - post, get, put
 	 * @param {String} url - Full URL to send request to
 	 * @param {?Object} body - Optional body to send
+	 * @returns {boolean|Array|Object|undefined}
 	 */
 	async _sendRequest(type, url, body = {}) {
 		const apiHost = this.config.host,
@@ -673,12 +680,12 @@ class EpiphanPearl extends instanceSkel {
 	}
 
 	/**
-	 * INTERNAL: initialize feedbacks.
+	 * INTERNAL: initialize feedback.
 	 *
 	 * @private
 	 * @since 1.0.0
 	 */
-	_updateFeedbacks() {
+	_updateFeedback() {
 		this.setFeedbackDefinitions(this.getFeedbacks());
 	}
 
@@ -709,7 +716,7 @@ class EpiphanPearl extends instanceSkel {
 
 	/**
 	 * Part of poller
-	 * INTERNAL: The data poller will activally make requests to update feedbacks and dropdown options.
+	 * INTERNAL: The data poller will actively make requests to update feedback and dropdown options.
 	 * Polling data such as channels, recorders, layouts and status
 	 *
 	 * @private
@@ -723,7 +730,7 @@ class EpiphanPearl extends instanceSkel {
 			const channel = channels[a];
 
 			const channelUpdate = {
-				id: parseInt(channel.id),
+				id: channel.id,
 				label: channel.name
 			};
 
@@ -744,10 +751,10 @@ class EpiphanPearl extends instanceSkel {
 
 			for (const b in channel.publishers) {
 				const publisher      = channel.publishers[b];
-				let currentPublisher = currentChannel.publishers.find(obj => obj.id === parseInt(publisher.id));
+				let currentPublisher = currentChannel.publishers.find(obj => obj.id === publisher.id);
 
 				const updatedPublisher = {
-					id: parseInt(publisher.id),
+					id: publisher.id,
 					label: publisher.name,
 				};
 				if (currentPublisher === undefined) {
@@ -780,7 +787,7 @@ class EpiphanPearl extends instanceSkel {
 
 			const updatedRecorder = {
 				// recorders can have a m in there name as id...
-				id: recorder.id.includes('m') ? recorder.id : parseInt(recorder.id),
+				id: recorder.id,
 				label: recorder.name
 			};
 			tempRecorders.push(updatedRecorder);
@@ -839,9 +846,9 @@ class EpiphanPearl extends instanceSkel {
 					layoutLabel: layout.name
 				});
 
-				const objIndex      = channel.layouts.findIndex(obj => obj.id === parseInt(layout.id));
+				const objIndex      = channel.layouts.findIndex(obj => obj.id === layout.id);
 				const updatedLayout = {
-					id: parseInt(layout.id),
+					id: layout.id,
 					label: layout.name,
 					active: layout.active
 				};
@@ -888,7 +895,7 @@ class EpiphanPearl extends instanceSkel {
 			});
 			for (const b in apiChannel.publishers) {
 				const publisher        = apiChannel.publishers[b];
-				const currentPublisher = currentChannel.publishers.find(obj => obj.id === parseInt(publisher.id));
+				const currentPublisher = currentChannel.publishers.find(obj => obj.id === publisher.id);
 				if (!currentPublisher) {
 					continue;
 				}
