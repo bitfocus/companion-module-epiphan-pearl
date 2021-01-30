@@ -506,14 +506,11 @@ class EpiphanPearl extends instanceSkel {
 	 *
 	 * @private
 	 * @since 1.0.0
-	 * @param {String|Number} id
+	 * @param {String} id
 	 */
 	_getRecorderById(id) {
 		if (!id) {
 			return;
-		}
-		if (typeof id !== 'number') {
-			id = parseInt(id)
 		}
 		return this.RECORDER_STATES.find(obj => obj.id === id);
 	}
@@ -720,7 +717,7 @@ class EpiphanPearl extends instanceSkel {
 
 	/**
 	 * Part of poller
-	 * INTERNAL: The data poller will activally make requests to update feedbacks and dropdown options.
+	 * INTERNAL: The data poller will actively make requests to update feedbacks and dropdown options.
 	 * Polling data such as channels, recorders, layouts and status
 	 *
 	 * @private
@@ -799,7 +796,7 @@ class EpiphanPearl extends instanceSkel {
 			for (const a in recoders) {
 				const recoder         = recoders[a];
 				const updatedRecorder = {
-					id: parseInt(recoder.id),
+					id: recoder.id,
 					label: recoder.name
 				};
 				tempRecorders.push(updatedRecorder);

@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ---
+## [1.0.4] (2021-01-30)
+
+## Bug Fixes
+* [#5](https://github.com/bitfocus/companion-module-epiphan-pearl/issues/5) - Fixed issue with recording not working.
+
+---
 ## [1.0.3] (2020-06-16)
 
 ## Bug Fixes
