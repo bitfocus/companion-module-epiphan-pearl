@@ -53,6 +53,7 @@ class EpiphanPearl extends instanceSkel {
 		this.CHOICES_RECORDERS = [];
 
 		this.CHOICES_STARTSTOP = [
+			{id: 99, label: '---', action: ''},
 			{id: 1, label: 'Start', action: 'start'},
 			{id: 0, label: 'Stop', action: 'stop'}
 		];
@@ -80,6 +81,17 @@ class EpiphanPearl extends instanceSkel {
 			choices: this.CHOICES_STARTSTOP
 		};
 
+		// Companion has difficulties with the first 'default' selected value.
+		// It will then return undefined (null) until you change/update the dropdown selection.
+		let channels = [{id: '0-0', label: '---'}];
+		Array.prototype.push.apply(channels,this.CHOICES_CHANNELS_LAYOUTS);
+
+		let publishers = [{id: '0-0', label: '---'}];
+		Array.prototype.push.apply(publishers,this.CHOICES_CHANNELS_PUBLISHERS);
+
+		let recorders = [{id: '0', label: '---'}];
+		Array.prototype.push.apply(recorders,this.CHOICES_RECORDERS);
+
 		this.setActions({
 			'channelChangeLayout': {
 				label: 'Change channel layout',
@@ -87,7 +99,7 @@ class EpiphanPearl extends instanceSkel {
 					type: 'dropdown',
 					id: 'channelIdlayoutId',
 					label: 'Change layout to:',
-					choices: this.CHOICES_CHANNELS_LAYOUTS
+					choices: channels
 				}]
 			},
 			'channelStreaming': {
@@ -97,7 +109,7 @@ class EpiphanPearl extends instanceSkel {
 						type: 'dropdown',
 						label: 'Channel publishers',
 						id: 'channelIdpublisherId',
-						choices: this.CHOICES_CHANNELS_PUBLISHERS,
+						choices: publishers,
 						tooltip: 'If a channel has only one "publisher" or "stream" then you just select all. Else you can pick the "publisher" you want to start/stop'
 					},
 					startStopOption
@@ -110,7 +122,7 @@ class EpiphanPearl extends instanceSkel {
 						type: 'dropdown',
 						label: 'Recorder',
 						id: 'recorderId',
-						choices: this.CHOICES_RECORDERS
+						choices: recorders,
 					},
 					startStopOption
 				],
@@ -169,7 +181,7 @@ class EpiphanPearl extends instanceSkel {
 					this.log('error', 'Action on non existing channel: ' + channelId);
 					break;
 				}
-				if (!this._checkValidPublisherId(channelId, publishersId)) {
+				if (publishersId !== 'all' && !this._checkValidPublisherId(channelId, publishersId)) {
 					this._setStatus(
 						this.STATUS_ERROR,
 						'Action on non existing publisher! Please review you\'re button config.'
@@ -197,6 +209,7 @@ class EpiphanPearl extends instanceSkel {
 				break;
 			}
 			case 'recorderRecording': {
+				this.debug(action);
 				const recorderId  = action.options.recorderId;
 				if (!this._getRecorderById(recorderId)) {
 					this._setStatus(
@@ -349,6 +362,10 @@ class EpiphanPearl extends instanceSkel {
 	 */
 	_getStartStopActionFromOptions(options) {
 		const startStopActionId = parseInt(options.startStopAction);
+		if (!options.startStopAction || startStopActionId === 99) {
+			return null;
+		}
+
 		const action = this.CHOICES_STARTSTOP.find((e) => {
 			return e.id === startStopActionId;
 		}).action
@@ -589,7 +606,7 @@ class EpiphanPearl extends instanceSkel {
 	}) {
 		const self    = this;
 		const apiHost = this.config.host,
-			  baseUrl = 'http://' + apiHost;
+			  baseUrl = 'http://' + apiHost + ':8850';
 
 		if (url === null || url === '') {
 			this._setStatus(this.STATUS_ERROR, 'No URL given for _sendRequest');
@@ -630,9 +647,9 @@ class EpiphanPearl extends instanceSkel {
 				json: body
 			},
 			(error, response, body) => {
-				self.debug(JSON.stringify(error));
-				//self.debug(JSON.stringify(response));
-				self.debug(JSON.stringify(body));
+				self.debug('error: ' + JSON.stringify(error));
+				//self.debug('response: ' + JSON.stringify(response));
+				self.debug('body:' + JSON.stringify(body));
 
 				if (error && error.code === 'ETIMEDOUT') {
 					self._setStatus(self.STATUS_ERROR, 'Connection timeout while connecting to ' + requestUrl);

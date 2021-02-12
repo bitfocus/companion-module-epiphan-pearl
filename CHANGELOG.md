@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ---
+## [1.0.5] (2021-02-12)
+
+## Bug Fixes
+* [#5](https://github.com/bitfocus/companion-module-epiphan-pearl/issues/5) - Dropdown list not updating with correct ids  
+This now results in an extra entry '---' to force the user to select a Channel or Recorder and assosiated action
 
 ---
 ## [1.0.4] (2021-01-30)
