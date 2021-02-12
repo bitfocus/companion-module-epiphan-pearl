@@ -1,1 +1,5 @@
 node_modules/
+
+# Temp store for pearl files.
+# Which cannot be commited due to licence
+doc/source/
