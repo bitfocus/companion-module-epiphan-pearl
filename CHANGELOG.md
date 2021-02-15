@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 ## [Unreleased]
 
+---
+## [1.0.6] (2021-02-15)
+
 ## New Features
 * Ability to change the host port.
 
