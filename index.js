@@ -268,6 +268,14 @@ class EpiphanPearl extends instanceSkel {
 			},
 			{
 				type: 'textinput',
+				id: 'host_port',
+				label: 'Target Port',
+				width: 6,
+				default: '80',
+				regex: this.REGEX_PORT,
+			},
+			{
+				type: 'textinput',
 				id: 'username',
 				label: 'Username',
 				width: 6,
@@ -278,7 +286,7 @@ class EpiphanPearl extends instanceSkel {
 				id: 'password',
 				label: 'Password',
 				width: 6,
-				default: 'changeme',
+				default: '',
 			},
 		];
 	}
@@ -606,7 +614,8 @@ class EpiphanPearl extends instanceSkel {
 	}) {
 		const self    = this;
 		const apiHost = this.config.host,
-			  baseUrl = 'http://' + apiHost + ':8850';
+		      apiPort = this.config.host_port,
+			  baseUrl = 'http://' + apiHost + ':' + apiPort;
 
 		if (url === null || url === '') {
 			this._setStatus(this.STATUS_ERROR, 'No URL given for _sendRequest');
