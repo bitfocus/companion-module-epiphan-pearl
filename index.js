@@ -370,7 +370,8 @@ class EpiphanPearl extends instanceSkel {
 	 */
 	_getStartStopActionFromOptions(options) {
 		const startStopActionId = parseInt(options.startStopAction);
-		if (!options.startStopAction || startStopActionId === 99) {
+
+		if (typeof options.startStopAction === 'undefined' || options.startStopAction === null || startStopActionId === 99) {
 			return null;
 		}
 
