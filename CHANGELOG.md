@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ---
+## [1.0.9] (2022-09-26)
+
+## Dependencies
+* [#14](https://github.com/bitfocus/companion-module-epiphan-pearl/pull/14) - Bump ajv from 6.10.0 to 6.12.6
+
+---
+## [1.0.8] (2022-02-05)
+
+## Cleanup
+* Update package information to the future
+
+---
 ## [1.0.7] (2021-06-03)
 
 ## Bug Fixes
