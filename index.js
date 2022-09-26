@@ -85,13 +85,13 @@ class EpiphanPearl extends instanceSkel {
 		// Companion has difficulties with the first 'default' selected value.
 		// It will then return undefined (null) until you change/update the dropdown selection.
 		let channels = [{id: '0-0', label: '---'}];
-		Array.prototype.push.apply(channels,this.CHOICES_CHANNELS_LAYOUTS);
+		Array.prototype.push.apply(channels, this.CHOICES_CHANNELS_LAYOUTS);
 
 		let publishers = [{id: '0-0', label: '---'}];
-		Array.prototype.push.apply(publishers,this.CHOICES_CHANNELS_PUBLISHERS);
+		Array.prototype.push.apply(publishers, this.CHOICES_CHANNELS_PUBLISHERS);
 
 		let recorders = [{id: '0', label: '---'}];
-		Array.prototype.push.apply(recorders,this.CHOICES_RECORDERS);
+		Array.prototype.push.apply(recorders, this.CHOICES_RECORDERS);
 
 		this.setActions({
 			'channelChangeLayout': {
@@ -624,7 +624,7 @@ class EpiphanPearl extends instanceSkel {
 	 */
 	async _sendRequest(type, url, body = {}) {
 		const apiHost = this.config.host,
-		      apiPort = this.config.host_port,
+			  apiPort = this.config.host_port,
 			  baseUrl = 'http://' + apiHost + ':' + apiPort;
 
 		if (url === null || url === '') {
