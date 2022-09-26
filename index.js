@@ -532,11 +532,15 @@ class EpiphanPearl extends instanceSkel {
 	 *
 	 * @private
 	 * @since 1.0.0
-	 * @param {String} id
+	 * @param {String|Number} id Can have a "m" in the id
 	 */
 	_getRecorderById(id) {
 		if (!id) {
 			return;
+		}
+		if (typeof id !== 'number' && !id.includes('m')) {
+			// recorders can have an 'm' in their name as id...
+			id = parseInt(id)
 		}
 		return this.RECORDER_STATES.find(obj => obj.id === id);
 	}
