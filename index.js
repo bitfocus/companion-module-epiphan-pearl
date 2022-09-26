@@ -718,8 +718,8 @@ class EpiphanPearl extends instanceSkel {
 	_initInterval() {
 		// Run 2 times first
 		this._dataPoller();
-		// Poll data from pearl every 10 secs
-		this.timer = setInterval(this._dataPoller.bind(this), 10000);
+		// Poll data from pearl every 20 secs
+		this.timer = setInterval(this._dataPoller.bind(this), 20000);
 	}
 
 
