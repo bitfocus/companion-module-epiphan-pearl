@@ -1,6 +1,6 @@
 const instanceSkel = require('../../instance_skel');
 const http         = require('http');
-const request      = require('request');
+const fetch        = require('node-fetch');
 let debug, log;
 
 const feedbacks = require('./feedbacks');
