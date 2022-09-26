@@ -376,17 +376,10 @@ class EpiphanPearl extends instanceSkel {
 	 * @param {Object} options - Option object gotten from a performed action [action()]
 	 */
 	_getStartStopActionFromOptions(options) {
-		const startStopActionId = parseInt(options.startStopAction);
+		const startStopActionId  = parseInt(options.startStopAction);
+		const startStopActionObj = this.CHOICES_STARTSTOP.find(obj => obj.id === startStopActionId);
 
-		if (typeof options.startStopAction === 'undefined' || options.startStopAction === null || startStopActionId === 99) {
-			return null;
-		}
-
-		const action = this.CHOICES_STARTSTOP.find((e) => {
-			return e.id === startStopActionId;
-		}).action
-
-		return action ? action : null;
+		return typeof startStopActionObj !== "undefined" ? startStopActionObj.action : null;
 	}
 
 	/**
