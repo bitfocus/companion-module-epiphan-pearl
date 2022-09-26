@@ -609,10 +609,8 @@ class EpiphanPearl extends instanceSkel {
 	 * @param {String} type - post, get, put
 	 * @param {String} url - Full URL to send request to
 	 * @param {?Object} body - Optional body to send
-	 * @param {?Function} callback - Optional callback function for data
 	 */
-	_sendRequest(type, url, body = {}, callback = () => {
-	}) {
+	async _sendRequest(type, url, body = {}) {
 		const self    = this;
 		const apiHost = this.config.host,
 		      apiPort = this.config.host_port,
@@ -621,12 +619,6 @@ class EpiphanPearl extends instanceSkel {
 		if (url === null || url === '') {
 			this._setStatus(this.STATUS_ERROR, 'No URL given for _sendRequest');
 			this.log('error', 'No URL given for _sendRequest');
-			return false;
-		}
-
-		if (this.defaultRequest === undefined) {
-			this._setStatus(this.STATUS_ERROR, 'Error, no request interface...');
-			this.log('error', 'Error, no request interface...');
 			return false;
 		}
 
@@ -642,69 +634,58 @@ class EpiphanPearl extends instanceSkel {
 			body = {};
 		}
 
-		// Check if we have a valid callback
-		if (callback === undefined || callback == null || typeof callback !== 'function') {
-			callback = () => {
-			};
-		}
-
 		const requestUrl = baseUrl + url;
 		this.debug('Starting request to: ' + type + ' ' + baseUrl + url);
 		this.debug(body);
-		this.defaultRequest({
+
+		let response;
+		try {
+			let options = {
 				method: type,
-				uri: requestUrl,
-				json: body
-			},
-			(error, response, body) => {
-				self.debug('error: ' + JSON.stringify(error));
-				//self.debug('response: ' + JSON.stringify(response));
-				self.debug('body:' + JSON.stringify(body));
-
-				if (error && error.code === 'ETIMEDOUT') {
-					self._setStatus(self.STATUS_ERROR, 'Connection timeout while connecting to ' + requestUrl);
-					self.log('error', 'Connection timeout while connecting to ' + requestUrl);
-					callback(error);
-					return;
+				timeout: 10000,
+				headers: {
+					'Authorization': 'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64')
 				}
+			}
 
-				if (error && error.code === 'ECONNREFUSED') {
-					self._setStatus(self.STATUS_ERROR, 'Connection refused for ' + requestUrl);
-					self.log('error', 'Connection refused for ' + requestUrl);
-					callback(error);
-					return;
-				}
+			if (type !== 'GET') {
+				options.body                    = body;
+				options.headers['Content-Type'] = 'application/json'
+			}
 
-				if (error && error.connect === true) {
-					self._setStatus(self.STATUS_ERROR, 'Read timeout waiting for response from: ' + requestUrl);
-					self.log('error', 'Read timeout waiting for response from: ' + requestUrl);
-					callback(error);
-					return;
-				}
+			response = await fetch(requestUrl, options);
+		} catch (error) {
+			if (error.name === 'AbortError') {
+				this._setStatus(this.STATUS_ERROR, 'Request was aborted: ' + requestUrl + ' reason: ' + error.message);
+				this.debug(error.message)
+				return;
+			}
 
-				if (response &&
-					(response.statusCode < 200 || response.statusCode > 299)) {
-					self._setStatus(self.STATUS_ERROR, 'Non-successful response status code: ' + http.STATUS_CODES[response.statusCode] + ' ' + requestUrl);
-					self.log('error', 'Non-successful response status code: ' + http.STATUS_CODES[response.statusCode] + ' ' + requestUrl);
-					callback(error);
-					return;
-				}
+			this._setStatus(this.STATUS_ERROR, error.message);
+			this.debug(error.message)
+			return;
+		}
 
-				if (body && body.status && body.status !== 'ok') {
-					self._setStatus(self.STATUS_ERROR, 'Non-successful response from pearl: ' + requestUrl + ' - ' + (body.message ? body.message : 'No error message'));
-					self.log('error', 'Non-successful response from pearl: ' + requestUrl + ' - ' + (body.message ? body.message : 'No error message'));
-					callback(error);
-					return;
-				}
+		if (!response.ok) {
+			this._setStatus(this.STATUS_ERROR, 'Non-successful response status code: ' + http.STATUS_CODES[response.status] + ' ' + requestUrl);
+			this.debug('Non-successful response status code: ' + http.STATUS_CODES[response.status] + ' ' + requestUrl)
+			return;
+		}
 
-				let result = body;
-				if (body && body.result) {
-					result = body.result;
-				}
+		const responseBody = await response.json();
+		if (responseBody && responseBody.status && responseBody.status !== 'ok') {
+			this._setStatus(this.STATUS_ERROR, 'Non-successful response from pearl: ' + requestUrl + ' - ' + (body.message ? body.message : 'No error message'));
+			this.debug('Non-successful response from pearl: ' + requestUrl + ' - ' + (body.message ? body.message : 'No error message'));
+			return;
+		}
 
-				self._setStatus(self.STATUS_OK);
-				callback(null, result);
-			});
+		let result = responseBody;
+		if (responseBody && responseBody.result) {
+			result = responseBody.result;
+		}
+
+		this._setStatus(this.STATUS_OK);
+		return result;
 	}
 
 	/**
