@@ -143,6 +143,15 @@ class EpiphanPearl extends instanceSkel {
 
 		switch (action.action) {
 			case 'channelChangeLayout': {
+				if (!action.options.channelIdlayoutId || !action.options.channelIdlayoutId.includes('-')) {
+					this._setStatus(
+						this.STATUS_ERROR,
+						'Channel and Layout are not know! Please review you\'re button config'
+					);
+					this.debug('channelIdlayoutId: ' + action.options.channelIdlayoutId);
+					break;
+				}
+
 				const [channelId, layoutId] = action.options.channelIdlayoutId.split('-');
 				if (!this._getChannelById(channelId)) {
 					this._setStatus(
