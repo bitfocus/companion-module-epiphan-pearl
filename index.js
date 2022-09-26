@@ -360,6 +360,12 @@ class EpiphanPearl extends instanceSkel {
 	 */
 	_setStatus(level, message = '') {
 		this.status(level, message);
+
+		if (level === this.STATUS_ERROR) {
+			this.log('error', message);
+		} else if (level === this.STATUS_WARNING) {
+			this.log('warning', message);
+		}
 	}
 
 	/**
