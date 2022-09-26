@@ -1,10 +1,10 @@
 {
 	"name": "epiphan-pearl",
-	"version": "1.0.7",
+	"version": "1.0.9",
 	"manufacturer": "Epiphan",
 	"product": "Pearl",
 	"shortname": "pearl",
-	"homepage": "https://www.epiphan.com/products/pearl/",
+	"homepage": "https://github.com/bitfocus/companion-module-epiphan-pearl#readme",
 	"description": "Epiphan Pearl module for Companion",
 	"keywords": [
 		"Stream",
@@ -20,5 +20,13 @@
 	"dependencies": {
 		"request": "^2.88.0"
 	},
-	"devDependencies": {}
+	"devDependencies": {},
+	"bugs": {
+		"url": "https://github.com/bitfocus/companion-module-epiphan-pearl/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/bitfocus/companion-module-epiphan-pearl.git"
+	},
+	"api_version": "1.0.0"
 }
