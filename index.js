@@ -890,55 +890,52 @@ class EpiphanPearl extends instanceSkel {
 	 * @private
 	 * @since 1.0.0
 	 */
-	_updateChannelPublishers() {
-		const self = this;
-
+	async _updateChannelPublishers() {
 		// For get publishers and encoders
 		let tempPublishers = [];
-		this._sendRequest('get', '/api/channels/status?publishers=yes&encoders=yes', {}, (err, channels) => {
-			if (err) {
-				return;
+		const channels     = await this._sendRequest('get', '/api/channels/status?publishers=yes&encoders=yes', {});
+		if (!channels) {
+			return;
+		}
+
+		for (const a in channels) {
+			const apiChannel     = channels[a];
+			const currentChannel = this._getChannelById(apiChannel.id);
+			if (!currentChannel) {
+				continue
 			}
-			for (const a in channels) {
-				const apiChannel     = channels[a];
-				const currentChannel = self._getChannelById(apiChannel.id);
-				if (!currentChannel) {
-					continue
+
+			tempPublishers.push({
+				id: currentChannel.id + '-all',
+				label: currentChannel.label + ' - All encoders',
+				channelLabel: currentChannel.label,
+				publisherLabel: 'All encoders'
+			});
+			for (const b in apiChannel.publishers) {
+				const publisher        = apiChannel.publishers[b];
+				const currentPublisher = currentChannel.publishers.find(obj => obj.id === parseInt(publisher.id));
+				if (!currentPublisher) {
+					continue;
 				}
 
 				tempPublishers.push({
-					id: currentChannel.id + '-all',
-					label: currentChannel.label + ' - All',
+					id: currentChannel.id + '-' + currentPublisher.id,
+					label: currentChannel.label + ' - ' + currentPublisher.label,
 					channelLabel: currentChannel.label,
-					publisherLabel: 'All'
+					publisherLabel: currentPublisher.label
 				});
-				for (const b in apiChannel.publishers) {
-					const publisher        = apiChannel.publishers[b];
-					const currentPublisher = currentChannel.publishers.find(obj => obj.id === parseInt(publisher.id));
-					if (!currentPublisher) {
-						continue;
-					}
 
-					tempPublishers.push({
-						id: currentChannel.id + '-' + currentPublisher.id,
-						label: currentChannel.label + ' - ' + currentPublisher.label,
-						channelLabel: currentChannel.label,
-						publisherLabel: currentPublisher.label
-					});
-
-					const status            = publisher.status;
-					currentPublisher.status = {
-						isStreaming: status.started && status.state === 'started',
-						duration: status.started && status.state === 'started' ? parseInt(status.duration) : 0,
-					}
+				const status            = publisher.status;
+				currentPublisher.status = {
+					isStreaming: status.started && status.state === 'started',
+					duration: status.started && status.state === 'started' ? parseInt(status.duration) : 0,
 				}
 			}
+		}
 
-			self.debug('Updating CHOICES_CHANNELS_PUBLISHERS and then call _updateSystem()');
-			self.CHOICES_CHANNELS_PUBLISHERS = tempPublishers.slice();
-			self.checkFeedbacks('channelStreaming');
-			self._updateSystem();
-		});
+		this.debug('Updating CHOICES_CHANNELS_PUBLISHERS and then call checkFeedbacks(channelStreaming)');
+		this.CHOICES_CHANNELS_PUBLISHERS = tempPublishers.slice();
+		this.checkFeedbacks('channelStreaming');
 	}
 
 	/**
