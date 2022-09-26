@@ -948,33 +948,29 @@ class EpiphanPearl extends instanceSkel {
 	 * @private
 	 * @since 1.0.0
 	 */
-	_updateRecorderStatus() {
-		const self = this;
-
+	async _updateRecorderStatus() {
 		// For get status for recorders
-		this._sendRequest('get', '/api/recorders/status', {}, (err, recoders) => {
-			if (err) {
-				return;
+		const recoders = await this._sendRequest('get', '/api/recorders/status', {});
+		if (!recoders) {
+			return;
+		}
+
+		for (const a in recoders) {
+			const recorder        = recoders[a];
+			const currentRecorder = this._getRecorderById(recorder.id);
+			if (currentRecorder === undefined) {
+				continue;
 			}
 
-			for (const a in recoders) {
-				const recoder        = recoders[a];
-				const currentRecoder = self._getRecorderById(recoder.id);
-				if (currentRecoder === undefined) {
-					continue;
-				}
-
-				const status          = recoder.status;
-				currentRecoder.status = {
-					isRecording: status.state !== 'stopped',
-					duration: status.state !== 'stopped' ? parseInt(status.duration) : 0,
-				}
+			const status           = recorder.status;
+			currentRecorder.status = {
+				isRecording: status.state !== 'stopped',
+				duration: status.state !== 'stopped' ? parseInt(status.duration) : 0,
 			}
+		}
 
-			self.debug('Updating RECORDER_STATES and then call _updateSystem()');
-			self.checkFeedbacks('recorderRecording');
-			self._updateSystem();
-		});
+		this.debug('Updating RECORDER_STATES and then call checkFeedbacks(recorderRecording)');
+		this.checkFeedbacks('recorderRecording');
 	}
 }
 
