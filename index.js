@@ -228,7 +228,7 @@ class EpiphanPearl extends instanceSkel {
 			}
 			case 'recorderRecording': {
 				this.debug(action);
-				const recorderId  = action.options.recorderId;
+				const recorderId = action.options.recorderId;
 				if (!this._getRecorderById(recorderId)) {
 					this._setStatus(
 						this.STATUS_ERROR,
