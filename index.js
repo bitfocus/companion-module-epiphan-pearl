@@ -268,6 +268,7 @@ class EpiphanPearl extends instanceSkel {
 		}
 	}
 
+	// noinspection JSUnusedGlobalSymbols
 	/**
 	 * Creates the configuration fields for web config.
 	 *
@@ -339,6 +340,7 @@ class EpiphanPearl extends instanceSkel {
 		this._initInterval();
 	}
 
+	// noinspection JSUnusedGlobalSymbols
 	/**
 	 * Process an updated configuration array.
 	 *
@@ -412,7 +414,7 @@ class EpiphanPearl extends instanceSkel {
 		if (!channel || !id) {
 			return;
 		} else if (typeof channel === 'number') {
-			let channel = this._getChannelById(channel);
+			channel = this._getChannelById(channel);
 			if (!channel) {
 				return;
 			}
