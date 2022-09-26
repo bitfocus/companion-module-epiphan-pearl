@@ -1,3 +1,4 @@
+// noinspection JSFileReferences
 const instanceSkel = require('../../instance_skel');
 const http         = require('http');
 const fetch        = require('node-fetch');
