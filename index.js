@@ -181,6 +181,15 @@ class EpiphanPearl extends instanceSkel {
 				break;
 			}
 			case 'channelStreaming': {
+				if (!action.options.channelIdpublisherId || !action.options.channelIdpublisherId.includes('-')) {
+					this._setStatus(
+						this.STATUS_ERROR,
+						'Channel and Publisher are not know! Please review you\'re button config'
+					);
+					this.debug('Undefined channelIdpublisherId ... ' + action.options.channelIdpublisherId);
+					break;
+				}
+
 				const [channelId, publishersId] = action.options.channelIdpublisherId.split('-');
 				if (!this._getChannelById(channelId)) {
 					this._setStatus(
