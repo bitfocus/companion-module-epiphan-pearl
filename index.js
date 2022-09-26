@@ -611,7 +611,6 @@ class EpiphanPearl extends instanceSkel {
 	 * @param {?Object} body - Optional body to send
 	 */
 	async _sendRequest(type, url, body = {}) {
-		const self    = this;
 		const apiHost = this.config.host,
 		      apiPort = this.config.host_port,
 			  baseUrl = 'http://' + apiHost + ':' + apiPort;
@@ -834,45 +833,42 @@ class EpiphanPearl extends instanceSkel {
 	 * @private
 	 * @since 1.0.0
 	 */
-	_updateChannelLayouts() {
-		const self = this;
-
+	async _updateChannelLayouts() {
 		// For every channel get layouts and populate/update actions()
 		let tempLayouts = [];
 		for (const a in this.CHANNEL_STATES) {
-			let channel = self.CHANNEL_STATES[a];
+			let channel = this.CHANNEL_STATES[a];
 
-			this._sendRequest('get', '/api/channels/' + channel.id + '/layouts', {}, (err, layouts) => {
-				if (err) {
-					return;
+			const layouts = await this._sendRequest('get', '/api/channels/' + channel.id + '/layouts', {});
+			if (!layouts) {
+				return;
+			}
+
+			for (const b in layouts) {
+				const layout = layouts[b];
+				tempLayouts.push({
+					id: channel.id + '-' + layout.id,
+					label: channel.label + ' - ' + layout.name,
+					channelLabel: channel.label,
+					layoutLabel: layout.name
+				});
+
+				const objIndex      = channel.layouts.findIndex(obj => obj.id === parseInt(layout.id));
+				const updatedLayout = {
+					id: parseInt(layout.id),
+					label: layout.name,
+					active: layout.active
+				};
+				if (objIndex === -1) {
+					channel.layouts.push(updatedLayout);
+				} else {
+					channel.layouts[objIndex] = updatedLayout;
 				}
-				for (const b in layouts) {
-					const layout = layouts[b];
-					tempLayouts.push({
-						id: channel.id + '-' + layout.id,
-						label: channel.label + ' - ' + layout.name,
-						channelLabel: channel.label,
-						layoutLabel: layout.name
-					});
+			}
 
-					const objIndex      = channel.layouts.findIndex(obj => obj.id === parseInt(layout.id));
-					const updatedLayout = {
-						id: parseInt(layout.id),
-						label: layout.name,
-						active: layout.active
-					};
-					if (objIndex === -1) {
-						channel.layouts.push(updatedLayout);
-					} else {
-						channel.layouts[objIndex] = updatedLayout;
-					}
-				}
-
-				self.debug('Updating CHOICES_CHANNELS_LAYOUTS and then call _updateSystem()');
-				self.CHOICES_CHANNELS_LAYOUTS = tempLayouts.slice();
-				self.checkFeedbacks('channelLayout');
-				self._updateSystem();
-			});
+			this.debug('Updating CHOICES_CHANNELS_LAYOUTS and then call checkFeedbacks(channelLayout)');
+			this.CHOICES_CHANNELS_LAYOUTS = tempLayouts.slice();
+			this.checkFeedbacks('channelLayout');
 		}
 	}
 
