@@ -173,7 +173,7 @@ class EpiphanPearl extends instanceSkel {
 				type     = 'put';
 				url      = '/api/channels/' + channelId + '/layouts/active';
 				body     = {id: layoutId};
-				callback = (err, response) => {
+				callback = response => {
 					if (response && response.status === 'ok') {
 						this._updateActiveChannelLayout(channelId, layoutId);
 					}
@@ -241,9 +241,9 @@ class EpiphanPearl extends instanceSkel {
 
 				type     = 'post';
 				url      = '/api/recorders/' + recorderId + '/control/' + startStopAction;
-				callback = (err, response) => {
+				callback = async response => {
 					if (response && response.status === 'ok') {
-						this._updateRecorderStatus(recorderId);
+						await this._updateRecorderStatus(recorderId);
 					}
 				};
 				break;
