@@ -824,9 +824,9 @@ class EpiphanPearl extends instanceSkel {
 			}
 		}
 
-		this.debug('Updating RECORDER_STATES and then call _updateSystem()');
+		this.debug('Updating RECORDER_STATES');
+		this.debug('Updating CHOICES_RECORDERS');
 		this.CHOICES_RECORDERS = tempRecorders.slice();
-		this._updateSystem();
 
 		// Update status
 		await this._updateRecorderStatus();
