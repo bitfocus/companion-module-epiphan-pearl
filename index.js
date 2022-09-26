@@ -573,6 +573,11 @@ class EpiphanPearl extends instanceSkel {
 			return;
 		}
 
+		if (publisherId === 'all') {
+			// We can start and stop all encoders at the same time.
+			return true;
+		}
+
 		return this._getTypeFromChannelById(TYPE_PUBLISHER, channel, publisherId)
 	}
 
