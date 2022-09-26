@@ -245,7 +245,8 @@ class EpiphanPearl extends instanceSkel {
 
 		// Send request
 		if (url) {
-			this._sendRequest(type, url, body, callback);
+			this._sendRequest(type, url, body)
+				.then(callback);
 		}
 	}
 
