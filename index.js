@@ -731,107 +731,100 @@ class EpiphanPearl extends instanceSkel {
 	 * @private
 	 * @since 1.0.0
 	 */
-	_dataPoller() {
-		const self = this;
-
+	async _dataPoller() {
 		// Get all channels available
-		this._sendRequest('get', '/api/channels?publishers=yes&encoders=yes', {}, (err, channels) => {
-			if (err) {
-				return;
-			}
-			for (const a in channels) {
-				const channel = channels[a];
+		const channels = await this._sendRequest('get', '/api/channels?publishers=yes&encoders=yes', {});
 
-				const channelUpdate = {
-					id: parseInt(channel.id),
-					label: channel.name
-				};
+		for (const a in channels) {
+			const channel = channels[a];
 
-				let currentChannel = self._getChannelById(channelUpdate.id);
-				if (currentChannel === undefined) {
-					currentChannel = {
-						...channelUpdate,
-						...{
-							layouts: [],
-							publishers: [],
-							encoders: []
-						}
-					};
-					self.CHANNEL_STATES.push(currentChannel);
-				} else {
-					currentChannel = {...currentChannel, ...channelUpdate};
-				}
+			const channelUpdate = {
+				id: parseInt(channel.id),
+				label: channel.name
+			};
 
-				for (const b in channel.publishers) {
-					const publisher      = channel.publishers[b];
-					let currentPublisher = currentChannel.publishers.find(obj => obj.id === parseInt(publisher.id));
-
-					const updatedPublisher = {
-						id: parseInt(publisher.id),
-						label: publisher.name,
-					};
-					if (currentPublisher === undefined) {
-						currentChannel.publishers.push({
-							...updatedPublisher,
-							...{
-								status: {
-									isStreaming: false,
-									duration: 0
-								}
-							}
-						});
-					} else {
-						currentPublisher = {...currentPublisher, ...updatedPublisher};
+			let currentChannel = this._getChannelById(channelUpdate.id);
+			if (currentChannel === undefined) {
+				currentChannel = {
+					...channelUpdate,
+					...{
+						layouts: [],
+						publishers: [],
+						encoders: []
 					}
-				}
-			}
-
-			self.debug('Updating CHANNEL_STATES and call _updateSystem()');
-			self._updateSystem(system);
-
-			// Update layouts and publishers
-			self._updateChannelLayouts();
-			self._updateChannelPublishers();
-		});
-
-		// Get all recorders
-		let tempRecorders = [];
-		this._sendRequest('get', '/api/recorders', {}, (err, recoders) => {
-			if (err) {
-				return;
-			}
-
-			for (const a in recoders) {
-				const recoder         = recoders[a];
-				const updatedRecorder = {
-					id: recoder.id,
-					label: recoder.name
 				};
-				tempRecorders.push(updatedRecorder);
+				this.CHANNEL_STATES.push(currentChannel);
+			} else {
+				currentChannel = {...currentChannel, ...channelUpdate};
+			}
 
-				let currentRecoder = self._getRecorderById(updatedRecorder.id);
-				if (currentRecoder === undefined) {
-					self.RECORDER_STATES.push({
-						...updatedRecorder,
+			for (const b in channel.publishers) {
+				const publisher      = channel.publishers[b];
+				let currentPublisher = currentChannel.publishers.find(obj => obj.id === parseInt(publisher.id));
+
+				const updatedPublisher = {
+					id: parseInt(publisher.id),
+					label: publisher.name,
+				};
+				if (currentPublisher === undefined) {
+					currentChannel.publishers.push({
+						...updatedPublisher,
 						...{
 							status: {
-								isRecording: false,
+								isStreaming: false,
 								duration: 0
 							}
 						}
 					});
 				} else {
-					currentRecoder = {...currentRecoder, ...updatedRecorder};
+					currentPublisher = {...currentPublisher, ...updatedPublisher};
 				}
 			}
+		}
 
-			self.debug('Updating RECORDER_STATES and then call _updateSystem()');
-			self.CHOICES_RECORDERS = tempRecorders.slice();
-			self._updateSystem();
+		this.debug('Updating CHANNEL_STATES');
 
-			// Update status
-			self._updateRecorderStatus();
-		});
+		// Update layouts and publishers
+		await this._updateChannelLayouts();
+		await this._updateChannelPublishers();
+
+		// Get all recorders
+		let tempRecorders = [];
+		const recorders   = await this._sendRequest('get', '/api/recorders', {});
+
+		for (const a in recorders) {
+			const recorder        = recorders[a];
+			const updatedRecorder = {
+				id: recorder.id,
+				label: recorder.name
+			};
+			tempRecorders.push(updatedRecorder);
+
+			let currentRecorder = this._getRecorderById(updatedRecorder.id);
+			if (currentRecorder === undefined) {
+				this.RECORDER_STATES.push({
+					...updatedRecorder,
+					...{
+						status: {
+							isRecording: false,
+							duration: 0
+						}
+					}
+				});
+			} else {
+				currentRecorder = {...currentRecorder, ...updatedRecorder};
+			}
+		}
+
+		this.debug('Updating RECORDER_STATES and then call _updateSystem()');
+		this.CHOICES_RECORDERS = tempRecorders.slice();
+		this._updateSystem();
+
+		// Update status
+		await this._updateRecorderStatus();
+
+		this.debug('Call _updateSystem() for update');
+		this._updateSystem(system);
 	}
 
 	/**
