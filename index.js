@@ -319,7 +319,6 @@ class EpiphanPearl extends instanceSkel {
 	destroy() {
 		clearInterval(this.timer);
 		this.status(this.STATUS_UNKNOWN);
-		this.defaultRequest = null;
 		this.debug('destroy', this.id);
 	}
 
@@ -349,23 +348,6 @@ class EpiphanPearl extends instanceSkel {
 	 */
 	updateConfig(config) {
 		this.config = config;
-		this._initRequest();
-	}
-
-	/**
-	 * INTERNAL: setup default request data for requests
-	 *
-	 * @private
-	 * @since 1.0.0
-	 */
-	_initRequest() {
-		this.defaultRequest = request.defaults({
-			auth: {
-				user: this.config.username,
-				pass: this.config.password,
-			},
-			timeout: 10000,
-		});
 	}
 
 	/**
