@@ -1,144 +1,118 @@
+const { combineRgb } = require('@companion-module/base')
+
 module.exports = {
-	
 	/**
 	 * INTERNAL: Get the available feedbacks.
 	 *
 	 * @access protected
 	 * @since 1.0.0
-	 * @returns {Object[]} - the available feedbacks
+	 * @returns {Object} - the available feedbacks
 	 */
 	getFeedbacks() {
-		let feedbacks = {};
+		let feedbacks = {}
 
 		feedbacks['channelLayout'] = {
-			label: 'Change colors on channel layout change',
-			description: 'If the current layout is active, change color of the bank',
+			name: 'Change style on channel layout change',
+			type: 'boolean',
+			description: 'Change style if the specified layout is active',
+			defaultStyle: {
+				color: combineRgb(255, 255, 255),
+				bgcolor: combineRgb(255, 0, 0),
+			},
 			options: [
-				{
-					type: 'colorpicker',
-					label: 'Foreground color',
-					id: 'fg',
-					default: this.rgb(255, 255, 255),
-				},
-				{
-					type: 'colorpicker',
-					label: 'Background color',
-					id: 'bg',
-					default: this.rgb(255, 0, 0),
-				},
 				{
 					type: 'dropdown',
 					label: 'Channel',
 					id: 'channelIdlayoutId',
 					choices: this.CHOICES_CHANNELS_LAYOUTS,
+					default: this.CHOICES_CHANNELS_LAYOUTS.length > 0 ? this.CHOICES_CHANNELS_LAYOUTS[0].id : '',
 				},
 			],
-			callback: (feedback, bank) => {
+			callback: (feedback) => {
 				if (!feedback.options.channelIdlayoutId) {
-					return {};
+					return false
 				}
 
-				const [channelId, layoutId] = feedback.options.channelIdlayoutId.split('-');
-				const layout                = this._getLayoutFromChannelById(this._getChannelById(channelId), layoutId);
+				const [channelId, layoutId] = feedback.options.channelIdlayoutId.split('-')
+				const layout = this._getLayoutFromChannelById(this._getChannelById(channelId), layoutId)
 				if (!layout) {
-					return {};
+					return false
 				}
 
 				if (layout.active) {
-					return {
-						color: feedback.options.fg,
-						bgcolor: feedback.options.bg
-					};
+					return true
 				}
-				return {};
-			}
-		};
+				return false
+			},
+		}
 
 		feedbacks['channelStreaming'] = {
-			label: 'Change colors if streaming',
-			description: 'If channel is streaming, change colors of the bank',
+			name: 'Change style if streaming',
+			type: 'boolean',
+			description: 'Change style if specified channel is streaming',
+			defaultStyle: {
+				color: combineRgb(255, 255, 255),
+				bgcolor: combineRgb(0, 255, 0),
+			},
 			options: [
 				{
-					type: 'colorpicker',
-					label: 'Foreground color',
-					id: 'fg',
-					default: this.rgb(255, 255, 255),
-				},
-				{
-					type: 'colorpicker',
-					label: 'Background color',
-					id: 'bg',
-					default: this.rgb(0, 255, 0),
-				},
-				{
 					type: 'dropdown',
-					label: 'Channel publishers',
+					label: 'Channel publisher',
 					id: 'channelIdpublisherId',
 					choices: this.CHOICES_CHANNELS_PUBLISHERS,
+					default: this.CHOICES_CHANNELS_PUBLISHERS.length > 0 ? this.CHOICES_CHANNELS_PUBLISHERS[0].id : '',
 				},
 			],
-			callback: (feedback, bank) => {
+			callback: (feedback) => {
 				if (!feedback.options.channelIdpublisherId) {
-					return {};
+					return false
 				}
 
-				const [channelId, publisherId] = feedback.options.channelIdpublisherId.split('-');
-				const channel                  = this._getChannelById(channelId);
+				const [channelId, publisherId] = feedback.options.channelIdpublisherId.split('-')
+				const channel = this._getChannelById(channelId)
 				if (!channel) {
-					return {};
+					return false
 				}
 
-				const publisher = this._getPublisherFromChannelById(channel, publisherId);
-				let isStreaming = false;
+				const publisher = this._getPublisherFromChannelById(channel, publisherId)
+				let isStreaming = false
 				if (publisherId === 'all') {
-					isStreaming = this._getActivePublishersFromChannel(channel);
+					isStreaming = this._getActivePublishersFromChannel(channel)
 				}
 
 				if (this._isPublisherStreaming(publisher) || isStreaming) {
-					return {
-						color: feedback.options.fg,
-						bgcolor: feedback.options.bg
-					};
+					return true
 				}
-				return {};
-			}
-		};
+				return false
+			},
+		}
 
 		feedbacks['recorderRecording'] = {
-			label: 'Change colors if recording',
-			description: 'If channel/recorder is recording, change colors of the bank',
+			name: 'Change style if recording',
+			type: 'boolean',
+			description: 'Change style if channel/recorder is recording',
+			defaultStyle: {
+				color: combineRgb(255, 255, 255),
+				bgcolor: combineRgb(0, 255, 0),
+			},
 			options: [
-				{
-					type: 'colorpicker',
-					label: 'Foreground color',
-					id: 'fg',
-					default: this.rgb(255, 255, 255),
-				},
-				{
-					type: 'colorpicker',
-					label: 'Background color',
-					id: 'bg',
-					default: this.rgb(0, 255, 0),
-				},
 				{
 					type: 'dropdown',
 					label: 'Recorders',
 					id: 'recorderId',
 					choices: this.CHOICES_RECORDERS,
+					default: this.CHOICES_RECORDERS.length > 0 ? this.CHOICES_RECORDERS[0].id : '',
 				},
 			],
-			callback: (feedback, bank) => {
-				const recorder = this._getRecorderById(feedback.options.recorderId);
+			callback: (feedback) => {
+				const recorder = this._getRecorderById(feedback.options.recorderId)
 				if (this._isRecorderRecording(recorder)) {
-					return {
-						color: feedback.options.fg,
-						bgcolor: feedback.options.bg
-					};
+					return true
 				}
-				return {};
-			}
-		};
+				return false
+			},
+		}
 
-		return feedbacks;
-	}
-};
+		return feedbacks
+	},
+}

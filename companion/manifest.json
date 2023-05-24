@@ -1,0 +1,30 @@
+{
+	"id": "epiphan-pearl",
+	"name": "epiphan-pearl",
+	"shortname": "pearl",
+	"description": "Epiphan Pearl module for Companion",
+	"version": "0.0.0",
+	"license": "MIT",
+	"repository": "git+https://github.com/bitfocus/companion-module-epiphan-pearl.git",
+	"bugs": "https://github.com/bitfocus/companion-module-epiphan-pearl/issues",
+	"maintainers": [
+		{
+			"name": "Marc Hagen",
+			"email": "hello@marchagen.nl"
+		},
+		{
+			"name": "Dorian Meid",
+			"email": "meid@backstage.org"
+		}
+	],
+	"legacyIds": [],
+	"runtime": {
+		"type": "node18",
+		"api": "nodejs-ipc",
+		"apiVersion": "0.0.0",
+		"entrypoint": "../index.js"
+	},
+	"manufacturer": "Epiphan",
+	"products": ["Pearl"],
+	"keywords": ["Stream", "Encode", "Recording"]
+}

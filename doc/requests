@@ -32,3 +32,57 @@ GET /api/recorders/status
 
 GET /api/recorders
 {"status":"ok","result":[{"id":"7","name":"Summer courses RECORDING","multisource":false},{"id":"10","name":"overflow","multisource":false},{"id":"11","name":"REGIE","multisource":false},{"id":"m1","name":"All CAM","multisource":true}]}
+
+GET ws: /wsms/preview/channel?id=1&resolution=452x254&fps=10&keep-ar=1&auth-token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJUU0hCMDA2OTQiLCJhdWQiOiJwcmV2aWV3XC9jaGFubmVsIiwibmJmIjoxNjg0ODc2MDIxLCJleHAiOjE2ODQ4NzYwODF9.xGfBaFOjvZwhVRHzQldiIKUWBRDwSo6UhJeq2AolMrM
+
+self.ws.onmessage = function(evt) {
+	var serverData = new Uint8Array(evt.data);
+	var headerLength = (serverData[0] << 8) | serverData[1];
+	var payload = serverData.subarray(headerLength, serverData.length);
+	var frameType = serverData[2];
+	var streamId = serverData[3]; // Ignore it
+	var outData = [];
+	if (frameType == 0x01) {
+			outData[0] = 1;
+			outData[1] = "data:image/jpeg;base64," + byteArrayToBase64(payload);
+			postMessage(outData);
+	} else if (frameType == 0x41) {
+			// Audio volume
+			//  Payload format:
+			//  Offset  Type        Description
+			//  +00     int8        Number of channels:
+			//                          0x00 - reserved for the future use (to support arbitrary layout AV_CH_LAYOUT_XXX from ffmpeg).
+			//                          0x01 - mono (fixed channel layout - AV_CH_LAYOUT_MONO)
+			//                          0x02 - stereo (fixed channel layout - AV_CH_LAYOUT_STEREO)
+			//  +01     int8        Number of frequency bands. Always 0x01.
+			//  +02     int32       RMS dBFS value for mono(AV_CH_LAYOUT_MONO)or the left channel (AV_CH_LAYOUT_STEREO).
+			//  +06     int32       Peak dBFS value for mono(AV_CH_LAYOUT_MONO) or the left channel (AV_CH_LAYOUT_STEREO).
+			//  +10     int32       RMS dBFS value for the right channel (AV_CH_LAYOUT_STEREO).
+			//  +14     int32       Peak dBFS value for the right channel (AV_CH_LAYOUT_STEREO).
+			var levels = {
+					rms: [],
+					peak: []
+			};
+			var channels = payload[0];
+			if (channels == 1 || channels == 2) {
+					levels.rms.push(unpackdB(payload, 2));
+					levels.peak.push(unpackdB(payload, 6));
+			}
+			if (channels == 2) {
+					levels.rms.push(unpackdB(payload, 10));
+					levels.peak.push(unpackdB(payload, 14));
+			}
+			outData[0] = 2;
+			outData[1] = levels;
+			postMessage(outData);
+
+	} else {
+			// Unknown
+			console.log('View: ' + viewId + '. Received unknonw frame ' + frameType);
+	}
+};
+
+// Read packed mdB value and return it as dB
+var unpackdB = function(bytes, offset) {
+    return (bytes[offset + 0] << 24 | bytes[offset + 1] << 16 | bytes[offset + 2] << 8 | bytes[offset + 3]) / 1000.0;
+}

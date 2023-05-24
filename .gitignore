@@ -1,4 +1,6 @@
 node_modules/
+pkg
+pkg.tgz
 
 # Temp store for pearl files.
 # Which cannot be commited due to licence

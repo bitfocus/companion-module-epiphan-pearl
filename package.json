@@ -1,32 +1,20 @@
 {
 	"name": "epiphan-pearl",
-	"version": "1.0.9",
-	"manufacturer": "Epiphan",
-	"product": "Pearl",
-	"shortname": "pearl",
+	"version": "2.0.0",
 	"homepage": "https://github.com/bitfocus/companion-module-epiphan-pearl#readme",
-	"description": "Epiphan Pearl module for Companion",
-	"keywords": [
-		"Stream",
-		"Encode",
-		"Recording"
-	],
 	"main": "index.js",
 	"scripts": {
 		"test": "echo \"Error: no test specified\" && exit 1"
 	},
-	"author": "Marc Hagen <hello@marchagen.nl>",
 	"license": "MIT",
 	"dependencies": {
-		"request": "^2.88.0"
+		"@companion-module/base": "~1.4"
 	},
-	"devDependencies": {},
-	"bugs": {
-		"url": "https://github.com/bitfocus/companion-module-epiphan-pearl/issues"
+	"devDependencies": {
+		"@companion-module/tools": "^1.2.1"
 	},
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/bitfocus/companion-module-epiphan-pearl.git"
-	},
-	"api_version": "1.0.0"
+	}
 }

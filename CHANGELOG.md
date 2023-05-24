@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ---
+## [2.0.0] (2023-05-24)
+
+## Major
+* Rewrite of the module code for compatibility with Companion v3. The code is not backwards compatible, but configuration data is.
+
+## New Features
+* Upgraded Feedbacks to boolean type
+* Added Reset option to recorder control
+* Added option to change the feedback polling interval
+
+## Dependencies
+* Bump qs from 6.5.2 to 6.5.3
+* Changed REST connection from request module to node's internal fetch
+
+## Bugfixes
+* Corrected some typos
+  
+---
 ## [1.0.9] (2022-09-26)
 
 ## Dependencies
