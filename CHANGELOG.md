@@ -20,8 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added option to change the feedback polling interval
 
 ## Dependencies
-* Bump qs from 6.5.2 to 6.5.3
 * Changed REST connection from request module to node's internal fetch
+* Bump sentry 7.52 to 7.53
+* Bump @types/eslint 8.37 to 8.40
+* Bump electron-to-chromium 1.4.103 to 1.4.105
+* Bump node-releases 2.0.11 to 2.0.12
+* Bump terser 5.17.5. to 5.17.6
+* Bump yaml 2.2.2 to 2.3.0
 
 ## Bugfixes
 * Corrected some typos
