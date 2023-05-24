@@ -1,6 +1,7 @@
+// noinspection JSFileReferences
 const instanceSkel = require('../../instance_skel');
 const http         = require('http');
-const request      = require('request');
+const fetch        = require('node-fetch');
 let debug, log;
 
 const feedbacks = require('./feedbacks');
@@ -84,13 +85,13 @@ class EpiphanPearl extends instanceSkel {
 		// Companion has difficulties with the first 'default' selected value.
 		// It will then return undefined (null) until you change/update the dropdown selection.
 		let channels = [{id: '0-0', label: '---'}];
-		Array.prototype.push.apply(channels,this.CHOICES_CHANNELS_LAYOUTS);
+		Array.prototype.push.apply(channels, this.CHOICES_CHANNELS_LAYOUTS);
 
 		let publishers = [{id: '0-0', label: '---'}];
-		Array.prototype.push.apply(publishers,this.CHOICES_CHANNELS_PUBLISHERS);
+		Array.prototype.push.apply(publishers, this.CHOICES_CHANNELS_PUBLISHERS);
 
 		let recorders = [{id: '0', label: '---'}];
-		Array.prototype.push.apply(recorders,this.CHOICES_RECORDERS);
+		Array.prototype.push.apply(recorders, this.CHOICES_RECORDERS);
 
 		this.setActions({
 			'channelChangeLayout': {
@@ -143,6 +144,15 @@ class EpiphanPearl extends instanceSkel {
 
 		switch (action.action) {
 			case 'channelChangeLayout': {
+				if (!action.options.channelIdlayoutId || !action.options.channelIdlayoutId.includes('-')) {
+					this._setStatus(
+						this.STATUS_ERROR,
+						'Channel and Layout are not know! Please review you\'re button config'
+					);
+					this.debug('channelIdlayoutId: ' + action.options.channelIdlayoutId);
+					break;
+				}
+
 				const [channelId, layoutId] = action.options.channelIdlayoutId.split('-');
 				if (!this._getChannelById(channelId)) {
 					this._setStatus(
@@ -164,7 +174,7 @@ class EpiphanPearl extends instanceSkel {
 				type     = 'put';
 				url      = '/api/channels/' + channelId + '/layouts/active';
 				body     = {id: layoutId};
-				callback = (err, response) => {
+				callback = response => {
 					if (response && response.status === 'ok') {
 						this._updateActiveChannelLayout(channelId, layoutId);
 					}
@@ -172,6 +182,15 @@ class EpiphanPearl extends instanceSkel {
 				break;
 			}
 			case 'channelStreaming': {
+				if (!action.options.channelIdpublisherId || !action.options.channelIdpublisherId.includes('-')) {
+					this._setStatus(
+						this.STATUS_ERROR,
+						'Channel and Publisher are not know! Please review you\'re button config'
+					);
+					this.debug('Undefined channelIdpublisherId ... ' + action.options.channelIdpublisherId);
+					break;
+				}
+
 				const [channelId, publishersId] = action.options.channelIdpublisherId.split('-');
 				if (!this._getChannelById(channelId)) {
 					this._setStatus(
@@ -210,7 +229,7 @@ class EpiphanPearl extends instanceSkel {
 			}
 			case 'recorderRecording': {
 				this.debug(action);
-				const recorderId  = action.options.recorderId;
+				const recorderId = action.options.recorderId;
 				if (!this._getRecorderById(recorderId)) {
 					this._setStatus(
 						this.STATUS_ERROR,
@@ -232,9 +251,9 @@ class EpiphanPearl extends instanceSkel {
 
 				type     = 'post';
 				url      = '/api/recorders/' + recorderId + '/control/' + startStopAction;
-				callback = (err, response) => {
+				callback = async response => {
 					if (response && response.status === 'ok') {
-						this._updateRecorderStatus(recorderId);
+						await this._updateRecorderStatus(recorderId);
 					}
 				};
 				break;
@@ -245,10 +264,12 @@ class EpiphanPearl extends instanceSkel {
 
 		// Send request
 		if (url) {
-			this._sendRequest(type, url, body, callback);
+			this._sendRequest(type, url, body)
+				.then(callback);
 		}
 	}
 
+	// noinspection JSUnusedGlobalSymbols
 	/**
 	 * Creates the configuration fields for web config.
 	 *
@@ -300,7 +321,6 @@ class EpiphanPearl extends instanceSkel {
 	destroy() {
 		clearInterval(this.timer);
 		this.status(this.STATUS_UNKNOWN);
-		this.defaultRequest = null;
 		this.debug('destroy', this.id);
 	}
 
@@ -321,6 +341,7 @@ class EpiphanPearl extends instanceSkel {
 		this._initInterval();
 	}
 
+	// noinspection JSUnusedGlobalSymbols
 	/**
 	 * Process an updated configuration array.
 	 *
@@ -330,23 +351,6 @@ class EpiphanPearl extends instanceSkel {
 	 */
 	updateConfig(config) {
 		this.config = config;
-		this._initRequest();
-	}
-
-	/**
-	 * INTERNAL: setup default request data for requests
-	 *
-	 * @private
-	 * @since 1.0.0
-	 */
-	_initRequest() {
-		this.defaultRequest = request.defaults({
-			auth: {
-				user: this.config.username,
-				pass: this.config.password,
-			},
-			timeout: 10000,
-		});
 	}
 
 	/**
@@ -359,6 +363,12 @@ class EpiphanPearl extends instanceSkel {
 	 */
 	_setStatus(level, message = '') {
 		this.status(level, message);
+
+		if (level === this.STATUS_ERROR) {
+			this.log('error', message);
+		} else if (level === this.STATUS_WARNING) {
+			this.log('warning', message);
+		}
 	}
 
 	/**
@@ -369,17 +379,10 @@ class EpiphanPearl extends instanceSkel {
 	 * @param {Object} options - Option object gotten from a performed action [action()]
 	 */
 	_getStartStopActionFromOptions(options) {
-		const startStopActionId = parseInt(options.startStopAction);
+		const startStopActionId  = parseInt(options.startStopAction);
+		const startStopActionObj = this.CHOICES_STARTSTOP.find(obj => obj.id === startStopActionId);
 
-		if (typeof options.startStopAction === 'undefined' || options.startStopAction === null || startStopActionId === 99) {
-			return null;
-		}
-
-		const action = this.CHOICES_STARTSTOP.find((e) => {
-			return e.id === startStopActionId;
-		}).action
-
-		return action ? action : null;
+		return typeof startStopActionObj !== "undefined" ? startStopActionObj.action : null;
 	}
 
 	/**
@@ -412,7 +415,7 @@ class EpiphanPearl extends instanceSkel {
 		if (!channel || !id) {
 			return;
 		} else if (typeof channel === 'number') {
-			let channel = this._getChannelById(channel);
+			channel = this._getChannelById(channel);
 			if (!channel) {
 				return;
 			}
@@ -532,11 +535,15 @@ class EpiphanPearl extends instanceSkel {
 	 *
 	 * @private
 	 * @since 1.0.0
-	 * @param {String} id
+	 * @param {String|Number} id Can have a "m" in the id
 	 */
 	_getRecorderById(id) {
 		if (!id) {
 			return;
+		}
+		if (typeof id !== 'number' && !id.includes('m')) {
+			// recorders can have an 'm' in their name as id...
+			id = parseInt(id)
 		}
 		return this.RECORDER_STATES.find(obj => obj.id === id);
 	}
@@ -567,6 +574,11 @@ class EpiphanPearl extends instanceSkel {
 		const channel = this._getChannelById(channelId);
 		if (!channel) {
 			return;
+		}
+
+		if (publisherId === 'all') {
+			// We can start and stop all encoders at the same time.
+			return true;
 		}
 
 		return this._getTypeFromChannelById(TYPE_PUBLISHER, channel, publisherId)
@@ -609,24 +621,15 @@ class EpiphanPearl extends instanceSkel {
 	 * @param {String} type - post, get, put
 	 * @param {String} url - Full URL to send request to
 	 * @param {?Object} body - Optional body to send
-	 * @param {?Function} callback - Optional callback function for data
 	 */
-	_sendRequest(type, url, body = {}, callback = () => {
-	}) {
-		const self    = this;
+	async _sendRequest(type, url, body = {}) {
 		const apiHost = this.config.host,
-		      apiPort = this.config.host_port,
+			  apiPort = this.config.host_port,
 			  baseUrl = 'http://' + apiHost + ':' + apiPort;
 
 		if (url === null || url === '') {
 			this._setStatus(this.STATUS_ERROR, 'No URL given for _sendRequest');
 			this.log('error', 'No URL given for _sendRequest');
-			return false;
-		}
-
-		if (this.defaultRequest === undefined) {
-			this._setStatus(this.STATUS_ERROR, 'Error, no request interface...');
-			this.log('error', 'Error, no request interface...');
 			return false;
 		}
 
@@ -642,69 +645,58 @@ class EpiphanPearl extends instanceSkel {
 			body = {};
 		}
 
-		// Check if we have a valid callback
-		if (callback === undefined || callback == null || typeof callback !== 'function') {
-			callback = () => {
-			};
-		}
-
 		const requestUrl = baseUrl + url;
 		this.debug('Starting request to: ' + type + ' ' + baseUrl + url);
 		this.debug(body);
-		this.defaultRequest({
+
+		let response;
+		try {
+			let options = {
 				method: type,
-				uri: requestUrl,
-				json: body
-			},
-			(error, response, body) => {
-				self.debug('error: ' + JSON.stringify(error));
-				//self.debug('response: ' + JSON.stringify(response));
-				self.debug('body:' + JSON.stringify(body));
-
-				if (error && error.code === 'ETIMEDOUT') {
-					self._setStatus(self.STATUS_ERROR, 'Connection timeout while connecting to ' + requestUrl);
-					self.log('error', 'Connection timeout while connecting to ' + requestUrl);
-					callback(error);
-					return;
+				timeout: 10000,
+				headers: {
+					'Authorization': 'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64')
 				}
+			}
 
-				if (error && error.code === 'ECONNREFUSED') {
-					self._setStatus(self.STATUS_ERROR, 'Connection refused for ' + requestUrl);
-					self.log('error', 'Connection refused for ' + requestUrl);
-					callback(error);
-					return;
-				}
+			if (type !== 'GET') {
+				options.body                    = body;
+				options.headers['Content-Type'] = 'application/json'
+			}
 
-				if (error && error.connect === true) {
-					self._setStatus(self.STATUS_ERROR, 'Read timeout waiting for response from: ' + requestUrl);
-					self.log('error', 'Read timeout waiting for response from: ' + requestUrl);
-					callback(error);
-					return;
-				}
+			response = await fetch(requestUrl, options);
+		} catch (error) {
+			if (error.name === 'AbortError') {
+				this._setStatus(this.STATUS_ERROR, 'Request was aborted: ' + requestUrl + ' reason: ' + error.message);
+				this.debug(error.message)
+				return;
+			}
 
-				if (response &&
-					(response.statusCode < 200 || response.statusCode > 299)) {
-					self._setStatus(self.STATUS_ERROR, 'Non-successful response status code: ' + http.STATUS_CODES[response.statusCode] + ' ' + requestUrl);
-					self.log('error', 'Non-successful response status code: ' + http.STATUS_CODES[response.statusCode] + ' ' + requestUrl);
-					callback(error);
-					return;
-				}
+			this._setStatus(this.STATUS_ERROR, error.message);
+			this.debug(error.message)
+			return;
+		}
 
-				if (body && body.status && body.status !== 'ok') {
-					self._setStatus(self.STATUS_ERROR, 'Non-successful response from pearl: ' + requestUrl + ' - ' + (body.message ? body.message : 'No error message'));
-					self.log('error', 'Non-successful response from pearl: ' + requestUrl + ' - ' + (body.message ? body.message : 'No error message'));
-					callback(error);
-					return;
-				}
+		if (!response.ok) {
+			this._setStatus(this.STATUS_ERROR, 'Non-successful response status code: ' + http.STATUS_CODES[response.status] + ' ' + requestUrl);
+			this.debug('Non-successful response status code: ' + http.STATUS_CODES[response.status] + ' ' + requestUrl)
+			return;
+		}
 
-				let result = body;
-				if (body && body.result) {
-					result = body.result;
-				}
+		const responseBody = await response.json();
+		if (responseBody && responseBody.status && responseBody.status !== 'ok') {
+			this._setStatus(this.STATUS_ERROR, 'Non-successful response from pearl: ' + requestUrl + ' - ' + (body.message ? body.message : 'No error message'));
+			this.debug('Non-successful response from pearl: ' + requestUrl + ' - ' + (body.message ? body.message : 'No error message'));
+			return;
+		}
 
-				self._setStatus(self.STATUS_OK);
-				callback(null, result);
-			});
+		let result = responseBody;
+		if (responseBody && responseBody.result) {
+			result = responseBody.result;
+		}
+
+		this._setStatus(this.STATUS_OK);
+		return result;
 	}
 
 	/**
@@ -737,8 +729,8 @@ class EpiphanPearl extends instanceSkel {
 	_initInterval() {
 		// Run 2 times first
 		this._dataPoller();
-		// Poll data from pearl every 10 secs
-		this.timer = setInterval(this._dataPoller.bind(this), 10000);
+		// Poll data from pearl every 20 secs
+		this.timer = setInterval(this._dataPoller.bind(this), 20000);
 	}
 
 
@@ -750,107 +742,100 @@ class EpiphanPearl extends instanceSkel {
 	 * @private
 	 * @since 1.0.0
 	 */
-	_dataPoller() {
-		const self = this;
-
+	async _dataPoller() {
 		// Get all channels available
-		this._sendRequest('get', '/api/channels?publishers=yes&encoders=yes', {}, (err, channels) => {
-			if (err) {
-				return;
-			}
-			for (const a in channels) {
-				const channel = channels[a];
+		const channels = await this._sendRequest('get', '/api/channels?publishers=yes&encoders=yes', {});
 
-				const channelUpdate = {
-					id: parseInt(channel.id),
-					label: channel.name
-				};
+		for (const a in channels) {
+			const channel = channels[a];
 
-				let currentChannel = self._getChannelById(channelUpdate.id);
-				if (currentChannel === undefined) {
-					currentChannel = {
-						...channelUpdate,
-						...{
-							layouts: [],
-							publishers: [],
-							encoders: []
-						}
-					};
-					self.CHANNEL_STATES.push(currentChannel);
-				} else {
-					currentChannel = {...currentChannel, ...channelUpdate};
-				}
+			const channelUpdate = {
+				id: parseInt(channel.id),
+				label: channel.name
+			};
 
-				for (const b in channel.publishers) {
-					const publisher      = channel.publishers[b];
-					let currentPublisher = currentChannel.publishers.find(obj => obj.id === parseInt(publisher.id));
-
-					const updatedPublisher = {
-						id: parseInt(publisher.id),
-						label: publisher.name,
-					};
-					if (currentPublisher === undefined) {
-						currentChannel.publishers.push({
-							...updatedPublisher,
-							...{
-								status: {
-									isStreaming: false,
-									duration: 0
-								}
-							}
-						});
-					} else {
-						currentPublisher = {...currentPublisher, ...updatedPublisher};
+			let currentChannel = this._getChannelById(channelUpdate.id);
+			if (currentChannel === undefined) {
+				currentChannel = {
+					...channelUpdate,
+					...{
+						layouts: [],
+						publishers: [],
+						encoders: []
 					}
-				}
-			}
-
-			self.debug('Updating CHANNEL_STATES and call _updateSystem()');
-			self._updateSystem(system);
-
-			// Update layouts and publishers
-			self._updateChannelLayouts();
-			self._updateChannelPublishers();
-		});
-
-		// Get all recorders
-		let tempRecorders = [];
-		this._sendRequest('get', '/api/recorders', {}, (err, recoders) => {
-			if (err) {
-				return;
-			}
-
-			for (const a in recoders) {
-				const recoder         = recoders[a];
-				const updatedRecorder = {
-					id: recoder.id,
-					label: recoder.name
 				};
-				tempRecorders.push(updatedRecorder);
+				this.CHANNEL_STATES.push(currentChannel);
+			} else {
+				currentChannel = {...currentChannel, ...channelUpdate};
+			}
 
-				let currentRecoder = self._getRecorderById(updatedRecorder.id);
-				if (currentRecoder === undefined) {
-					self.RECORDER_STATES.push({
-						...updatedRecorder,
+			for (const b in channel.publishers) {
+				const publisher      = channel.publishers[b];
+				let currentPublisher = currentChannel.publishers.find(obj => obj.id === parseInt(publisher.id));
+
+				const updatedPublisher = {
+					id: parseInt(publisher.id),
+					label: publisher.name,
+				};
+				if (currentPublisher === undefined) {
+					currentChannel.publishers.push({
+						...updatedPublisher,
 						...{
 							status: {
-								isRecording: false,
+								isStreaming: false,
 								duration: 0
 							}
 						}
 					});
 				} else {
-					currentRecoder = {...currentRecoder, ...updatedRecorder};
+					currentPublisher = {...currentPublisher, ...updatedPublisher};
 				}
 			}
+		}
 
-			self.debug('Updating RECORDER_STATES and then call _updateSystem()');
-			self.CHOICES_RECORDERS = tempRecorders.slice();
-			self._updateSystem();
+		this.debug('Updating CHANNEL_STATES');
 
-			// Update status
-			self._updateRecorderStatus();
-		});
+		// Update layouts and publishers
+		await this._updateChannelLayouts();
+		await this._updateChannelPublishers();
+
+		// Get all recorders
+		let tempRecorders = [];
+		const recorders   = await this._sendRequest('get', '/api/recorders', {});
+
+		for (const a in recorders) {
+			const recorder        = recorders[a];
+			const updatedRecorder = {
+				id: recorder.id,
+				label: recorder.name
+			};
+			tempRecorders.push(updatedRecorder);
+
+			let currentRecorder = this._getRecorderById(updatedRecorder.id);
+			if (currentRecorder === undefined) {
+				this.RECORDER_STATES.push({
+					...updatedRecorder,
+					...{
+						status: {
+							isRecording: false,
+							duration: 0
+						}
+					}
+				});
+			} else {
+				currentRecorder = {...currentRecorder, ...updatedRecorder};
+			}
+		}
+
+		this.debug('Updating RECORDER_STATES');
+		this.debug('Updating CHOICES_RECORDERS');
+		this.CHOICES_RECORDERS = tempRecorders.slice();
+
+		// Update status
+		await this._updateRecorderStatus();
+
+		this.debug('Call _updateSystem() for update');
+		this._updateSystem(system);
 	}
 
 	/**
@@ -860,45 +845,42 @@ class EpiphanPearl extends instanceSkel {
 	 * @private
 	 * @since 1.0.0
 	 */
-	_updateChannelLayouts() {
-		const self = this;
-
+	async _updateChannelLayouts() {
 		// For every channel get layouts and populate/update actions()
 		let tempLayouts = [];
 		for (const a in this.CHANNEL_STATES) {
-			let channel = self.CHANNEL_STATES[a];
+			let channel = this.CHANNEL_STATES[a];
 
-			this._sendRequest('get', '/api/channels/' + channel.id + '/layouts', {}, (err, layouts) => {
-				if (err) {
-					return;
+			const layouts = await this._sendRequest('get', '/api/channels/' + channel.id + '/layouts', {});
+			if (!layouts) {
+				return;
+			}
+
+			for (const b in layouts) {
+				const layout = layouts[b];
+				tempLayouts.push({
+					id: channel.id + '-' + layout.id,
+					label: channel.label + ' - ' + layout.name,
+					channelLabel: channel.label,
+					layoutLabel: layout.name
+				});
+
+				const objIndex      = channel.layouts.findIndex(obj => obj.id === parseInt(layout.id));
+				const updatedLayout = {
+					id: parseInt(layout.id),
+					label: layout.name,
+					active: layout.active
+				};
+				if (objIndex === -1) {
+					channel.layouts.push(updatedLayout);
+				} else {
+					channel.layouts[objIndex] = updatedLayout;
 				}
-				for (const b in layouts) {
-					const layout = layouts[b];
-					tempLayouts.push({
-						id: channel.id + '-' + layout.id,
-						label: channel.label + ' - ' + layout.name,
-						channelLabel: channel.label,
-						layoutLabel: layout.name
-					});
+			}
 
-					const objIndex      = channel.layouts.findIndex(obj => obj.id === parseInt(layout.id));
-					const updatedLayout = {
-						id: parseInt(layout.id),
-						label: layout.name,
-						active: layout.active
-					};
-					if (objIndex === -1) {
-						channel.layouts.push(updatedLayout);
-					} else {
-						channel.layouts[objIndex] = updatedLayout;
-					}
-				}
-
-				self.debug('Updating CHOICES_CHANNELS_LAYOUTS and then call _updateSystem()');
-				self.CHOICES_CHANNELS_LAYOUTS = tempLayouts.slice();
-				self.checkFeedbacks('channelLayout');
-				self._updateSystem();
-			});
+			this.debug('Updating CHOICES_CHANNELS_LAYOUTS and then call checkFeedbacks(channelLayout)');
+			this.CHOICES_CHANNELS_LAYOUTS = tempLayouts.slice();
+			this.checkFeedbacks('channelLayout');
 		}
 	}
 
@@ -909,55 +891,52 @@ class EpiphanPearl extends instanceSkel {
 	 * @private
 	 * @since 1.0.0
 	 */
-	_updateChannelPublishers() {
-		const self = this;
-
+	async _updateChannelPublishers() {
 		// For get publishers and encoders
 		let tempPublishers = [];
-		this._sendRequest('get', '/api/channels/status?publishers=yes&encoders=yes', {}, (err, channels) => {
-			if (err) {
-				return;
+		const channels     = await this._sendRequest('get', '/api/channels/status?publishers=yes&encoders=yes', {});
+		if (!channels) {
+			return;
+		}
+
+		for (const a in channels) {
+			const apiChannel     = channels[a];
+			const currentChannel = this._getChannelById(apiChannel.id);
+			if (!currentChannel) {
+				continue
 			}
-			for (const a in channels) {
-				const apiChannel     = channels[a];
-				const currentChannel = self._getChannelById(apiChannel.id);
-				if (!currentChannel) {
-					continue
+
+			tempPublishers.push({
+				id: currentChannel.id + '-all',
+				label: currentChannel.label + ' - All encoders',
+				channelLabel: currentChannel.label,
+				publisherLabel: 'All encoders'
+			});
+			for (const b in apiChannel.publishers) {
+				const publisher        = apiChannel.publishers[b];
+				const currentPublisher = currentChannel.publishers.find(obj => obj.id === parseInt(publisher.id));
+				if (!currentPublisher) {
+					continue;
 				}
 
 				tempPublishers.push({
-					id: currentChannel.id + '-all',
-					label: currentChannel.label + ' - All',
+					id: currentChannel.id + '-' + currentPublisher.id,
+					label: currentChannel.label + ' - ' + currentPublisher.label,
 					channelLabel: currentChannel.label,
-					publisherLabel: 'All'
+					publisherLabel: currentPublisher.label
 				});
-				for (const b in apiChannel.publishers) {
-					const publisher        = apiChannel.publishers[b];
-					const currentPublisher = currentChannel.publishers.find(obj => obj.id === parseInt(publisher.id));
-					if (!currentPublisher) {
-						continue;
-					}
 
-					tempPublishers.push({
-						id: currentChannel.id + '-' + currentPublisher.id,
-						label: currentChannel.label + ' - ' + currentPublisher.label,
-						channelLabel: currentChannel.label,
-						publisherLabel: currentPublisher.label
-					});
-
-					const status            = publisher.status;
-					currentPublisher.status = {
-						isStreaming: status.started && status.state === 'started',
-						duration: status.started && status.state === 'started' ? parseInt(status.duration) : 0,
-					}
+				const status            = publisher.status;
+				currentPublisher.status = {
+					isStreaming: status.started && status.state === 'started',
+					duration: status.started && status.state === 'started' ? parseInt(status.duration) : 0,
 				}
 			}
+		}
 
-			self.debug('Updating CHOICES_CHANNELS_PUBLISHERS and then call _updateSystem()');
-			self.CHOICES_CHANNELS_PUBLISHERS = tempPublishers.slice();
-			self.checkFeedbacks('channelStreaming');
-			self._updateSystem();
-		});
+		this.debug('Updating CHOICES_CHANNELS_PUBLISHERS and then call checkFeedbacks(channelStreaming)');
+		this.CHOICES_CHANNELS_PUBLISHERS = tempPublishers.slice();
+		this.checkFeedbacks('channelStreaming');
 	}
 
 	/**
@@ -967,33 +946,29 @@ class EpiphanPearl extends instanceSkel {
 	 * @private
 	 * @since 1.0.0
 	 */
-	_updateRecorderStatus() {
-		const self = this;
-
+	async _updateRecorderStatus() {
 		// For get status for recorders
-		this._sendRequest('get', '/api/recorders/status', {}, (err, recoders) => {
-			if (err) {
-				return;
+		const recoders = await this._sendRequest('get', '/api/recorders/status', {});
+		if (!recoders) {
+			return;
+		}
+
+		for (const a in recoders) {
+			const recorder        = recoders[a];
+			const currentRecorder = this._getRecorderById(recorder.id);
+			if (currentRecorder === undefined) {
+				continue;
 			}
 
-			for (const a in recoders) {
-				const recoder        = recoders[a];
-				const currentRecoder = self._getRecorderById(recoder.id);
-				if (currentRecoder === undefined) {
-					continue;
-				}
-
-				const status          = recoder.status;
-				currentRecoder.status = {
-					isRecording: status.state !== 'stopped',
-					duration: status.state !== 'stopped' ? parseInt(status.duration) : 0,
-				}
+			const status           = recorder.status;
+			currentRecorder.status = {
+				isRecording: status.state !== 'stopped',
+				duration: status.state !== 'stopped' ? parseInt(status.duration) : 0,
 			}
+		}
 
-			self.debug('Updating RECORDER_STATES and then call _updateSystem()');
-			self.checkFeedbacks('recorderRecording');
-			self._updateSystem();
-		});
+		this.debug('Updating RECORDER_STATES and then call checkFeedbacks(recorderRecording)');
+		this.checkFeedbacks('recorderRecording');
 	}
 }
 
