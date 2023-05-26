@@ -11,13 +11,13 @@ module.exports = {
 	getPresets() {
 		let presets = {}
 
-		for (const layout of this.CHOICES_CHANNELS_LAYOUTS) {
+		for (const layout of this.choicesChannelLayout()) {
 			presets[`layout_${layout.label}`] = {
 				type: 'button',
 				category: 'Channels',
 				name: layout.label,
 				style: {
-					text: layout.channelLabel + '\\n' + layout.layoutLabel,
+					text: layout.label.replace(' - ', '\\n'),
 					size: 7,
 					color: combineRgb(255, 255, 255),
 					bgcolor: combineRgb(0, 0, 0),
@@ -42,7 +42,7 @@ module.exports = {
 							channelIdlayoutId: layout.id,
 						},
 						style: {
-							color: combineRgb(255, 255, 255),
+							color: combineRgb(0, 0, 0),
 							bgcolor: combineRgb(255, 0, 0),
 						},
 					},
@@ -50,13 +50,13 @@ module.exports = {
 			}
 		}
 
-		for (const publisher of this.CHOICES_CHANNELS_PUBLISHERS) {
+		for (const publisher of this.choicesChannelPublishers()) {
 			presets[`publisher_${publisher.label}`] = {
 				type: 'button',
 				category: 'Publishers',
 				label: publisher.label,
 				style: {
-					text: publisher.channelLabel + '\\n' + publisher.publisherLabel,
+					text: publisher.label.replace(' - ', '\\n'),
 					size: 7,
 					color: combineRgb(255, 255, 255),
 					bgcolor: combineRgb(0, 51, 153),
@@ -68,19 +68,7 @@ module.exports = {
 								actionId: 'channelStreaming',
 								options: {
 									channelIdpublisherId: publisher.id,
-									startStopAction: 1, // START
-								},
-							},
-						],
-						up: [],
-					},
-					{
-						down: [
-							{
-								actionId: 'channelStreaming',
-								options: {
-									channelIdpublisherId: publisher.id,
-									startStopAction: 0, // STOP
+									startStopAction: 3, // toggle
 								},
 							},
 						],
@@ -94,7 +82,7 @@ module.exports = {
 							channelIdpublisherId: publisher.id,
 						},
 						style: {
-							color: combineRgb(255, 255, 255),
+							color: combineRgb(0, 0, 0),
 							bgcolor: combineRgb(0, 255, 0),
 						},
 					},
@@ -102,14 +90,14 @@ module.exports = {
 			}
 		}
 
-		for (const recorder of this.CHOICES_RECORDERS) {
+		for (const recorder of this.choicesRecorders()) {
 			presets[`recorder_${recorder.label}`] = {
 				type: 'button',
 				category: 'Recorders',
 				label: recorder.label,
 				style: {
-					text: recorder.label,
-					size: 7,
+					text: recorder.label + '\\n▶️/⏹',
+					size: 14,
 					color: combineRgb(255, 255, 255),
 					bgcolor: combineRgb(0, 102, 0),
 				},
@@ -120,19 +108,7 @@ module.exports = {
 								actionId: 'recorderRecording',
 								options: {
 									recorderId: recorder.id,
-									startStopAction: 1, // START
-								},
-							},
-						],
-						up: [],
-					},
-					{
-						down: [
-							{
-								actionId: 'recorderRecording',
-								options: {
-									recorderId: recorder.id,
-									startStopAction: 0, // STOP
+									startStopAction: 3, // Toggle
 								},
 							},
 						],
@@ -146,7 +122,44 @@ module.exports = {
 							recorderId: recorder.id,
 						},
 						style: {
-							color: combineRgb(255, 255, 255),
+							color: combineRgb(0, 0, 0),
+							bgcolor: combineRgb(255, 0, 0),
+						},
+					},
+				],
+			}
+			presets[`recorder_${recorder.label}_reset`] = {
+				type: 'button',
+				category: 'Recorders',
+				label: recorder.label,
+				style: {
+					text: recorder.label + '\\n🔁',
+					size: 14,
+					color: combineRgb(255, 255, 255),
+					bgcolor: combineRgb(0, 102, 0),
+				},
+				steps: [
+					{
+						down: [
+							{
+								actionId: 'recorderRecording',
+								options: {
+									recorderId: recorder.id,
+									startStopAction: 2, // Reset
+								},
+							},
+						],
+						up: [],
+					},
+				],
+				feedbacks: [
+					{
+						feedbackId: 'recorderRecording',
+						options: {
+							recorderId: recorder.id,
+						},
+						style: {
+							color: combineRgb(0, 0, 0),
 							bgcolor: combineRgb(255, 0, 0),
 						},
 					},

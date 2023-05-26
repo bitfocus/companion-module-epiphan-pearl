@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ---
+## [2.1.0] (2023-05-26)
+
+## New Features
+* Added action to insert chapter markers in recordings
+* Added action to get layout data and store it in a variable
+* Added action to set layout data to device
+* Added options to toggle streaming and recording based on current state
+* Added preset for recorder reset action
+* Don't show "All streams" any more if there are no individual streams in a channel
+* completely redone internal handling of polling and updating the connection data, improved error handling
+
 ## [2.0.0] (2023-05-24)
 
 ## Major

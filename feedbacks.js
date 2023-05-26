@@ -24,8 +24,8 @@ module.exports = {
 					type: 'dropdown',
 					label: 'Channel',
 					id: 'channelIdlayoutId',
-					choices: this.CHOICES_CHANNELS_LAYOUTS,
-					default: this.CHOICES_CHANNELS_LAYOUTS.length > 0 ? this.CHOICES_CHANNELS_LAYOUTS[0].id : '',
+					choices: this.choicesChannelLayout(),
+					default: this.firstId(this.choicesChannelLayout()),
 				},
 			],
 			callback: (feedback) => {
@@ -34,13 +34,16 @@ module.exports = {
 				}
 
 				const [channelId, layoutId] = feedback.options.channelIdlayoutId.split('-')
-				const layout = this._getLayoutFromChannelById(this._getChannelById(channelId), layoutId)
-				if (!layout) {
-					return false
-				}
 
-				if (layout.active) {
-					return true
+				try {
+					if (this.state.channels[channelId]?.layouts[layoutId]?.active) {
+						return true
+					}
+				} catch (error) {
+					this.log(
+						'error',
+						`trying to read feedback for a non-existing layout (Channel ${channelId}, Layout ${layoutId})`
+					)
 				}
 				return false
 			},
@@ -59,8 +62,8 @@ module.exports = {
 					type: 'dropdown',
 					label: 'Channel publisher',
 					id: 'channelIdpublisherId',
-					choices: this.CHOICES_CHANNELS_PUBLISHERS,
-					default: this.CHOICES_CHANNELS_PUBLISHERS.length > 0 ? this.CHOICES_CHANNELS_PUBLISHERS[0].id : '',
+					choices: this.choicesChannelPublishers(),
+					default: this.firstId(this.choicesChannelPublishers()),
 				},
 			],
 			callback: (feedback) => {
@@ -69,21 +72,23 @@ module.exports = {
 				}
 
 				const [channelId, publisherId] = feedback.options.channelIdpublisherId.split('-')
-				const channel = this._getChannelById(channelId)
-				if (!channel) {
+				const channel = this.state.channels[channelId]
+
+				try {
+					if (publisherId === 'all') {
+						return !Object.keys(channel.publishers)
+							.map((id) => channel.publishers[id].status.state)
+							.some((state) => state !== 'started')
+					} else {
+						return channel.publishers[publisherId].status.state === 'started'
+					}
+				} catch (error) {
+					this.log(
+						'error',
+						`trying to read feedback for a non-existing publisher (Channel ${channelId}, Publisher ${publisherId})`
+					)
 					return false
 				}
-
-				const publisher = this._getPublisherFromChannelById(channel, publisherId)
-				let isStreaming = false
-				if (publisherId === 'all') {
-					isStreaming = this._getActivePublishersFromChannel(channel)
-				}
-
-				if (this._isPublisherStreaming(publisher) || isStreaming) {
-					return true
-				}
-				return false
 			},
 		}
 
@@ -100,16 +105,17 @@ module.exports = {
 					type: 'dropdown',
 					label: 'Recorders',
 					id: 'recorderId',
-					choices: this.CHOICES_RECORDERS,
-					default: this.CHOICES_RECORDERS.length > 0 ? this.CHOICES_RECORDERS[0].id : '',
+					choices: this.choicesRecorders(),
+					default: this.firstId(this.choicesRecorders()),
 				},
 			],
 			callback: (feedback) => {
-				const recorder = this._getRecorderById(feedback.options.recorderId)
-				if (this._isRecorderRecording(recorder)) {
-					return true
+				try {
+					return this.state.recorders[feedback.options.recorderId]?.status?.state === 'started'
+				} catch (error) {
+					this.log('error', `trying to read feedback for a non-existing recorder (${feedback.options.recorderId})`)
+					return false
 				}
-				return false
 			},
 		}
 

@@ -9,24 +9,6 @@ module.exports = {
 	 * @returns {Object} the action definitions
 	 */
 	get_actions() {
-		const startStopOption = {
-			type: 'dropdown',
-			id: 'startStopAction',
-			label: 'Action',
-			choices: this.CHOICES_STARTSTOP,
-			default: this.CHOICES_STARTSTOP[0].id,
-		}
-
-		// Companion has difficulties with the first 'default' selected value.
-		let channels = [{ id: '0-0', label: '---' }]
-		Array.prototype.push.apply(channels, this.CHOICES_CHANNELS_LAYOUTS)
-
-		let publishers = [{ id: '0-0', label: '---' }]
-		Array.prototype.push.apply(publishers, this.CHOICES_CHANNELS_PUBLISHERS)
-
-		let recorders = [{ id: '0', label: '---' }]
-		Array.prototype.push.apply(recorders, this.CHOICES_RECORDERS)
-
 		const actions = {}
 		actions['channelChangeLayout'] = {
 			name: 'Change channel layout',
@@ -35,8 +17,8 @@ module.exports = {
 					type: 'dropdown',
 					id: 'channelIdlayoutId',
 					label: 'Change layout to:',
-					choices: channels,
-					default: channels[0].id,
+					choices: this.choicesChannelLayout(),
+					default: this.firstId(this.choicesChannelLayout()),
 				},
 			],
 			callback: (action) => {
@@ -45,8 +27,8 @@ module.exports = {
 					body,
 					callback
 
-				if (!action.options.channelIdlayoutId || !action.options.channelIdlayoutId.includes('-')) {
-					this._setStatus(
+				if (typeof action.options.channelIdlayoutId !== 'string' || !action.options.channelIdlayoutId.includes('-')) {
+					this.setStatus(
 						InstanceStatus.UnknownWarning,
 						'Channel and layout are not known! Please review your button config'
 					)
@@ -55,16 +37,16 @@ module.exports = {
 				}
 
 				const [channelId, layoutId] = action.options.channelIdlayoutId.split('-')
-				if (!this._getChannelById(channelId)) {
-					this._setStatus(
+				if (!this.state.channels[channelId]) {
+					this.setStatus(
 						InstanceStatus.UnknownWarning,
 						'Action on non existing channel! Please review your button config'
 					)
 					this.log('error', 'Action on non existing channel: ' + channelId)
 					return
 				}
-				if (!this._checkValidLayoutId(channelId, layoutId)) {
-					this._setStatus(
+				if (!this.state.channels[channelId].layouts[layoutId]) {
+					this.setStatus(
 						InstanceStatus.UnknownWarning,
 						'Action on non existing layout! Please review your button config'
 					)
@@ -77,12 +59,12 @@ module.exports = {
 				body = { id: Number(layoutId) }
 				callback = (response) => {
 					if (response && response.status === 'ok') {
-						this._updateActiveChannelLayout(channelId, layoutId)
+						this.updateActiveChannelLayout(channelId, layoutId)
 					}
 				}
 
 				// Send request
-				this._sendRequest(type, url, body).then(callback)
+				this.sendRequest(type, url, body).then(callback)
 			},
 		}
 
@@ -93,62 +75,86 @@ module.exports = {
 					type: 'dropdown',
 					label: 'Channel publishers',
 					id: 'channelIdpublisherId',
-					choices: publishers,
-					default: publishers[0].id,
+					choices: this.choicesChannelPublishers(),
+					default: this.firstId(this.choicesChannelPublishers()),
 					tooltip:
 						'If a channel has only one "publisher" or "stream" then you just select all. Else you can pick the "publisher" you want to start/stop',
 				},
-				startStopOption,
+				{
+					type: 'dropdown',
+					id: 'startStopAction',
+					label: 'Action',
+					choices: [
+						{ id: 99, label: '---' },
+						{ id: 1, label: 'Start' },
+						{ id: 0, label: 'Stop' },
+						{ id: 3, label: 'Toggle Start/Stop' },
+					],
+					default: 1,
+				},
 			],
 			callback: (action) => {
-				let type = 'get',
+				let type = 'post',
 					url,
-					body,
-					callback
+					body
 
-				if (!action.options.channelIdpublisherId || !action.options.channelIdpublisherId.includes('-')) {
-					this._setStatus(
+				if (
+					typeof action.options.channelIdpublisherId !== 'string' ||
+					!action.options.channelIdpublisherId.includes('-')
+				) {
+					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Channel and Publisher are not known! Please review your button config'
+						'Channel or Publisher are not valid! Please review your button config'
 					)
 					this.debug('Undefined channelIdpublisherId ... ' + action.options.channelIdpublisherId)
 					return
 				}
 
-				const [channelId, publishersId] = action.options.channelIdpublisherId.split('-')
-				if (!this._getChannelById(channelId)) {
-					this._setStatus(
+				const [channelId, publisherId] = action.options.channelIdpublisherId.split('-')
+				if (!this.state.channels[channelId]) {
+					this.setStatus(
 						InstanceStatus.UnknownWarning,
 						'Action on non existing channel! Please review your button config.'
 					)
 					this.log('error', 'Action on non existing channel: ' + channelId)
 					return
 				}
-				if (publishersId !== 'all' && !this._checkValidPublisherId(channelId, publishersId)) {
-					this._setStatus(
+				if (publisherId !== 'all' && !this.state.channels[channelId].publishers[publisherId]) {
+					this.setStatus(
 						InstanceStatus.UnknownWarning,
 						'Action on non existing publisher! Please review your button config.'
 					)
-					this.log('error', 'Action on non existing publisher ' + publishersId + ' on channel ' + channelId)
+					this.log('error', 'Action on non existing publisher ' + publisherId + ' on channel ' + channelId)
 					return
 				}
 
-				const startStopAction = this._getStartStopActionFromOptions(action.options)
-				if (startStopAction === null) {
-					this._setStatus(InstanceStatus.UnknownWarning, 'Called an unknown action! Please review your button config.')
-					this.log('error', 'Called an unknown action: ' + action.options.startStopAction)
-					return
+				if (action.options.startStopAction === 99) return
+
+				let startStopAction = action.options.startStopAction === 1 ? 'start' : 'stop'
+
+				if (action.options.startStopAction === 3) {
+					// toggle
+					let isStreaming
+					const channel = this.state.channels[channelId]
+					if (publisherId !== 'all') {
+						isStreaming = channel.publishers[publisherId].status.state === 'started'
+					} else {
+						// if we should toggle all, check if there is at least one not streaming and then turn it on
+						isStreaming = !Object.keys(channel.publishers)
+							.map((id) => channel.publishers[id].status.state)
+							.some((state) => state !== 'started')
+					}
+					startStopAction = isStreaming ? 'stop' : 'start'
 				}
 
-				type = 'post'
-				if (publishersId !== 'all') {
-					url = '/api/channels/' + channelId + '/publishers/' + publishersId + '/control/' + startStopAction
+				if (publisherId !== 'all') {
+					url = '/api/channels/' + channelId + '/publishers/' + publisherId + '/control/' + startStopAction
 				} else {
 					url = '/api/channels/' + channelId + '/publishers/control/' + startStopAction
 				}
 
 				// Send request
-				this._sendRequest(type, url, body).then(callback)
+				this.sendRequest(type, url, body)
 			},
 		}
 
@@ -159,8 +165,8 @@ module.exports = {
 					type: 'dropdown',
 					label: 'Recorder',
 					id: 'recorderId',
-					choices: this.CHOICES_RECORDERS,
-					default: this.CHOICES_RECORDERS.length > 0 ? this.CHOICES_RECORDERS[0].id : '',
+					choices: this.choicesRecorders(),
+					default: this.firstId(this.choicesRecorders()),
 				},
 				{
 					type: 'dropdown',
@@ -171,6 +177,7 @@ module.exports = {
 						{ id: 1, label: 'Start' },
 						{ id: 0, label: 'Stop' },
 						{ id: 2, label: 'Reset' },
+						{ id: 3, label: 'Toggle Start/Stop' },
 					],
 					default: 1,
 				},
@@ -182,16 +189,25 @@ module.exports = {
 					callback
 
 				const recorderId = action.options.recorderId
-				if (!this._getRecorderById(recorderId)) {
-					this._setStatus(
+				if (!this.state.recorders[recorderId]) {
+					this.setStatus(
 						InstanceStatus.UnknownWarning,
 						'Action on non existing recorder! Please review your button config.'
 					)
-					this.log('error', 'Action on non existing recorder ' + recorderId)
+					this.log('warn', 'Action on non existing recorder ' + recorderId)
 					return
 				}
 
-				const startStopAction = action.options.startStopAction
+				let startStopAction = action.options.startStopAction
+				if (startStopAction === 3) {
+					// Toggle
+					if (this.state.recorders[recorderId]?.status?.state === 'started') {
+						startStopAction = 0
+					} else {
+						startStopAction = 1
+					}
+				}
+
 				if (startStopAction === 0) {
 					url = `/api/recorders/${recorderId}/control/stop`
 				} else if (startStopAction === 1) {
@@ -201,20 +217,176 @@ module.exports = {
 				} else if (startStopAction === 99) {
 					return
 				} else {
-					this._setStatus(InstanceStatus.UnknownWarning, 'Called an unknown action! Please review your button config.')
+					this.setStatus(InstanceStatus.UnknownWarning, 'Called an unknown action! Please review your button config.')
 					this.log('error', 'Called an unknown action: ' + action.options.startStopAction)
 					return
 				}
 
 				callback = async (response) => {
 					if (response && response.status === 'ok') {
-						await this._updateRecorderStatus(recorderId)
+						this.updateRecorderStatus(recorderId)
 					}
 				}
 				// Send request
-				this._sendRequest(type, url, body).then(callback)
+				this.sendRequest(type, url, body).then(callback)
 			},
 		}
+		actions['insertMarker'] = {
+			name: 'Insert Marker',
+			options: [
+				{
+					type: 'dropdown',
+					label: 'Channel',
+					id: 'channel',
+					choices: this.choicesChannel(),
+					default: this.firstId(this.choicesChannel()),
+				},
+				{
+					type: 'textinput',
+					id: 'markertext',
+					label: 'Marker text',
+					useVariables: true,
+					default: '',
+					tooltip: 'You can use variables in this field like current time',
+				},
+			],
+			callback: async (action) => {
+				let type = 'post'
+				let url = `/api/channels/${action.options.channel}/bookmarks`
+				let body = { text: await this.parseVariablesInString(action.options.markertext) }
+
+				// Send request
+				try {
+					await this.sendRequest(type, url, body)
+					this.log('info', 'marker successful sent: ' + body.text)
+				} catch (error) {
+					this.log('error', 'marker could not be set')
+				}
+			},
+		}
+		actions['getLayoutData'] = {
+			name: 'Get layout data',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'channelIdlayoutId',
+					label: 'Layout to get',
+					choices: this.choicesChannelLayout(),
+					default: this.firstId(this.choicesChannelLayout()),
+				},
+				{
+					id: 'destination',
+					type: 'custom-variable',
+					label: 'Destination Variable',
+				},
+			],
+			callback: async (action) => {
+				if (typeof action.options.channelIdlayoutId !== 'string' || !action.options.channelIdlayoutId.includes('-')) {
+					this.setStatus(
+						InstanceStatus.UnknownWarning,
+						'Channel and layout are not known! Please review your button config'
+					)
+					this.debug('channelIdlayoutId: ' + action.options.channelIdlayoutId)
+					return
+				}
+
+				const [channelId, layoutId] = action.options.channelIdlayoutId.split('-')
+				if (!this.state.channels[channelId]) {
+					this.setStatus(
+						InstanceStatus.UnknownWarning,
+						'Action on non existing channel! Please review your button config'
+					)
+					this.log('error', 'Action on non existing channel: ' + channelId)
+					return
+				}
+				if (!this.state.channels[channelId].layouts[layoutId]) {
+					this.setStatus(
+						InstanceStatus.UnknownWarning,
+						'Action on non existing layout! Please review your button config'
+					)
+					this.log('error', 'Action on non existing layout ' + layoutId + ' on channel ' + channelId)
+					return
+				}
+
+				//get the data
+				const url = '/api/channels/' + channelId + '/layouts/' + layoutId + '/settings'
+				try {
+					const layoutData = JSON.stringify(await this.sendRequest('GET', url, {}))
+					this.log(
+						'debug',
+						`Layout Data retrieved for Channel ${this.state.channels[channelId].name}, Layout ${this.state.channels[channelId].layouts[layoutId].name}:\n${layoutData}`
+					)
+					this.setCustomVariableValue(action.options.destination, layoutData)
+				} catch (error) {
+					this.log('error', 'Layout data could not be retrieved or stored')
+				}
+			},
+		}
+		actions['setLayoutData'] = {
+			name: 'Set layout data',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'channelIdlayoutId',
+					label: 'Layout to set',
+					choices: this.choicesChannelLayout(),
+					default: this.firstId(this.choicesChannelLayout()),
+				},
+				{
+					id: 'source',
+					type: 'textinput',
+					label: 'Layout Data',
+					useVariables: true,
+					default: '{}',
+					tooltip:
+						'this text needs to hold a JSON-string describing a Pearl layout, you can retrieve a valid string with the according get action, variables are allowed in this option',
+				},
+			],
+			callback: async (action) => {
+				if (typeof action.options.channelIdlayoutId !== 'string' || !action.options.channelIdlayoutId.includes('-')) {
+					this.setStatus(
+						InstanceStatus.UnknownWarning,
+						'Channel and layout are not known! Please review your button config'
+					)
+					this.debug('channelIdlayoutId: ' + action.options.channelIdlayoutId)
+					return
+				}
+
+				const [channelId, layoutId] = action.options.channelIdlayoutId.split('-')
+				if (!this.state.channels[channelId]) {
+					this.setStatus(
+						InstanceStatus.UnknownWarning,
+						'Action on non existing channel! Please review your button config'
+					)
+					this.log('error', 'Action on non existing channel: ' + channelId)
+					return
+				}
+				if (!this.state.channels[channelId].layouts[layoutId]) {
+					this.setStatus(
+						InstanceStatus.UnknownWarning,
+						'Action on non existing layout! Please review your button config'
+					)
+					this.log('error', 'Action on non existing layout ' + layoutId + ' on channel ' + channelId)
+					return
+				}
+
+				//set the data
+				const url = '/api/channels/' + channelId + '/layouts/' + layoutId + '/settings'
+				let body = {}
+				try {
+					body = JSON.parse(await this.parseVariablesInString(action.options.source))
+				} catch (error) {
+					this.log('error', 'Option is no valid JSON')
+					return
+				}
+				try {
+					await this.sendRequest('PUT', url, body)
+				} catch (error) {
+					this.log('error', 'Layout data could not be sent')
+				}
+			},
+		}
+
 		return actions
 	},
 }
