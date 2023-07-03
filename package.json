@@ -11,7 +11,7 @@
 		"@companion-module/base": "~1.4"
 	},
 	"devDependencies": {
-		"@companion-module/tools": "^1.2.1"
+		"@companion-module/tools": "^1.3.2"
 	},
 	"repository": {
 		"type": "git",
