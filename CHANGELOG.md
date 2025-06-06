@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 ## [Unreleased]
 
+### Added
+- Updated HTTP requests to use API version v2.0.
+
 ---
 ## [2.1.0] (2023-05-26)
 
