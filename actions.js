@@ -385,8 +385,106 @@ module.exports = {
 					this.log('error', 'Layout data could not be sent')
 				}
 			},
-		}
+                }
 
-		return actions
-	},
+                actions['recorderStart'] = {
+                        name: 'Recorder Start',
+                        options: [
+                                {
+                                        type: 'dropdown',
+                                        label: 'Recorder',
+                                        id: 'recorderId',
+                                        choices: this.choicesRecorders(),
+                                        default: this.firstId(this.choicesRecorders()),
+                                },
+                        ],
+                        callback: (action) => {
+                                const recorderId = action.options.recorderId
+                                if (!this.state.recorders[recorderId]) return
+                                const url = `/api/recorders/${recorderId}/control/start`
+                                this.sendRequest('post', url, {})
+                        },
+                }
+
+                actions['recorderStop'] = {
+                        name: 'Recorder Stop',
+                        options: [
+                                {
+                                        type: 'dropdown',
+                                        label: 'Recorder',
+                                        id: 'recorderId',
+                                        choices: this.choicesRecorders(),
+                                        default: this.firstId(this.choicesRecorders()),
+                                },
+                        ],
+                        callback: (action) => {
+                                const recorderId = action.options.recorderId
+                                if (!this.state.recorders[recorderId]) return
+                                const url = `/api/recorders/${recorderId}/control/stop`
+                                this.sendRequest('post', url, {})
+                        },
+                }
+
+                actions['streamingStart'] = {
+                        name: 'Streaming Start',
+                        options: [
+                                {
+                                        type: 'dropdown',
+                                        label: 'Channel publisher',
+                                        id: 'channelIdpublisherId',
+                                        choices: this.choicesChannelPublishers(),
+                                        default: this.firstId(this.choicesChannelPublishers()),
+                                },
+                        ],
+                        callback: (action) => {
+                                if (typeof action.options.channelIdpublisherId !== 'string' || !action.options.channelIdpublisherId.includes('-')) return
+                                const [channelId, publisherId] = action.options.channelIdpublisherId.split('-')
+                                if (!this.state.channels[channelId]) return
+                                const url = publisherId !== 'all'
+                                        ? `/api/channels/${channelId}/publishers/${publisherId}/control/start`
+                                        : `/api/channels/${channelId}/publishers/control/start`
+                                this.sendRequest('post', url, {})
+                        },
+                }
+
+                actions['streamingStop'] = {
+                        name: 'Streaming Stop',
+                        options: [
+                                {
+                                        type: 'dropdown',
+                                        label: 'Channel publisher',
+                                        id: 'channelIdpublisherId',
+                                        choices: this.choicesChannelPublishers(),
+                                        default: this.firstId(this.choicesChannelPublishers()),
+                                },
+                        ],
+                        callback: (action) => {
+                                if (typeof action.options.channelIdpublisherId !== 'string' || !action.options.channelIdpublisherId.includes('-')) return
+                                const [channelId, publisherId] = action.options.channelIdpublisherId.split('-')
+                                if (!this.state.channels[channelId]) return
+                                const url = publisherId !== 'all'
+                                        ? `/api/channels/${channelId}/publishers/${publisherId}/control/stop`
+                                        : `/api/channels/${channelId}/publishers/control/stop`
+                                this.sendRequest('post', url, {})
+                        },
+                }
+
+                actions['rebootSystem'] = {
+                        name: 'Reboot System',
+                        options: [],
+                        callback: () => {
+                                this.sendRequest('post', '/api/system/reboot', {})
+                        },
+                }
+
+                actions['shutdownSystem'] = {
+                        name: 'Shutdown System',
+                        options: [],
+                        callback: () => {
+                                this.sendRequest('post', '/api/system/shutdown', {})
+                        },
+                }
+
+                return actions
+        },
 }

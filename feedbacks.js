@@ -92,9 +92,9 @@ module.exports = {
 			},
 		}
 
-		feedbacks['recorderRecording'] = {
-			name: 'Change style if recording',
-			type: 'boolean',
+                feedbacks['recorderRecording'] = {
+                        name: 'Change style if recording',
+                        type: 'boolean',
 			description: 'Change style if channel/recorder is recording',
 			defaultStyle: {
 				color: combineRgb(255, 255, 255),
@@ -116,8 +116,106 @@ module.exports = {
 					this.log('error', `trying to read feedback for a non-existing recorder (${feedback.options.recorderId})`)
 					return false
 				}
-			},
-		}
+                        },
+                }
+
+                feedbacks['recorderState'] = {
+                        name: 'Recorder State',
+                        type: 'boolean',
+                        description: 'Change style when recorder is in the selected state',
+                        defaultStyle: {
+                                color: combineRgb(255, 255, 255),
+                                bgcolor: combineRgb(0, 255, 0),
+                        },
+                        options: [
+                                {
+                                        type: 'dropdown',
+                                        label: 'Recorder',
+                                        id: 'recorderId',
+                                        choices: this.choicesRecorders(),
+                                        default: this.firstId(this.choicesRecorders()),
+                                },
+                                {
+                                        type: 'dropdown',
+                                        label: 'State',
+                                        id: 'state',
+                                        choices: [
+                                                { id: 'started', label: 'Started' },
+                                                { id: 'stopped', label: 'Stopped' },
+                                        ],
+                                        default: 'started',
+                                },
+                        ],
+                        callback: (feedback) => {
+                                const rec = this.state.recorders[feedback.options.recorderId]
+                                return rec?.status?.state === feedback.options.state
+                        },
+                }
+
+                feedbacks['streamingState'] = {
+                        name: 'Streaming State',
+                        type: 'boolean',
+                        description: 'Change style when the stream has the selected state',
+                        defaultStyle: {
+                                color: combineRgb(255, 255, 255),
+                                bgcolor: combineRgb(0, 255, 0),
+                        },
+                        options: [
+                                {
+                                        type: 'dropdown',
+                                        label: 'Channel publisher',
+                                        id: 'channelIdpublisherId',
+                                        choices: this.choicesChannelPublishers(),
+                                        default: this.firstId(this.choicesChannelPublishers()),
+                                },
+                                {
+                                        type: 'dropdown',
+                                        label: 'State',
+                                        id: 'state',
+                                        choices: [
+                                                { id: 'started', label: 'Started' },
+                                                { id: 'stopped', label: 'Stopped' },
+                                        ],
+                                        default: 'started',
+                                },
+                        ],
+                        callback: (feedback) => {
+                                const [channelId, publisherId] = feedback.options.channelIdpublisherId.split('-')
+                                const channel = this.state.channels[channelId]
+                                if (!channel) return false
+                                const current = publisherId === 'all'
+                                        ? !Object.keys(channel.publishers)
+                                                .map((id) => channel.publishers[id].status.state)
+                                                .some((state) => state !== feedback.options.state)
+                                        : channel.publishers[publisherId]?.status?.state === feedback.options.state
+                                return !!current
+                        },
+                }
+
+                feedbacks['afuState'] = {
+                        name: 'AFU State',
+                        type: 'boolean',
+                        description: 'Change style when the AFU is in the selected state',
+                        defaultStyle: {
+                                color: combineRgb(255, 255, 255),
+                                bgcolor: combineRgb(0, 255, 0),
+                        },
+                        options: [
+                                {
+                                        type: 'dropdown',
+                                        label: 'State',
+                                        id: 'state',
+                                        choices: [
+                                                { id: 'running', label: 'Running' },
+                                                { id: 'stopped', label: 'Stopped' },
+                                        ],
+                                        default: 'running',
+                                },
+                        ],
+                        callback: (fb) => {
+                                return this.state.system?.afu?.state === fb.options.state
+                        },
+                }
 
 		return feedbacks
 	},

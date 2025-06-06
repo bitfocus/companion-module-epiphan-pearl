@@ -11,6 +11,7 @@ const http = require('http')
 const actions = require('./actions')
 const feedbacks = require('./feedbacks')
 const presets = require('./presets')
+const variables = require('./variables')
 const { get_config_fields } = require('./config')
 
 /**
@@ -51,8 +52,8 @@ class EpiphanPearl extends InstanceBase {
                        ...actions,
                        ...feedbacks,
                        ...presets,
-			//...variables
-		})
+                       ...variables
+               })
 	}
 
 	// noinspection JSUnusedGlobalSymbols
@@ -181,11 +182,12 @@ class EpiphanPearl extends InstanceBase {
 	 * @private
 	 * @since 1.0.0
 	 */
-	updateSystem() {
-		this.setActionDefinitions(this.get_actions())
-		this.updateFeedbacks()
-		this.updatePresets()
-	}
+        updateSystem() {
+                this.setActionDefinitions(this.get_actions())
+                this.updateFeedbacks()
+                this.updatePresets()
+                this.updateVariables()
+        }
 
 	/**
 	 * INTERNAL: Setup and send request
@@ -349,17 +351,22 @@ class EpiphanPearl extends InstanceBase {
 		} // start with a fresh object, during the update some properties will be unavailable, so it is best to not do live updates
 
 		// Get all channels and recorders available (in parallel)
-		let channels, recorders, recorders_status
-		try {
-			[channels, recorders, recorders_status] = await Promise.all([
-				this.sendRequest('get', '/api/channels?publishers=yes&encoders=yes', {}),
-				this.sendRequest('get', '/api/recorders', {}),
-				this.sendRequest('get', '/api/recorders/status', {}),
-			])
-		} catch (error) {
-			this.log('error', 'No valid answer from device')
-			return
-		}
+               let channels, recorders, recorders_status, system_status, afu_status, firmware_info, product_info, identity_info
+               try {
+                       ;[channels, recorders, recorders_status, system_status, afu_status, firmware_info, product_info, identity_info] = await Promise.all([
+                                this.sendRequest('get', '/api/channels?publishers=yes&encoders=yes', {}),
+                                this.sendRequest('get', '/api/recorders', {}),
+                                this.sendRequest('get', '/api/recorders/status', {}),
+                                this.sendRequest('get', '/api/system/status', {}).catch(() => null),
+                                this.sendRequest('get', '/api/afu/status', {}).catch(() => null),
+                                this.sendRequest('get', '/api/system/firmware', {}).catch(() => null),
+                                this.sendRequest('get', '/api/system/product', {}).catch(() => null),
+                                this.sendRequest('get', '/api/system/identity', {}).catch(() => null),
+                        ])
+               } catch (error) {
+                       this.log('error', 'No valid answer from device')
+                       return
+               }
 
 		channels.forEach((channel) => {
 			state.channels[channel.id] = { ...channel }
@@ -371,10 +378,18 @@ class EpiphanPearl extends InstanceBase {
 			state.recorders[recorder.id] = { ...recorder }
 		})
 
-		recorders_status.forEach((recorder) => {
-			if (state.recorders[recorder.id] === undefined) state.recorders[recorder.id] = {} // just for the event a recorder has been created between call to recorders and recorders/status
-			state.recorders[recorder.id].status = recorder.status
-		})
+               recorders_status.forEach((recorder) => {
+                       if (state.recorders[recorder.id] === undefined) state.recorders[recorder.id] = {} // just for the event a recorder has been created between call to recorders and recorders/status
+                       state.recorders[recorder.id].status = recorder.status
+               })
+
+               state.system = {
+                       status: system_status || {},
+                       afu: afu_status || {},
+                       firmware: firmware_info?.version || '',
+                       product: product_info?.product || product_info?.name || '',
+                       identity: identity_info || {},
+               }
 
 		// Get all layouts and publishers for all channels and all recorder states (in parallel)
 		await Promise.allSettled([
@@ -523,14 +538,15 @@ class EpiphanPearl extends InstanceBase {
 		}
 
 		// now finally swap the state object
-		this.state = { ...state }
-		//console.log('feedbacks to check', feedbacksToCheck)
-		if (feedbacksToCheck.length > 0) this.checkFeedbacks(...feedbacksToCheck)
-		if (updateNeeded) {
-			this.updateSystem()
-			this.log('info', 'Pearl configuration has changed, Choices and Presets updated.')
-		}
-	}
+               this.state = { ...state }
+               //console.log('feedbacks to check', feedbacksToCheck)
+               if (feedbacksToCheck.length > 0) this.checkFeedbacks(...feedbacksToCheck)
+               if (updateNeeded) {
+                       this.updateSystem()
+                       this.log('info', 'Pearl configuration has changed, Choices and Presets updated.')
+               }
+               this.updateVariables()
+       }
 
 	/**
 	 * Return the id of the first item of dropdown choices array
