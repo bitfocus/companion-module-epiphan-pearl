@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Updated HTTP requests to use API version v2.0.
+- Added option for verbose logging to aid in debugging.
 
 ---
 ## [2.1.0] (2023-05-26)

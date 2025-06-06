@@ -8,6 +8,10 @@ This module is written in ES6 format (no self and use of =>).
 
 Please see [HELP](HELP.md) for more information what the module does.
 
+### Verbose logging
+
+You can enable additional debug output by checking **Enable verbose logging** in the module settings.
+
 ### Changelog
 
 Please see [CHANGELOG](CHANGELOG.md) for more information on what has changed recently.
