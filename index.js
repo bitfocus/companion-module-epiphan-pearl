@@ -37,15 +37,20 @@ class EpiphanPearl extends InstanceBase {
 		 * Object holding all the state of the pearl
 		 * structure is similar to the api nodes
 		 */
-		this.state = {
-			channels: {},
-			recorders: {},
-		}
+               this.state = {
+                       channels: {},
+                       recorders: {},
+               }
 
-		Object.assign(this, {
-			...actions,
-			...feedbacks,
-			...presets,
+               /**
+                * Enable verbose logging when true
+                */
+               this.verbose = false
+
+               Object.assign(this, {
+                       ...actions,
+                       ...feedbacks,
+                       ...presets,
 			//...variables
 		})
 	}
@@ -108,18 +113,25 @@ class EpiphanPearl extends InstanceBase {
 			return
 		}
 
-		if (typeof config.pollfreq !== 'number') {
-			config.pollfreq = 10
-			this.saveConfig(config)
-		}
+               if (typeof config.pollfreq !== 'number') {
+                       config.pollfreq = 10
+                       this.saveConfig(config)
+               }
 
-		if (this.config === undefined) {
-			// get config for the first time after init
-			this.config = config
-		} else {
-			let oldconfig = { ...this.config }
+               if (config.verbose === undefined) {
+                       config.verbose = false
+                       this.saveConfig(config)
+               }
 
-			this.config = config
+               if (this.config === undefined) {
+                       // get config for the first time after init
+                       this.config = config
+                       this.verbose = !!config.verbose
+               } else {
+                       let oldconfig = { ...this.config }
+
+                       this.config = config
+                       this.verbose = !!config.verbose
 
 			if (oldconfig.pollfreq !== this.config.pollfreq) {
 				// polling frequency has changed, update interval
@@ -211,8 +223,14 @@ class EpiphanPearl extends InstanceBase {
 			body = {}
 		}
 
-		const requestUrl = baseUrl + url
-		//this.log('debug', 'Starting request to: ' + type + ' ' + baseUrl + url + ' body: ' + JSON.stringify(body))
+               const requestUrl = baseUrl + url
+
+               if (this.verbose) {
+                       this.log(
+                               'debug',
+                               `Request: ${type} ${requestUrl}${type !== 'GET' ? ' body: ' + JSON.stringify(body) : ''}`
+                       )
+               }
 
 		let response
 		try {
@@ -254,8 +272,8 @@ class EpiphanPearl extends InstanceBase {
 			throw new Error('Non-successful response status code: ' + http.STATUS_CODES[response.status])
 		}
 
-		const responseBody = await response.json()
-		if (responseBody && responseBody.status && responseBody.status !== 'ok') {
+               const responseBody = await response.json()
+               if (responseBody && responseBody.status && responseBody.status !== 'ok') {
 			this.setStatus(
 				InstanceStatus.ConnectionFailure,
 				'Non-successful response from pearl: ' + requestUrl + ' - ' + (body.message ? body.message : 'No error message')
@@ -269,14 +287,18 @@ class EpiphanPearl extends InstanceBase {
 			)
 		}
 
-		let result = responseBody
-		if (responseBody && responseBody.result) {
-			result = responseBody.result
-		}
+               let result = responseBody
+               if (responseBody && responseBody.result) {
+                       result = responseBody.result
+               }
 
-		this.setStatus(InstanceStatus.Ok)
-		return result
-	}
+               if (this.verbose) {
+                       this.log('debug', `Response: ${JSON.stringify(result)}`)
+               }
+
+               this.setStatus(InstanceStatus.Ok)
+               return result
+       }
 
 	/**
 	 * INTERNAL: initialize feedbacks.

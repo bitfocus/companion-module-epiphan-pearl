@@ -40,16 +40,23 @@ const get_config_fields = () => {
 			width: 6,
 			default: '',
 		},
-		{
-			type: 'number',
-			id: 'pollfreq',
-			label: 'Feedback polling frequency in seconds',
-			width: 6,
-			default: 10,
-			min: 1,
-			max: 300,
-		},
-	]
+                {
+                        type: 'number',
+                        id: 'pollfreq',
+                        label: 'Feedback polling frequency in seconds',
+                        width: 6,
+                        default: 10,
+                        min: 1,
+                        max: 300,
+                },
+                {
+                        type: 'checkbox',
+                        id: 'verbose',
+                        label: 'Enable verbose logging',
+                        width: 6,
+                        default: false,
+                },
+        ]
 }
 
 module.exports = { get_config_fields }
