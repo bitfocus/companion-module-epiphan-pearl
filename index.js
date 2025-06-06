@@ -185,9 +185,13 @@ class EpiphanPearl extends InstanceBase {
 	 * @param {?Object} body - Optional body to send
 	 */
 	async sendRequest(type, url, body = {}) {
-		const apiHost = this.config.host,
-			apiPort = this.config.host_port,
-			baseUrl = 'http://' + apiHost + ':' + apiPort
+               const apiHost = this.config.host,
+                       apiPort = this.config.host_port,
+                       baseUrl = 'http://' + apiHost + ':' + apiPort
+
+               if (url && url.startsWith('/api/')) {
+                       url = '/api/v2.0' + url.substring(4)
+               }
 
 		if (url === null || url === '') {
 			this.setStatus(InstanceStatus.BadConfig, 'No URL given for sendRequest')
