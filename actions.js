@@ -625,6 +625,34 @@ module.exports = {
                        },
                }
 
+               actions['afuEnable'] = {
+                       name: 'AFU Enable/Disable',
+                       options: [
+                               {
+                                       type: 'dropdown',
+                                       label: 'Action',
+                                       id: 'state',
+                                       choices: [
+                                               { id: 'start', label: 'Enable' },
+                                               { id: 'stop', label: 'Disable' },
+                                       ],
+                                       default: 'start',
+                               },
+                       ],
+                       callback: (action) => {
+                               const url = `/api/afu/control/${action.options.state}`
+                               this.sendRequest('post', url, {})
+                       },
+               }
+
+               actions['afuTransfer'] = {
+                       name: 'AFU Transfer Now',
+                       options: [],
+                       callback: () => {
+                               this.sendRequest('post', '/api/afu/transfer', {})
+                       },
+               }
+
                 actions['rebootSystem'] = {
                         name: 'Reboot System',
                         options: [],

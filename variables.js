@@ -13,6 +13,7 @@ module.exports = {
         for (const channelId of Object.keys(this.state.channels)) {
             const channel = this.state.channels[channelId]
             variables.push({ variableId: `channel_${channelId}_name`, name: `Channel ${channelId} Name` })
+            variables.push({ variableId: `channel_${channelId}_active_layout`, name: `Channel ${channelId} Active Layout` })
             for (const publisherId of Object.keys(channel.publishers)) {
                 const publisher = channel.publishers[publisherId]
                 variables.push({ variableId: `stream_${channelId}_${publisherId}_name`, name: `Stream ${channelId}-${publisherId} Name` })
@@ -58,6 +59,8 @@ module.exports = {
         for (const channelId of Object.keys(this.state.channels)) {
             const channel = this.state.channels[channelId]
             values[`channel_${channelId}_name`] = channel.name
+            const activeLayout = Object.values(channel.layouts || {}).find((l) => l.active)
+            values[`channel_${channelId}_active_layout`] = activeLayout ? activeLayout.name : ''
             for (const publisherId of Object.keys(channel.publishers)) {
                 const publisher = channel.publishers[publisherId]
                 values[`stream_${channelId}_${publisherId}_name`] = publisher.name

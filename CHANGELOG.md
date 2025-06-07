@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added option for verbose logging to aid in debugging.
 - Optional controls for channel metadata and file name prefix.
 - Added actions and feedbacks for Ad-Hoc events.
+- Added actions to control Auto File Upload and trigger manual transfers.
+- Added variables for the active layout of each channel.
 
 ---
 ## [2.1.0] (2023-05-26)
