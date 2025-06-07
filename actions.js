@@ -379,12 +379,80 @@ module.exports = {
 					this.log('error', 'Option is no valid JSON')
 					return
 				}
-				try {
-					await this.sendRequest('PUT', url, body)
-				} catch (error) {
-					this.log('error', 'Layout data could not be sent')
-				}
-			},
+                               try {
+                                       await this.sendRequest('PUT', url, body)
+                               } catch (error) {
+                                       this.log('error', 'Layout data could not be sent')
+                               }
+                       },
+               }
+
+               actions['getChannelMetadata'] = {
+                        name: 'Get channel metadata',
+                        options: [
+                                {
+                                        type: 'dropdown',
+                                        id: 'channel',
+                                        label: 'Channel',
+                                        choices: this.choicesChannel(),
+                                        default: this.firstId(this.choicesChannel()),
+                                },
+                                {
+                                        id: 'destination',
+                                        type: 'custom-variable',
+                                        label: 'Destination Variable',
+                                },
+                        ],
+                        callback: async (action) => {
+                                const channelId = action.options.channel
+                                if (!this.state.channels[channelId]) return
+                                try {
+                                        const text = await this.sendLegacyGetRequest(
+                                                `/admin/channel${channelId}/get_params.cgi?rec_prefix&title&author&copyright&comment&description`
+                                        )
+                                        const data = this.parseMetadataResponse(text)
+                                        this.setCustomVariableValue(action.options.destination, JSON.stringify(data))
+                                } catch (error) {
+                                        this.log('error', 'Metadata could not be retrieved')
+                                }
+                        },
+                }
+
+               actions['setChannelMetadata'] = {
+                        name: 'Set channel metadata',
+                        options: [
+                                {
+                                        type: 'dropdown',
+                                        id: 'channel',
+                                        label: 'Channel',
+                                        choices: this.choicesChannel(),
+                                        default: this.firstId(this.choicesChannel()),
+                                },
+                                { id: 'title', type: 'textinput', label: 'Title', useVariables: true, default: '' },
+                                { id: 'author', type: 'textinput', label: 'Author', useVariables: true, default: '' },
+                                { id: 'copyright', type: 'textinput', label: 'Copyright', useVariables: true, default: '' },
+                                { id: 'comment', type: 'textinput', label: 'Comment', useVariables: true, default: '' },
+                                { id: 'description', type: 'textinput', label: 'Description', useVariables: true, default: '' },
+                                { id: 'rec_prefix', type: 'textinput', label: 'Filename Prefix', useVariables: true, default: '' },
+                        ],
+                        callback: async (action) => {
+                                const channelId = action.options.channel
+                                if (!this.state.channels[channelId]) return
+                                const params = new URLSearchParams()
+                                const keys = ['title', 'author', 'copyright', 'comment', 'description', 'rec_prefix']
+                                for (const k of keys) {
+                                        const val = await this.parseVariablesInString(action.options[k])
+                                        if (val) params.append(k, val)
+                                }
+                                if ([...params.keys()].length === 0) return
+                                try {
+                                        await this.sendLegacyGetRequest(
+                                                `/admin/channel${channelId}/set_params.cgi?` + params.toString()
+                                        )
+                                } catch (error) {
+                                        this.log('error', 'Metadata could not be set')
+                                }
+                        },
                 }
 
                 actions['recorderStart'] = {
@@ -447,27 +515,115 @@ module.exports = {
                         },
                 }
 
-                actions['streamingStop'] = {
-                        name: 'Streaming Stop',
-                        options: [
-                                {
-                                        type: 'dropdown',
-                                        label: 'Channel publisher',
-                                        id: 'channelIdpublisherId',
-                                        choices: this.choicesChannelPublishers(),
-                                        default: this.firstId(this.choicesChannelPublishers()),
-                                },
-                        ],
-                        callback: (action) => {
-                                if (typeof action.options.channelIdpublisherId !== 'string' || !action.options.channelIdpublisherId.includes('-')) return
-                                const [channelId, publisherId] = action.options.channelIdpublisherId.split('-')
-                                if (!this.state.channels[channelId]) return
-                                const url = publisherId !== 'all'
-                                        ? `/api/channels/${channelId}/publishers/${publisherId}/control/stop`
-                                        : `/api/channels/${channelId}/publishers/control/stop`
-                                this.sendRequest('post', url, {})
-                        },
-                }
+               actions['streamingStop'] = {
+                       name: 'Streaming Stop',
+                       options: [
+                               {
+                                       type: 'dropdown',
+                                       label: 'Channel publisher',
+                                       id: 'channelIdpublisherId',
+                                       choices: this.choicesChannelPublishers(),
+                                       default: this.firstId(this.choicesChannelPublishers()),
+                               },
+                       ],
+                       callback: (action) => {
+                               if (typeof action.options.channelIdpublisherId !== 'string' || !action.options.channelIdpublisherId.includes('-')) return
+                               const [channelId, publisherId] = action.options.channelIdpublisherId.split('-')
+                               if (!this.state.channels[channelId]) return
+                               const url = publisherId !== 'all'
+                                       ? `/api/channels/${channelId}/publishers/${publisherId}/control/stop`
+                                       : `/api/channels/${channelId}/publishers/control/stop`
+                               this.sendRequest('post', url, {})
+                       },
+               }
+
+               actions['eventCreate'] = {
+                       name: 'Create Ad-Hoc Event',
+                       options: [
+                               { type: 'dropdown', id: 'channel', label: 'Channel', choices: this.choicesChannel(), default: this.firstId(this.choicesChannel()) },
+                               { type: 'textinput', id: 'name', label: 'Name', useVariables: true, default: '' },
+                               { type: 'number', id: 'duration', label: 'Duration (s)', default: 60 },
+                       ],
+                       callback: async (action) => {
+                               const body = {
+                                       channel: action.options.channel,
+                                       duration: Number(action.options.duration) || 0,
+                                       name: await this.parseVariablesInString(action.options.name),
+                               }
+                               try {
+                                       await this.sendRequest('post', '/api/events', body)
+                               } catch (err) {
+                                       this.log('error', 'Event could not be created')
+                               }
+                       },
+               }
+
+               actions['eventStart'] = {
+                       name: 'Start Event',
+                       options: [
+                               { type: 'dropdown', id: 'event', label: 'Event', choices: this.choicesEvents(), default: this.firstId(this.choicesEvents()) },
+                       ],
+                       callback: (action) => {
+                               const id = action.options.event
+                               if (!this.state.events[id]) return
+                               const url = `/api/events/${id}/control/start`
+                               this.sendRequest('post', url, {})
+                       },
+               }
+
+               actions['eventStop'] = {
+                       name: 'Stop Event',
+                       options: [
+                               { type: 'dropdown', id: 'event', label: 'Event', choices: this.choicesEvents(), default: this.firstId(this.choicesEvents()) },
+                       ],
+                       callback: (action) => {
+                               const id = action.options.event
+                               if (!this.state.events[id]) return
+                               const url = `/api/events/${id}/control/stop`
+                               this.sendRequest('post', url, {})
+                       },
+               }
+
+               actions['eventPause'] = {
+                       name: 'Pause Event',
+                       options: [
+                               { type: 'dropdown', id: 'event', label: 'Event', choices: this.choicesEvents(), default: this.firstId(this.choicesEvents()) },
+                       ],
+                       callback: (action) => {
+                               const id = action.options.event
+                               if (!this.state.events[id]) return
+                               const url = `/api/events/${id}/control/pause`
+                               this.sendRequest('post', url, {})
+                       },
+               }
+
+               actions['eventResume'] = {
+                       name: 'Resume Event',
+                       options: [
+                               { type: 'dropdown', id: 'event', label: 'Event', choices: this.choicesEvents(), default: this.firstId(this.choicesEvents()) },
+                       ],
+                       callback: (action) => {
+                               const id = action.options.event
+                               if (!this.state.events[id]) return
+                               const url = `/api/events/${id}/control/resume`
+                               this.sendRequest('post', url, {})
+                       },
+               }
+
+               actions['eventExtend'] = {
+                       name: 'Extend Event',
+                       options: [
+                               { type: 'dropdown', id: 'event', label: 'Event', choices: this.choicesEvents(), default: this.firstId(this.choicesEvents()) },
+                               { type: 'number', id: 'seconds', label: 'Seconds', default: 60 },
+                       ],
+                       callback: (action) => {
+                               const id = action.options.event
+                               if (!this.state.events[id]) return
+                               const url = `/api/events/${id}/control/extend`
+                               const body = { seconds: Number(action.options.seconds) || 0 }
+                               this.sendRequest('post', url, body)
+                       },
+               }
 
                 actions['rebootSystem'] = {
                         name: 'Reboot System',

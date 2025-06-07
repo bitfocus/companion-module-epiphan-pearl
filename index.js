@@ -38,15 +38,21 @@ class EpiphanPearl extends InstanceBase {
 		 * Object holding all the state of the pearl
 		 * structure is similar to the api nodes
 		 */
-               this.state = {
+              this.state = {
                        channels: {},
                        recorders: {},
+                       events: {},
                }
 
                /**
                 * Enable verbose logging when true
                 */
                this.verbose = false
+
+               /**
+                * Enable metadata http features when true
+                */
+               this.metadataEnabled = false
 
                Object.assign(this, {
                        ...actions,
@@ -124,15 +130,30 @@ class EpiphanPearl extends InstanceBase {
                        this.saveConfig(config)
                }
 
+               if (config.enable_metadata === undefined) {
+                       config.enable_metadata = false
+                       this.saveConfig(config)
+               }
+               if (config.meta_username === undefined) {
+                       config.meta_username = ''
+                       this.saveConfig(config)
+               }
+               if (config.meta_password === undefined) {
+                       config.meta_password = ''
+                       this.saveConfig(config)
+               }
+
                if (this.config === undefined) {
                        // get config for the first time after init
                        this.config = config
                        this.verbose = !!config.verbose
+                       this.metadataEnabled = !!config.enable_metadata
                } else {
                        let oldconfig = { ...this.config }
 
                        this.config = config
                        this.verbose = !!config.verbose
+                       this.metadataEnabled = !!config.enable_metadata
 
 			if (oldconfig.pollfreq !== this.config.pollfreq) {
 				// polling frequency has changed, update interval
@@ -198,7 +219,7 @@ class EpiphanPearl extends InstanceBase {
 	 * @param {String} url - Full URL to send request to
 	 * @param {?Object} body - Optional body to send
 	 */
-	async sendRequest(type, url, body = {}) {
+       async sendRequest(type, url, body = {}) {
                const apiHost = this.config.host,
                        apiPort = this.config.host_port,
                        baseUrl = 'http://' + apiHost + ':' + apiPort
@@ -302,6 +323,90 @@ class EpiphanPearl extends InstanceBase {
                return result
        }
 
+       /**
+        * INTERNAL: Send legacy GET request for metadata operations.
+        *
+        * @private
+        * @param {String} url - Full URL starting with '/'
+        * @returns {String} response body as text
+        */
+       async sendLegacyGetRequest(url) {
+               if (!this.metadataEnabled) {
+                       this.log('debug', 'Metadata functions disabled')
+                       throw new Error('Metadata disabled')
+               }
+
+               const apiHost = this.config.host,
+                       apiPort = this.config.host_port,
+                       baseUrl = 'http://' + apiHost + ':' + apiPort
+
+               const requestUrl = baseUrl + url
+
+               if (this.verbose) {
+                       this.log('debug', `Legacy Request: GET ${requestUrl}`)
+               }
+
+               let options = {
+                       method: 'GET',
+                       timeout: 3000,
+                       headers: {},
+               }
+
+               const user = this.config.meta_username || this.config.username
+               const pass = this.config.meta_password || this.config.password
+               if (user || pass) {
+                       options.headers['Authorization'] =
+                               'Basic ' + Buffer.from(user + ':' + pass).toString('base64')
+               }
+
+               let response
+               try {
+                       response = await fetch(requestUrl, options)
+               } catch (error) {
+                       this.setStatus(InstanceStatus.ConnectionFailure, error.message)
+                       this.log('debug', error.message)
+                       throw new Error(error)
+               }
+
+               if (!response.ok) {
+                       this.setStatus(
+                               InstanceStatus.ConnectionFailure,
+                               'Non-successful response status code: ' + http.STATUS_CODES[response.status]
+                       )
+                       this.log('debug', 'Non-successful response status code:' + http.STATUS_CODES[response.status])
+                       throw new Error('Non-successful response status code: ' + http.STATUS_CODES[response.status])
+               }
+
+               const text = await response.text()
+
+               if (this.verbose) {
+                       this.log('debug', `Legacy Response: ${text}`)
+               }
+
+               this.setStatus(InstanceStatus.Ok)
+               return text
+       }
+
+       /**
+        * INTERNAL: Parse legacy metadata response.
+        *
+        * @private
+        * @param {String} text - raw response
+        * @returns {Object} key value pairs
+        */
+       parseMetadataResponse(text) {
+               const result = {}
+               text.split(/\r?\n/).forEach((line) => {
+                       const idx = line.indexOf('=')
+                       if (idx > -1) {
+                               const key = line.substring(0, idx).trim()
+                               const val = decodeURIComponent(line.substring(idx + 1).trim())
+                               result[key] = val
+                       }
+               })
+               return result
+       }
+
 	/**
 	 * INTERNAL: initialize feedbacks.
 	 *
@@ -345,24 +450,38 @@ class EpiphanPearl extends InstanceBase {
 	 * @since 1.0.0
 	 */
 	async dataPoller() {
-		const state = {
-			channels: {},
-			recorders: {},
-		} // start with a fresh object, during the update some properties will be unavailable, so it is best to not do live updates
+               const state = {
+                       channels: {},
+                       recorders: {},
+                       events: {},
+               } // start with a fresh object, during the update some properties will be unavailable, so it is best to not do live updates
 
 		// Get all channels and recorders available (in parallel)
-               let channels, recorders, recorders_status, system_status, afu_status, firmware_info, product_info, identity_info
+               let channels, recorders, recorders_status, events, events_status, system_status, afu_status, firmware_info, product_info, identity_info
                try {
-                       ;[channels, recorders, recorders_status, system_status, afu_status, firmware_info, product_info, identity_info] = await Promise.all([
-                                this.sendRequest('get', '/api/channels?publishers=yes&encoders=yes', {}),
-                                this.sendRequest('get', '/api/recorders', {}),
-                                this.sendRequest('get', '/api/recorders/status', {}),
-                                this.sendRequest('get', '/api/system/status', {}).catch(() => null),
-                                this.sendRequest('get', '/api/afu/status', {}).catch(() => null),
-                                this.sendRequest('get', '/api/system/firmware', {}).catch(() => null),
-                                this.sendRequest('get', '/api/system/product', {}).catch(() => null),
-                                this.sendRequest('get', '/api/system/identity', {}).catch(() => null),
-                        ])
+                       ;[
+                               channels,
+                               recorders,
+                               recorders_status,
+                               events,
+                               events_status,
+                               system_status,
+                               afu_status,
+                               firmware_info,
+                               product_info,
+                               identity_info,
+                       ] = await Promise.all([
+                               this.sendRequest('get', '/api/channels?publishers=yes&encoders=yes', {}),
+                               this.sendRequest('get', '/api/recorders', {}),
+                               this.sendRequest('get', '/api/recorders/status', {}),
+                               this.sendRequest('get', '/api/events', {}).catch(() => []),
+                               this.sendRequest('get', '/api/events/status', {}).catch(() => []),
+                               this.sendRequest('get', '/api/system/status', {}).catch(() => null),
+                               this.sendRequest('get', '/api/afu/status', {}).catch(() => null),
+                               this.sendRequest('get', '/api/system/firmware', {}).catch(() => null),
+                               this.sendRequest('get', '/api/system/product', {}).catch(() => null),
+                               this.sendRequest('get', '/api/system/identity', {}).catch(() => null),
+                       ])
                } catch (error) {
                        this.log('error', 'No valid answer from device')
                        return
@@ -374,14 +493,27 @@ class EpiphanPearl extends InstanceBase {
 			state.channels[channel.id].publishers = {}
 		})
 
-		recorders.forEach((recorder) => {
-			state.recorders[recorder.id] = { ...recorder }
-		})
+               recorders.forEach((recorder) => {
+                       state.recorders[recorder.id] = { ...recorder }
+               })
 
                recorders_status.forEach((recorder) => {
                        if (state.recorders[recorder.id] === undefined) state.recorders[recorder.id] = {} // just for the event a recorder has been created between call to recorders and recorders/status
                        state.recorders[recorder.id].status = recorder.status
                })
+
+               if (Array.isArray(events)) {
+                       events.forEach((ev) => {
+                               state.events[ev.id] = { ...ev }
+                       })
+               }
+
+               if (Array.isArray(events_status)) {
+                       events_status.forEach((ev) => {
+                               if (state.events[ev.id] === undefined) state.events[ev.id] = {}
+                               state.events[ev.id].status = ev.status
+                       })
+               }
 
                state.system = {
                        status: system_status || {},
@@ -421,30 +553,38 @@ class EpiphanPearl extends InstanceBase {
 
 		// now that we have an updated state object, let's see where we have to react
 
-		const channelIds = Object.keys(state.channels)
-		const recorderIds = Object.keys(state.recorders)
+               const channelIds = Object.keys(state.channels)
+               const recorderIds = Object.keys(state.recorders)
+               const eventIds = Object.keys(state.events)
 
 		let updateNeeded = false // this is to mark if choices or presets needs to be updated
 
 		if (JSON.stringify(channelIds) !== JSON.stringify(Object.keys(this.state.channels))) {
 			updateNeeded = true
-		} else if (JSON.stringify(recorderIds) !== JSON.stringify(Object.keys(this.state.recorders))) {
-			updateNeeded = true
-		} else if (
-			channelIds.reduce((acc, curr) => `${acc},${state.channels[curr].name}`, '') !==
-			channelIds.reduce((acc, curr) => `${acc},${this.state.channels[curr].name}`, '')
-		) {
-			updateNeeded = true
-		} else if (
-			recorderIds.reduce((acc, curr) => `${acc},${state.recorders[curr].name}`, '') !==
-			recorderIds.reduce((acc, curr) => `${acc},${this.state.recorders[curr].name}`, '')
-		) {
-			updateNeeded = true
-		} else if (
-			channelIds.reduce(
-				(acc, curr) =>
-					`${acc},${Object.keys(state.channels[curr].publishers).map(
-						(id) => state.channels[curr].publishers[id].name
+               } else if (JSON.stringify(recorderIds) !== JSON.stringify(Object.keys(this.state.recorders))) {
+                       updateNeeded = true
+               } else if (JSON.stringify(eventIds) !== JSON.stringify(Object.keys(this.state.events))) {
+                       updateNeeded = true
+               } else if (
+                       channelIds.reduce((acc, curr) => `${acc},${state.channels[curr].name}`, '') !==
+                       channelIds.reduce((acc, curr) => `${acc},${this.state.channels[curr].name}`, '')
+               ) {
+                       updateNeeded = true
+               } else if (
+                       recorderIds.reduce((acc, curr) => `${acc},${state.recorders[curr].name}`, '') !==
+                       recorderIds.reduce((acc, curr) => `${acc},${this.state.recorders[curr].name}`, '')
+               ) {
+                       updateNeeded = true
+               } else if (
+                       eventIds.reduce((acc, curr) => `${acc},${state.events[curr].name}`, '') !==
+                       eventIds.reduce((acc, curr) => `${acc},${this.state.events[curr].name}`, '')
+               ) {
+                       updateNeeded = true
+               } else if (
+                       channelIds.reduce(
+                               (acc, curr) =>
+                                       `${acc},${Object.keys(state.channels[curr].publishers).map(
+                                               (id) => state.channels[curr].publishers[id].name
 					)}`,
 				''
 			) !==
@@ -474,10 +614,10 @@ class EpiphanPearl extends InstanceBase {
 			updateNeeded = true
 		}
 
-		let feedbacksToCheck = [] // this feedbacks need to be updated
-		if (updateNeeded) {
-			//console.log('update is needed: new', JSON.stringify(state), '\n old', JSON.stringify(this.state))
-			feedbacksToCheck = ['channelLayout', 'channelStreaming', 'recorderRecording'] // recheck everything after reconfiguration, could be more fine grained but not worth for such a small amount of feedbacks
+               let feedbacksToCheck = [] // this feedbacks need to be updated
+               if (updateNeeded) {
+                       //console.log('update is needed: new', JSON.stringify(state), '\n old', JSON.stringify(this.state))
+                       feedbacksToCheck = ['channelLayout', 'channelStreaming', 'recorderRecording', 'eventState'] // recheck everything after reconfiguration, could be more fine grained but not worth for such a small amount of feedbacks
 		} else {
 			if (
 				channelIds.reduce(
@@ -529,13 +669,19 @@ class EpiphanPearl extends InstanceBase {
 			) {
 				feedbacksToCheck.push('channelStreaming')
 			}
-			if (
-				recorderIds.reduce((acc, curr) => `${acc},${JSON.stringify(state.recorders[curr].status.state)}`, '') !==
-				recorderIds.reduce((acc, curr) => `${acc},${JSON.stringify(this.state.recorders[curr].status.state)}`, '')
-			) {
-				feedbacksToCheck.push('recorderRecording')
-			}
-		}
+                       if (
+                               recorderIds.reduce((acc, curr) => `${acc},${JSON.stringify(state.recorders[curr].status.state)}`, '') !==
+                               recorderIds.reduce((acc, curr) => `${acc},${JSON.stringify(this.state.recorders[curr].status.state)}`, '')
+                       ) {
+                               feedbacksToCheck.push('recorderRecording')
+                       }
+                       if (
+                               eventIds.reduce((acc, curr) => `${acc},${JSON.stringify(state.events[curr].status)}`, '') !==
+                               eventIds.reduce((acc, curr) => `${acc},${JSON.stringify(this.state.events[curr].status)}`, '')
+                       ) {
+                               feedbacksToCheck.push('eventState')
+                       }
+               }
 
 		// now finally swap the state object
                this.state = { ...state }
@@ -599,25 +745,34 @@ class EpiphanPearl extends InstanceBase {
 	/**
 	 * Return dropdown choices for channel-publishers combination
 	 */
-	choicesChannelPublishers() {
-		const choices = []
-		for (const channel of Object.keys(this.state.channels)) {
-			if (Object.keys(this.state.channels[channel].publishers).length > 0) {
-				choices.push({
-					id: `${channel}-all`,
-					label: `${this.state.channels[channel].name} - All Streams`,
-				})
-				for (const publisher of Object.keys(this.state.channels[channel].publishers)) {
-					choices.push({
-						id: `${channel}-${publisher}`,
-						label: `${this.state.channels[channel].name} - ${this.state.channels[channel].publishers[publisher].name}`,
-					})
-				}
-			}
-		}
+       choicesChannelPublishers() {
+               const choices = []
+               for (const channel of Object.keys(this.state.channels)) {
+                       if (Object.keys(this.state.channels[channel].publishers).length > 0) {
+                               choices.push({
+                                       id: `${channel}-all`,
+                                       label: `${this.state.channels[channel].name} - All Streams`,
+                               })
+                               for (const publisher of Object.keys(this.state.channels[channel].publishers)) {
+                                       choices.push({
+                                               id: `${channel}-${publisher}`,
+                                               label: `${this.state.channels[channel].name} - ${this.state.channels[channel].publishers[publisher].name}`,
+                                       })
+                               }
+                       }
+               }
 
-		return choices
-	}
+               return choices
+       }
+
+       /**
+        * Return dropdown choices for events
+        */
+       choicesEvents() {
+               return Object.keys(this.state.events).map((id) => {
+                       return { id, label: this.state.events[id].name || id }
+               })
+       }
 
 	/**
 	 * Part of poller
