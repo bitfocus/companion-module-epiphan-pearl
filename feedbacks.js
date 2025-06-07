@@ -152,14 +152,14 @@ module.exports = {
                         },
                 }
 
-                feedbacks['streamingState'] = {
-                        name: 'Streaming State',
-                        type: 'boolean',
-                        description: 'Change style when the stream has the selected state',
-                        defaultStyle: {
-                                color: combineRgb(255, 255, 255),
-                                bgcolor: combineRgb(0, 255, 0),
-                        },
+               feedbacks['streamingState'] = {
+                       name: 'Streaming State',
+                       type: 'boolean',
+                       description: 'Change style when the stream has the selected state',
+                       defaultStyle: {
+                               color: combineRgb(255, 255, 255),
+                               bgcolor: combineRgb(0, 255, 0),
+                       },
                         options: [
                                 {
                                         type: 'dropdown',
@@ -179,18 +179,52 @@ module.exports = {
                                         default: 'started',
                                 },
                         ],
-                        callback: (feedback) => {
-                                const [channelId, publisherId] = feedback.options.channelIdpublisherId.split('-')
-                                const channel = this.state.channels[channelId]
-                                if (!channel) return false
-                                const current = publisherId === 'all'
-                                        ? !Object.keys(channel.publishers)
-                                                .map((id) => channel.publishers[id].status.state)
-                                                .some((state) => state !== feedback.options.state)
-                                        : channel.publishers[publisherId]?.status?.state === feedback.options.state
-                                return !!current
-                        },
-                }
+                       callback: (feedback) => {
+                               const [channelId, publisherId] = feedback.options.channelIdpublisherId.split('-')
+                               const channel = this.state.channels[channelId]
+                               if (!channel) return false
+                               const current = publisherId === 'all'
+                                       ? !Object.keys(channel.publishers)
+                                               .map((id) => channel.publishers[id].status.state)
+                                               .some((state) => state !== feedback.options.state)
+                                       : channel.publishers[publisherId]?.status?.state === feedback.options.state
+                               return !!current
+                       },
+               }
+
+               feedbacks['eventState'] = {
+                       name: 'Event State',
+                       type: 'boolean',
+                       description: 'Change style when the event is in the selected state',
+                       defaultStyle: {
+                               color: combineRgb(255, 255, 255),
+                               bgcolor: combineRgb(0, 255, 0),
+                       },
+                       options: [
+                               {
+                                       type: 'dropdown',
+                                       label: 'Event',
+                                       id: 'event',
+                                       choices: this.choicesEvents(),
+                                       default: this.firstId(this.choicesEvents()),
+                               },
+                               {
+                                       type: 'dropdown',
+                                       label: 'State',
+                                       id: 'state',
+                                       choices: [
+                                               { id: 'started', label: 'Started' },
+                                               { id: 'stopped', label: 'Stopped' },
+                                               { id: 'paused', label: 'Paused' },
+                                       ],
+                                       default: 'started',
+                               },
+                       ],
+                       callback: (fb) => {
+                               const ev = this.state.events[fb.options.event]
+                               return ev?.status?.state === fb.options.state
+                       },
+               }
 
                 feedbacks['afuState'] = {
                         name: 'AFU State',

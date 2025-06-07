@@ -56,6 +56,27 @@ const get_config_fields = () => {
                         width: 6,
                         default: false,
                 },
+                {
+                        type: 'checkbox',
+                        id: 'enable_metadata',
+                        label: 'Enable metadata configuration',
+                        width: 6,
+                        default: false,
+                },
+                {
+                        type: 'textinput',
+                        id: 'meta_username',
+                        label: 'Metadata Username',
+                        width: 6,
+                        default: '',
+                },
+                {
+                        type: 'textinput',
+                        id: 'meta_password',
+                        label: 'Metadata Password',
+                        width: 6,
+                        default: '',
+                },
         ]
 }
 
