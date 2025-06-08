@@ -12,14 +12,6 @@ Please see [HELP](HELP.md) for more information what the module does.
 
 You can enable additional debug output by checking **Enable verbose logging** in the module settings.
 
-### Metadata configuration
-
-Metadata control can be enabled in the module settings. When enabled you may provide optional credentials and use the actions **Get channel metadata** and **Set channel metadata** to read or update the content metadata fields and file name prefix for each channel.
-
-### Auto File Upload
-
-The current AFU state is exposed as a variable and feedback option to monitor the feature.
-
 ### Changelog
 
 Please see [CHANGELOG](CHANGELOG.md) for more information on what has changed recently.
@@ -27,8 +19,3 @@ Please see [CHANGELOG](CHANGELOG.md) for more information on what has changed re
 ### License
 
 The MIT License (MIT). Please see [License File](LICENSE) for more information.
-
-### Development
-
-This module has a `develop` branch with the latest changes.
-The `master` branch is for "releases" for [companion](https://github.com/bitfocus/companion)
