@@ -480,7 +480,7 @@ class EpiphanPearl extends InstanceBase {
                                channels,
                                recorders,
                                recorders_status,
-                       system_status,
+                               system_status,
                                afu_status,
                                firmware_info,
                                identity_info,
@@ -512,8 +512,6 @@ class EpiphanPearl extends InstanceBase {
                        if (state.recorders[recorder.id] === undefined) state.recorders[recorder.id] = {} // just for the event a recorder has been created between call to recorders and recorders/status
                        state.recorders[recorder.id].status = recorder.status
                })
-
-
 
              state.system = {
                      status: system_status || {},
