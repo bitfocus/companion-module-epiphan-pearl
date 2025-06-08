@@ -8,18 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 ## [Unreleased]
 
-### Added
+---
+## [2.1.1] (2025-06-08)
+
+### New Features
 - Updated HTTP requests to use API version v2.0.
 - Added option for verbose logging to aid in debugging.
 - Optional controls for channel metadata and file name prefix.
-- Added actions to control Auto File Upload and trigger manual transfers.
 - Added variables for the active layout of each channel.
-
-### Removed
-- Actions and feedbacks for Ad-Hoc events.
-
-### Fixed
-- Updated identity, product name and event endpoints to match API changes.
 
 ---
 ## [2.1.0] (2023-05-26)
