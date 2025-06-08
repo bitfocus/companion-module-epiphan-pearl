@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added actions and feedbacks for Ad-Hoc events.
 - Added actions to control Auto File Upload and trigger manual transfers.
 - Added variables for the active layout of each channel.
+### Fixed
+- Updated identity, product name and event endpoints to match API changes.
 
 ---
 ## [2.1.0] (2023-05-26)

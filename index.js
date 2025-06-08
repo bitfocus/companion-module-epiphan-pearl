@@ -482,8 +482,8 @@ class EpiphanPearl extends InstanceBase {
                                channels,
                                recorders,
                                recorders_status,
-                               events,
-                               events_status,
+                      events,
+                      events_status,
                                system_status,
                                afu_status,
                                firmware_info,
@@ -493,13 +493,13 @@ class EpiphanPearl extends InstanceBase {
                                this.sendRequest('get', '/api/channels?publishers=yes&encoders=yes', {}),
                                this.sendRequest('get', '/api/recorders', {}),
                                this.sendRequest('get', '/api/recorders/status', {}),
-                               this.sendRequest('get', '/api/events', {}).catch(() => []),
-                               this.sendRequest('get', '/api/events/status', {}).catch(() => []),
+                               this.sendRequest('get', '/api/schedule/events', {}).catch(() => []),
+                               Promise.resolve([]),
                                this.sendRequest('get', '/api/system/status', {}).catch(() => null),
                                this.sendRequest('get', '/api/afu/status', {}).catch(() => null),
                                this.sendRequest('get', '/api/system/firmware', {}).catch(() => null),
-                               this.sendRequest('get', '/api/system/product', {}).catch(() => null),
-                               this.sendRequest('get', '/api/system/identity', {}).catch(() => null),
+                               this.sendRequest('get', '/api/system/firmware/product_name', {}).catch(() => null),
+                               this.sendRequest('get', '/api/system/ident', {}).catch(() => null),
                        ])
                } catch (error) {
                        this.log('error', 'No valid answer from device')
@@ -542,6 +542,7 @@ class EpiphanPearl extends InstanceBase {
                               firmware_info?.result?.version ||
                               '',
                       product:
+                              product_info?.result ||
                               product_info?.product?.name ||
                               product_info?.product ||
                               product_info?.name ||
