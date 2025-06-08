@@ -458,58 +458,6 @@ module.exports = {
 
 
 
-               actions['eventCreate'] = {
-                       name: 'Create Ad-Hoc Event',
-                       options: [
-                               { type: 'dropdown', id: 'channel', label: 'Channel', choices: this.choicesChannel(), default: this.firstId(this.choicesChannel()) },
-                               { type: 'textinput', id: 'name', label: 'Name', useVariables: true, default: '' },
-                               { type: 'number', id: 'duration', label: 'Duration (s)', default: 60 },
-                       ],
-                       callback: async (action) => {
-                               const body = {
-                                       channel: action.options.channel,
-                                       duration: Number(action.options.duration) || 0,
-                                       name: await this.parseVariablesInString(action.options.name),
-                               }
-                               try {
-                                       await this.sendRequest('post', '/api/events', body)
-                               } catch (err) {
-                                       this.log('error', 'Event could not be created')
-                               }
-                       },
-               }
-
-               actions['eventControl'] = {
-                       name: 'Control Event',
-                       options: [
-                               { type: 'dropdown', id: 'event', label: 'Event', choices: this.choicesEvents(), default: this.firstId(this.choicesEvents()) },
-                               {
-                                       type: 'dropdown',
-                                       id: 'action',
-                                       label: 'Action',
-                                       choices: [
-                                               { id: 'start', label: 'Start' },
-                                               { id: 'stop', label: 'Stop' },
-                                               { id: 'pause', label: 'Pause' },
-                                               { id: 'resume', label: 'Resume' },
-                                               { id: 'extend', label: 'Extend' },
-                                       ],
-                                       default: 'start',
-                               },
-                               { type: 'number', id: 'seconds', label: 'Seconds', default: 60, isVisible: (opts) => opts.action === 'extend' },
-                       ],
-                       callback: (action) => {
-                               const id = action.options.event
-                               if (!this.state.events[id]) return
-
-                               let url = `/api/events/${id}/control/${action.options.action}`
-                               let body
-                               if (action.options.action === 'extend') {
-                                       body = { seconds: Number(action.options.seconds) || 0 }
-                               }
-                               this.sendRequest('post', url, body)
-                       },
-               }
 
 
 

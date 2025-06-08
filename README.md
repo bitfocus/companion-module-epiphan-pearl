@@ -16,10 +16,6 @@ You can enable additional debug output by checking **Enable verbose logging** in
 
 Metadata control can be enabled in the module settings. When enabled you may provide optional credentials and use the actions **Get channel metadata** and **Set channel metadata** to read or update the content metadata fields and file name prefix for each channel.
 
-### Ad-Hoc events
-
-The module provides actions and feedbacks to manage ad-hoc events on the Pearl. You can create a new event or control existing events with start, stop, pause, resume and extend operations. Feedbacks allow styling buttons based on an event's state.
-
 ### Auto File Upload
 
 The current AFU state is exposed as a variable and feedback option to monitor the feature.

@@ -192,39 +192,6 @@ module.exports = {
                        },
                }
 
-               feedbacks['eventState'] = {
-                       name: 'Event State',
-                       type: 'boolean',
-                       description: 'Change style when the event is in the selected state',
-                       defaultStyle: {
-                               color: combineRgb(255, 255, 255),
-                               bgcolor: combineRgb(0, 255, 0),
-                       },
-                       options: [
-                               {
-                                       type: 'dropdown',
-                                       label: 'Event',
-                                       id: 'event',
-                                       choices: this.choicesEvents(),
-                                       default: this.firstId(this.choicesEvents()),
-                               },
-                               {
-                                       type: 'dropdown',
-                                       label: 'State',
-                                       id: 'state',
-                                       choices: [
-                                               { id: 'started', label: 'Started' },
-                                               { id: 'stopped', label: 'Stopped' },
-                                               { id: 'paused', label: 'Paused' },
-                                       ],
-                                       default: 'started',
-                               },
-                       ],
-                       callback: (fb) => {
-                               const ev = this.state.events[fb.options.event]
-                               return ev?.status?.state === fb.options.state
-                       },
-               }
 
                 feedbacks['afuState'] = {
                         name: 'AFU State',
