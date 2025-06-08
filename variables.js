@@ -34,10 +34,6 @@ module.exports = {
             variables.push({ variableId: `recorder_${recorderId}_active`, name: `Recorder ${recorderId} Active` })
         }
 
-        // Event related variables
-        for (const eventId of Object.keys(this.state.events)) {
-            variables.push({ variableId: `event_${eventId}_state`, name: `Event ${eventId} State` })
-        }
 
         // System info variables
         variables.push({ variableId: 'system_status_date', name: 'System Status Date' })
@@ -88,10 +84,6 @@ module.exports = {
             values[`recorder_${recorderId}_active`] = recorder.status?.active || ''
         }
 
-        for (const eventId of Object.keys(this.state.events)) {
-            const ev = this.state.events[eventId]
-            values[`event_${eventId}_state`] = ev.status?.state || ''
-        }
 
         if (this.state.system) {
             const system = this.state.system

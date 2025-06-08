@@ -41,7 +41,6 @@ class EpiphanPearl extends InstanceBase {
               this.state = {
                        channels: {},
                        recorders: {},
-                       events: {},
                }
 
                /**
@@ -472,34 +471,27 @@ class EpiphanPearl extends InstanceBase {
                const state = {
                        channels: {},
                        recorders: {},
-                       events: {},
                } // start with a fresh object, during the update some properties will be unavailable, so it is best to not do live updates
 
 		// Get all channels and recorders available (in parallel)
-               let channels, recorders, recorders_status, events, events_status, system_status, afu_status, firmware_info, product_info, identity_info
+               let channels, recorders, recorders_status, system_status, afu_status, firmware_info, identity_info
                try {
                        ;[
                                channels,
                                recorders,
                                recorders_status,
-                               events,
-                               events_status,
-                               system_status,
+                       system_status,
                                afu_status,
                                firmware_info,
-                               product_info,
                                identity_info,
                        ] = await Promise.all([
                                this.sendRequest('get', '/api/channels?publishers=yes&encoders=yes', {}),
                                this.sendRequest('get', '/api/recorders', {}),
                                this.sendRequest('get', '/api/recorders/status', {}),
-                               this.sendRequest('get', '/api/events', {}).catch(() => []),
-                               this.sendRequest('get', '/api/events/status', {}).catch(() => []),
                                this.sendRequest('get', '/api/system/status', {}).catch(() => null),
                                this.sendRequest('get', '/api/afu/status', {}).catch(() => null),
                                this.sendRequest('get', '/api/system/firmware', {}).catch(() => null),
-                               this.sendRequest('get', '/api/system/product', {}).catch(() => null),
-                               this.sendRequest('get', '/api/system/identity', {}).catch(() => null),
+                               this.sendRequest('get', '/api/system/ident', {}).catch(() => null),
                        ])
                } catch (error) {
                        this.log('error', 'No valid answer from device')
@@ -521,39 +513,24 @@ class EpiphanPearl extends InstanceBase {
                        state.recorders[recorder.id].status = recorder.status
                })
 
-               if (Array.isArray(events)) {
-                       events.forEach((ev) => {
-                               state.events[ev.id] = { ...ev }
-                       })
-               }
 
-               if (Array.isArray(events_status)) {
-                       events_status.forEach((ev) => {
-                               if (state.events[ev.id] === undefined) state.events[ev.id] = {}
-                               state.events[ev.id].status = ev.status
-                       })
-               }
 
-              state.system = {
-                      status: system_status || {},
-                      afu: afu_status?.status || afu_status || {},
-                      firmware:
-                              firmware_info?.version ||
-                              firmware_info?.result?.version ||
-                              '',
-                      product:
-                              product_info?.product?.name ||
-                              product_info?.product ||
-                              product_info?.name ||
-                              product_info?.result?.product?.name ||
-                              product_info?.result?.product ||
-                              product_info?.result?.name ||
-                              '',
-                      identity:
-                              identity_info?.identity ||
-                              identity_info?.result?.identity ||
-                              identity_info?.result ||
-                              identity_info ||
+             state.system = {
+                     status: system_status || {},
+                     afu: Array.isArray(afu_status) ? afu_status[0]?.status || {} : afu_status?.status || afu_status || {},
+                     firmware:
+                             firmware_info?.version ||
+                             firmware_info?.result?.version ||
+                             '',
+                     product:
+                             firmware_info?.product_name ||
+                             firmware_info?.result?.product_name ||
+                             '',
+                     identity:
+                             identity_info?.identity ||
+                             identity_info?.result?.identity ||
+                             identity_info?.result ||
+                             identity_info ||
                               {},
               }
 
@@ -589,15 +566,12 @@ class EpiphanPearl extends InstanceBase {
 
                const channelIds = Object.keys(state.channels)
                const recorderIds = Object.keys(state.recorders)
-               const eventIds = Object.keys(state.events)
 
 		let updateNeeded = false // this is to mark if choices or presets needs to be updated
 
 		if (JSON.stringify(channelIds) !== JSON.stringify(Object.keys(this.state.channels))) {
 			updateNeeded = true
                } else if (JSON.stringify(recorderIds) !== JSON.stringify(Object.keys(this.state.recorders))) {
-                       updateNeeded = true
-               } else if (JSON.stringify(eventIds) !== JSON.stringify(Object.keys(this.state.events))) {
                        updateNeeded = true
                } else if (
                        channelIds.reduce((acc, curr) => `${acc},${state.channels[curr].name}`, '') !==
@@ -607,11 +581,6 @@ class EpiphanPearl extends InstanceBase {
                } else if (
                        recorderIds.reduce((acc, curr) => `${acc},${state.recorders[curr].name}`, '') !==
                        recorderIds.reduce((acc, curr) => `${acc},${this.state.recorders[curr].name}`, '')
-               ) {
-                       updateNeeded = true
-               } else if (
-                       eventIds.reduce((acc, curr) => `${acc},${state.events[curr].name}`, '') !==
-                       eventIds.reduce((acc, curr) => `${acc},${this.state.events[curr].name}`, '')
                ) {
                        updateNeeded = true
                } else if (
@@ -651,7 +620,7 @@ class EpiphanPearl extends InstanceBase {
                let feedbacksToCheck = [] // this feedbacks need to be updated
                if (updateNeeded) {
                        //console.log('update is needed: new', JSON.stringify(state), '\n old', JSON.stringify(this.state))
-                       feedbacksToCheck = ['channelLayout', 'channelStreaming', 'recorderRecording', 'eventState'] // recheck everything after reconfiguration, could be more fine grained but not worth for such a small amount of feedbacks
+                       feedbacksToCheck = ['channelLayout', 'channelStreaming', 'recorderRecording'] // recheck everything after reconfiguration, could be more fine grained but not worth for such a small amount of feedbacks
 		} else {
 			if (
 				channelIds.reduce(
@@ -708,12 +677,6 @@ class EpiphanPearl extends InstanceBase {
                                recorderIds.reduce((acc, curr) => `${acc},${JSON.stringify(this.state.recorders[curr].status.state)}`, '')
                        ) {
                                feedbacksToCheck.push('recorderRecording')
-                       }
-                       if (
-                               eventIds.reduce((acc, curr) => `${acc},${JSON.stringify(state.events[curr].status)}`, '') !==
-                               eventIds.reduce((acc, curr) => `${acc},${JSON.stringify(this.state.events[curr].status)}`, '')
-                       ) {
-                               feedbacksToCheck.push('eventState')
                        }
                }
 
@@ -802,14 +765,6 @@ class EpiphanPearl extends InstanceBase {
                return choices
        }
 
-       /**
-        * Return dropdown choices for events
-        */
-       choicesEvents() {
-               return Object.keys(this.state.events).map((id) => {
-                       return { id, label: this.state.events[id].name || id }
-               })
-       }
 
 	/**
 	 * Part of poller
