@@ -20,9 +20,9 @@ Metadata control can be enabled in the module settings. When enabled you may pro
 
 The module provides actions and feedbacks to manage ad-hoc events on the Pearl. You can create a new event or control existing events with start, stop, pause, resume and extend operations. Feedbacks allow styling buttons based on an event's state.
 
-### Auto File Upload controls
+### Auto File Upload
 
-Actions are available to enable or disable Auto File Upload (AFU) and to trigger a manual transfer. The current AFU state is also exposed as a variable and feedback option.
+The current AFU state is exposed as a variable and feedback option to monitor the feature.
 
 ### Changelog
 

@@ -407,6 +407,25 @@ class EpiphanPearl extends InstanceBase {
                return result
        }
 
+       async queryChannelMetadata(channelId) {
+               if (!this.metadataEnabled) return
+               try {
+                       const text = await this.sendLegacyGetRequest(
+                               `/admin/channel${channelId}/get_params.cgi?rec_prefix&title&author&copyright&comment&description`
+                       )
+                       const data = this.parseMetadataResponse(text)
+                       if (this.state.channels[channelId]) {
+                               this.state.channels[channelId].metadata = data
+                       }
+               } catch (err) {
+                       this.log('error', 'Metadata could not be retrieved')
+               }
+       }
+
+       async queryAllMetadata() {
+               await Promise.allSettled(Object.keys(this.state.channels).map((id) => this.queryChannelMetadata(id)))
+       }
+
 	/**
 	 * INTERNAL: initialize feedbacks.
 	 *
@@ -515,13 +534,28 @@ class EpiphanPearl extends InstanceBase {
                        })
                }
 
-               state.system = {
-                       status: system_status || {},
-                       afu: afu_status || {},
-                       firmware: firmware_info?.version || '',
-                       product: product_info?.product || product_info?.name || '',
-                       identity: identity_info || {},
-               }
+              state.system = {
+                      status: system_status || {},
+                      afu: afu_status?.status || afu_status || {},
+                      firmware:
+                              firmware_info?.version ||
+                              firmware_info?.result?.version ||
+                              '',
+                      product:
+                              product_info?.product?.name ||
+                              product_info?.product ||
+                              product_info?.name ||
+                              product_info?.result?.product?.name ||
+                              product_info?.result?.product ||
+                              product_info?.result?.name ||
+                              '',
+                      identity:
+                              identity_info?.identity ||
+                              identity_info?.result?.identity ||
+                              identity_info?.result ||
+                              identity_info ||
+                              {},
+              }
 
 		// Get all layouts and publishers for all channels and all recorder states (in parallel)
 		await Promise.allSettled([
@@ -690,6 +724,9 @@ class EpiphanPearl extends InstanceBase {
                if (updateNeeded) {
                        this.updateSystem()
                        this.log('info', 'Pearl configuration has changed, Choices and Presets updated.')
+               }
+               if (this.metadataEnabled) {
+                       await this.queryAllMetadata()
                }
                this.updateVariables()
        }

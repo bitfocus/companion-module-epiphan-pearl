@@ -68,8 +68,8 @@ module.exports = {
 			},
 		}
 
-		actions['channelStreaming'] = {
-			name: 'Start/stop streaming',
+                actions['channelStreaming'] = {
+                        name: 'Control Streaming (Publisher)',
 			options: [
 				{
 					type: 'dropdown',
@@ -411,7 +411,9 @@ module.exports = {
                                                 `/admin/channel${channelId}/get_params.cgi?rec_prefix&title&author&copyright&comment&description`
                                         )
                                         const data = this.parseMetadataResponse(text)
+                                        this.state.channels[channelId].metadata = data
                                         this.setCustomVariableValue(action.options.destination, JSON.stringify(data))
+                                        this.updateVariables()
                                 } catch (error) {
                                         this.log('error', 'Metadata could not be retrieved')
                                 }
@@ -432,14 +434,13 @@ module.exports = {
                                 { id: 'author', type: 'textinput', label: 'Author', useVariables: true, default: '' },
                                 { id: 'copyright', type: 'textinput', label: 'Copyright', useVariables: true, default: '' },
                                 { id: 'comment', type: 'textinput', label: 'Comment', useVariables: true, default: '' },
-                                { id: 'description', type: 'textinput', label: 'Description', useVariables: true, default: '' },
                                 { id: 'rec_prefix', type: 'textinput', label: 'Filename Prefix', useVariables: true, default: '' },
                         ],
                         callback: async (action) => {
                                 const channelId = action.options.channel
                                 if (!this.state.channels[channelId]) return
                                 const params = new URLSearchParams()
-                                const keys = ['title', 'author', 'copyright', 'comment', 'description', 'rec_prefix']
+                                const keys = ['title', 'author', 'copyright', 'comment', 'rec_prefix']
                                 for (const k of keys) {
                                         const val = await this.parseVariablesInString(action.options[k])
                                         if (val) params.append(k, val)
@@ -455,87 +456,7 @@ module.exports = {
                         },
                 }
 
-                actions['recorderStart'] = {
-                        name: 'Recorder Start',
-                        options: [
-                                {
-                                        type: 'dropdown',
-                                        label: 'Recorder',
-                                        id: 'recorderId',
-                                        choices: this.choicesRecorders(),
-                                        default: this.firstId(this.choicesRecorders()),
-                                },
-                        ],
-                        callback: (action) => {
-                                const recorderId = action.options.recorderId
-                                if (!this.state.recorders[recorderId]) return
-                                const url = `/api/recorders/${recorderId}/control/start`
-                                this.sendRequest('post', url, {})
-                        },
-                }
 
-                actions['recorderStop'] = {
-                        name: 'Recorder Stop',
-                        options: [
-                                {
-                                        type: 'dropdown',
-                                        label: 'Recorder',
-                                        id: 'recorderId',
-                                        choices: this.choicesRecorders(),
-                                        default: this.firstId(this.choicesRecorders()),
-                                },
-                        ],
-                        callback: (action) => {
-                                const recorderId = action.options.recorderId
-                                if (!this.state.recorders[recorderId]) return
-                                const url = `/api/recorders/${recorderId}/control/stop`
-                                this.sendRequest('post', url, {})
-                        },
-                }
-
-                actions['streamingStart'] = {
-                        name: 'Streaming Start',
-                        options: [
-                                {
-                                        type: 'dropdown',
-                                        label: 'Channel publisher',
-                                        id: 'channelIdpublisherId',
-                                        choices: this.choicesChannelPublishers(),
-                                        default: this.firstId(this.choicesChannelPublishers()),
-                                },
-                        ],
-                        callback: (action) => {
-                                if (typeof action.options.channelIdpublisherId !== 'string' || !action.options.channelIdpublisherId.includes('-')) return
-                                const [channelId, publisherId] = action.options.channelIdpublisherId.split('-')
-                                if (!this.state.channels[channelId]) return
-                                const url = publisherId !== 'all'
-                                        ? `/api/channels/${channelId}/publishers/${publisherId}/control/start`
-                                        : `/api/channels/${channelId}/publishers/control/start`
-                                this.sendRequest('post', url, {})
-                        },
-                }
-
-               actions['streamingStop'] = {
-                       name: 'Streaming Stop',
-                       options: [
-                               {
-                                       type: 'dropdown',
-                                       label: 'Channel publisher',
-                                       id: 'channelIdpublisherId',
-                                       choices: this.choicesChannelPublishers(),
-                                       default: this.firstId(this.choicesChannelPublishers()),
-                               },
-                       ],
-                       callback: (action) => {
-                               if (typeof action.options.channelIdpublisherId !== 'string' || !action.options.channelIdpublisherId.includes('-')) return
-                               const [channelId, publisherId] = action.options.channelIdpublisherId.split('-')
-                               if (!this.state.channels[channelId]) return
-                               const url = publisherId !== 'all'
-                                       ? `/api/channels/${channelId}/publishers/${publisherId}/control/stop`
-                                       : `/api/channels/${channelId}/publishers/control/stop`
-                               this.sendRequest('post', url, {})
-                       },
-               }
 
                actions['eventCreate'] = {
                        name: 'Create Ad-Hoc Event',
@@ -558,100 +479,39 @@ module.exports = {
                        },
                }
 
-               actions['eventStart'] = {
-                       name: 'Start Event',
+               actions['eventControl'] = {
+                       name: 'Control Event',
                        options: [
                                { type: 'dropdown', id: 'event', label: 'Event', choices: this.choicesEvents(), default: this.firstId(this.choicesEvents()) },
+                               {
+                                       type: 'dropdown',
+                                       id: 'action',
+                                       label: 'Action',
+                                       choices: [
+                                               { id: 'start', label: 'Start' },
+                                               { id: 'stop', label: 'Stop' },
+                                               { id: 'pause', label: 'Pause' },
+                                               { id: 'resume', label: 'Resume' },
+                                               { id: 'extend', label: 'Extend' },
+                                       ],
+                                       default: 'start',
+                               },
+                               { type: 'number', id: 'seconds', label: 'Seconds', default: 60, isVisible: (opts) => opts.action === 'extend' },
                        ],
                        callback: (action) => {
                                const id = action.options.event
                                if (!this.state.events[id]) return
-                               const url = `/api/events/${id}/control/start`
-                               this.sendRequest('post', url, {})
-                       },
-               }
 
-               actions['eventStop'] = {
-                       name: 'Stop Event',
-                       options: [
-                               { type: 'dropdown', id: 'event', label: 'Event', choices: this.choicesEvents(), default: this.firstId(this.choicesEvents()) },
-                       ],
-                       callback: (action) => {
-                               const id = action.options.event
-                               if (!this.state.events[id]) return
-                               const url = `/api/events/${id}/control/stop`
-                               this.sendRequest('post', url, {})
-                       },
-               }
-
-               actions['eventPause'] = {
-                       name: 'Pause Event',
-                       options: [
-                               { type: 'dropdown', id: 'event', label: 'Event', choices: this.choicesEvents(), default: this.firstId(this.choicesEvents()) },
-                       ],
-                       callback: (action) => {
-                               const id = action.options.event
-                               if (!this.state.events[id]) return
-                               const url = `/api/events/${id}/control/pause`
-                               this.sendRequest('post', url, {})
-                       },
-               }
-
-               actions['eventResume'] = {
-                       name: 'Resume Event',
-                       options: [
-                               { type: 'dropdown', id: 'event', label: 'Event', choices: this.choicesEvents(), default: this.firstId(this.choicesEvents()) },
-                       ],
-                       callback: (action) => {
-                               const id = action.options.event
-                               if (!this.state.events[id]) return
-                               const url = `/api/events/${id}/control/resume`
-                               this.sendRequest('post', url, {})
-                       },
-               }
-
-               actions['eventExtend'] = {
-                       name: 'Extend Event',
-                       options: [
-                               { type: 'dropdown', id: 'event', label: 'Event', choices: this.choicesEvents(), default: this.firstId(this.choicesEvents()) },
-                               { type: 'number', id: 'seconds', label: 'Seconds', default: 60 },
-                       ],
-                       callback: (action) => {
-                               const id = action.options.event
-                               if (!this.state.events[id]) return
-                               const url = `/api/events/${id}/control/extend`
-                               const body = { seconds: Number(action.options.seconds) || 0 }
+                               let url = `/api/events/${id}/control/${action.options.action}`
+                               let body
+                               if (action.options.action === 'extend') {
+                                       body = { seconds: Number(action.options.seconds) || 0 }
+                               }
                                this.sendRequest('post', url, body)
                        },
                }
 
-               actions['afuEnable'] = {
-                       name: 'AFU Enable/Disable',
-                       options: [
-                               {
-                                       type: 'dropdown',
-                                       label: 'Action',
-                                       id: 'state',
-                                       choices: [
-                                               { id: 'start', label: 'Enable' },
-                                               { id: 'stop', label: 'Disable' },
-                                       ],
-                                       default: 'start',
-                               },
-                       ],
-                       callback: (action) => {
-                               const url = `/api/afu/control/${action.options.state}`
-                               this.sendRequest('post', url, {})
-                       },
-               }
 
-               actions['afuTransfer'] = {
-                       name: 'AFU Transfer Now',
-                       options: [],
-                       callback: () => {
-                               this.sendRequest('post', '/api/afu/transfer', {})
-                       },
-               }
 
                 actions['rebootSystem'] = {
                         name: 'Reboot System',

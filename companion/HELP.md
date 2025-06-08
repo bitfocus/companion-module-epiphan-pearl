@@ -6,8 +6,6 @@ Should work with the all Epiphan Pearl models and versions.
 * Change channel layout (pulls list of available scenes from OBS)
 * Start/Stop channel recording/streaming
 * Start/Stop recorder recording
-* Enable/Disable Auto File Upload
-* Trigger an immediate AFU transfer
 
 
 ## Module is under delevopment!
