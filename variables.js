@@ -14,6 +14,12 @@ module.exports = {
             const channel = this.state.channels[channelId]
             variables.push({ variableId: `channel_${channelId}_name`, name: `Channel ${channelId} Name` })
             variables.push({ variableId: `channel_${channelId}_active_layout`, name: `Channel ${channelId} Active Layout` })
+            variables.push({ variableId: `channel_${channelId}_meta_title`, name: `Channel ${channelId} Title` })
+            variables.push({ variableId: `channel_${channelId}_meta_author`, name: `Channel ${channelId} Author` })
+            variables.push({ variableId: `channel_${channelId}_meta_copyright`, name: `Channel ${channelId} Copyright` })
+            variables.push({ variableId: `channel_${channelId}_meta_comment`, name: `Channel ${channelId} Comment` })
+            variables.push({ variableId: `channel_${channelId}_meta_description`, name: `Channel ${channelId} Description` })
+            variables.push({ variableId: `channel_${channelId}_meta_rec_prefix`, name: `Channel ${channelId} Filename Prefix` })
             for (const publisherId of Object.keys(channel.publishers)) {
                 const publisher = channel.publishers[publisherId]
                 variables.push({ variableId: `stream_${channelId}_${publisherId}_name`, name: `Stream ${channelId}-${publisherId} Name` })
@@ -61,6 +67,13 @@ module.exports = {
             values[`channel_${channelId}_name`] = channel.name
             const activeLayout = Object.values(channel.layouts || {}).find((l) => l.active)
             values[`channel_${channelId}_active_layout`] = activeLayout ? activeLayout.name : ''
+            const meta = channel.metadata || {}
+            values[`channel_${channelId}_meta_title`] = meta.title || ''
+            values[`channel_${channelId}_meta_author`] = meta.author || ''
+            values[`channel_${channelId}_meta_copyright`] = meta.copyright || ''
+            values[`channel_${channelId}_meta_comment`] = meta.comment || ''
+            values[`channel_${channelId}_meta_description`] = meta.description || ''
+            values[`channel_${channelId}_meta_rec_prefix`] = meta.rec_prefix || ''
             for (const publisherId of Object.keys(channel.publishers)) {
                 const publisher = channel.publishers[publisherId]
                 values[`stream_${channelId}_${publisherId}_name`] = publisher.name
@@ -81,14 +94,18 @@ module.exports = {
         }
 
         if (this.state.system) {
-            values['system_status_date'] = this.state.system.status?.date || ''
-            values['system_status_uptime'] = this.state.system.status?.uptime || ''
-            values['afu_state'] = this.state.system.afu?.state || ''
-            values['firmware_version'] = this.state.system.firmware || ''
-            values['product_name'] = this.state.system.product || ''
-            values['identity_name'] = this.state.system.identity?.name || ''
-            values['identity_location'] = this.state.system.identity?.location || ''
-            values['identity_description'] = this.state.system.identity?.description || ''
+            const system = this.state.system
+            values['system_status_date'] = system.status?.date || ''
+            values['system_status_uptime'] = system.status?.uptime || ''
+            values['afu_state'] = system.afu?.state || system.afu?.status || ''
+            values['firmware_version'] = system.firmware || ''
+            values['product_name'] = system.product?.name || system.product || ''
+
+            const id = system.identity || {}
+            const ident = id.identity || {}
+            values['identity_name'] = id.name || ident.name || ''
+            values['identity_location'] = id.location || ident.location || ''
+            values['identity_description'] = id.description || ident.description || ''
         }
 
         this.setVariableDefinitions(definitions)
