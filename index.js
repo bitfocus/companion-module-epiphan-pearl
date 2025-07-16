@@ -1,11 +1,11 @@
 // noinspection JSFileReferences
 const {
-	CreateConvertToBooleanFeedbackUpgradeScript,
-	InstanceBase,
-	InstanceStatus,
-	Regex,
-	runEntrypoint,
+        InstanceBase,
+        InstanceStatus,
+        Regex,
+        runEntrypoint,
 } = require('@companion-module/base')
+const { UpgradeScripts } = require('./upgrades')
 const http = require('http')
 
 const actions = require('./actions')
@@ -786,19 +786,4 @@ class EpiphanPearl extends InstanceBase {
 	}
 }
 
-const upgradeToBooleanFeedbacks = CreateConvertToBooleanFeedbackUpgradeScript({
-	channelLayout: {
-		fg: 'color',
-		bg: 'bgcolor',
-	},
-	channelStreaming: {
-		fg: 'color',
-		bg: 'bgcolor',
-	},
-	recorderRecording: {
-		fg: 'color',
-		bg: 'bgcolor',
-	},
-})
-
-runEntrypoint(EpiphanPearl, [upgradeToBooleanFeedbacks])
+runEntrypoint(EpiphanPearl, UpgradeScripts)
