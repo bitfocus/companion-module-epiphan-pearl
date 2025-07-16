@@ -18,7 +18,7 @@ const { get_config_fields } = require('./config')
  * Companion instance class for the Epiphan Pearl.
  *
  * @extends InstanceBase
- * @version 2.1.0
+ * @version 2.2.0
  * @since 1.0.0
  */
 class EpiphanPearl extends InstanceBase {
