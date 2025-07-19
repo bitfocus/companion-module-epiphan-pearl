@@ -13,6 +13,7 @@ const feedbacks = require('./feedbacks')
 const presets = require('./presets')
 const { get_config_fields } = require('./config')
 const variables = require('./variables')
+const upgradeScripts = require('./upgrades')
 
 /**
  * Companion instance class for the Epiphan Pearl.
@@ -714,4 +715,4 @@ const upgradeToBooleanFeedbacks = CreateConvertToBooleanFeedbackUpgradeScript({
 	},
 })
 
-runEntrypoint(EpiphanPearl, [upgradeToBooleanFeedbacks])
+runEntrypoint(EpiphanPearl, [upgradeToBooleanFeedbacks, ...upgradeScripts])
