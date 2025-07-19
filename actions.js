@@ -451,7 +451,11 @@ module.exports = {
                                const titleRaw = await this.parseVariablesInString(action.options.title)
                                const authorRaw = await this.parseVariablesInString(action.options.author)
                                const prefixRaw = await this.parseVariablesInString(action.options.prefix)
-                               const url = `http://${apiHost}:${apiPort}/admin/channel${channel}/set_params.cgi?title=${encodeURIComponent(titleRaw)}&author=${encodeURIComponent(authorRaw)}&rec_prefix=${encodeURIComponent(prefixRaw)}`
+                               const urlObj = new URL(`http://${apiHost}:${apiPort}/admin/channel${channel}/set_params.cgi`)
+								   urlObj.searchParams.set('title', titleRaw)
+								   urlObj.searchParams.set('author', authorRaw)
+								   urlObj.searchParams.set('rec_prefix', prefixRaw)
+                              const url = urlObj.toString()
                                if (this.config.verbose) {
                                        this.log('debug', `Action set metadata for channel ${channel}`)
                                }
