@@ -1,4 +1,10 @@
 const { InstanceStatus } = require('@companion-module/base')
+const variables = require('./variables')
+
+let fetchFunc = global.fetch
+if (!fetchFunc) {
+       fetchFunc = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args))
+}
 
 module.exports = {
 	/**
@@ -417,26 +423,10 @@ module.exports = {
                        ],
                        callback: async (action) => {
                                const channel = action.options.channel
-                               const apiHost = this.config.host
-                               const apiPort = this.config.host_port
-                               const url = `http://${apiHost}:${apiPort}/admin/channel${channel}/get_params.cgi?title&author&rec_prefix`
-                               try {
-                                       const response = await fetch(url, {
-                                               method: 'GET',
-                                               headers: {
-                                                       Authorization: 'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
-                                               },
-                                       })
-                                       const text = await response.text()
-                                       const lines = text.split('\n')
-                                       this.metadata = {}
-                                       for (const line of lines) {
-                                               const [k, v] = line.split('=')
-                                               if (k) this.metadata[k.trim()] = v ? v.trim() : ''
-                                       }
-                               } catch (e) {
-                                       this.log('error', 'Failed to get metadata')
+                               if (this.config.verbose) {
+                                       this.log('debug', `Action get metadata for channel ${channel}`)
                                }
+                               await this.fetchMetadata(channel)
                        },
                }
 
@@ -458,17 +448,25 @@ module.exports = {
                                const channel = action.options.channel
                                const apiHost = this.config.host
                                const apiPort = this.config.host_port
-                               const title = encodeURIComponent(await this.parseVariablesInString(action.options.title))
-                               const author = encodeURIComponent(await this.parseVariablesInString(action.options.author))
-                               const prefix = encodeURIComponent(await this.parseVariablesInString(action.options.prefix))
-                               const url = `http://${apiHost}:${apiPort}/admin/channel${channel}/set_params.cgi?title=${title}&author=${author}&rec_prefix=${prefix}`
+                               const titleRaw = await this.parseVariablesInString(action.options.title)
+                               const authorRaw = await this.parseVariablesInString(action.options.author)
+                               const prefixRaw = await this.parseVariablesInString(action.options.prefix)
+                               const url = `http://${apiHost}:${apiPort}/admin/channel${channel}/set_params.cgi?title=${encodeURIComponent(titleRaw)}&author=${encodeURIComponent(authorRaw)}&rec_prefix=${encodeURIComponent(prefixRaw)}`
+                               if (this.config.verbose) {
+                                       this.log('debug', `Action set metadata for channel ${channel}`)
+                               }
                                try {
-                                       await fetch(url, {
+                                       await fetchFunc(url, {
                                                method: 'GET',
                                                headers: {
                                                        Authorization: 'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
                                                },
                                        })
+                                       if (!this.metadata[channel]) this.metadata[channel] = {}
+                                       this.metadata[channel].title = titleRaw
+                                       this.metadata[channel].author = authorRaw
+                                       this.metadata[channel].rec_prefix = prefixRaw
+                                       variables.updateVariables(this)
                                } catch (e) {
                                        this.log('error', 'Failed to set metadata')
                                }

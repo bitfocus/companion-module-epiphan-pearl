@@ -8,6 +8,12 @@ const {
 } = require('@companion-module/base')
 const http = require('http')
 
+// use global fetch if available, otherwise fall back to node-fetch
+let fetchFunc = global.fetch
+if (!fetchFunc) {
+       fetchFunc = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args))
+}
+
 const actions = require('./actions')
 const feedbacks = require('./feedbacks')
 const presets = require('./presets')
@@ -44,7 +50,8 @@ class EpiphanPearl extends InstanceBase {
                        recorders: {},
                }
 
-               this.metadata = {}
+              // store content metadata for each channel
+              this.metadata = {}
 
                /**
                 * base path for the pearl API
@@ -97,6 +104,11 @@ class EpiphanPearl extends InstanceBase {
 
                await this.configUpdated(config)
                await this.determineApiBase()
+              await this.dataPoller()
+              // fetch metadata for all channels once during init
+              for (const channelId of Object.keys(this.state.channels)) {
+                      await this.fetchMetadata(channelId)
+              }
                this.updateSystem()
                this.initInterval()
        }
@@ -152,7 +164,7 @@ class EpiphanPearl extends InstanceBase {
                const apiPort = this.config.host_port
                const url = `http://${apiHost}:${apiPort}/api/v2.0/system/firmware/version`
                try {
-                       const response = await fetch(url, {
+                       const response = await fetchFunc(url, {
                                method: 'GET',
                                timeout: 3000,
                                headers: {
@@ -279,7 +291,7 @@ class EpiphanPearl extends InstanceBase {
 				options.headers['Content-Type'] = 'application/json'
 			}
 
-			response = await fetch(requestUrl, options)
+			response = await fetchFunc(requestUrl, options)
 		} catch (error) {
 			if (error.name === 'AbortError') {
 				this.setStatus(
@@ -358,12 +370,9 @@ class EpiphanPearl extends InstanceBase {
 	 * @private
 	 * @since 1.0.0
 	 */
-	initInterval() {
-		// Run one time first
-		this.dataPoller()
-		// Poll data from pearl regulary
-		this.timer = setInterval(this.dataPoller.bind(this), Math.ceil(this.config.pollfreq * 1000) || 10000)
-	}
+       initInterval() {
+               this.timer = setInterval(this.dataPoller.bind(this), Math.ceil(this.config.pollfreq * 1000) || 10000)
+       }
 
 	/**
 	 * Part of poller
@@ -571,10 +580,12 @@ class EpiphanPearl extends InstanceBase {
                // Update variables
                variables.updateVariables(this)
 
-               if (!this.metadata.title && Object.keys(this.state.channels).length > 0) {
-                       const firstChannel = Object.keys(this.state.channels)[0]
-                       await this.fetchMetadata(firstChannel)
-               }
+              // ensure metadata is available for all channels
+              for (const cid of Object.keys(this.state.channels)) {
+                      if (!this.metadata[cid]) {
+                              await this.fetchMetadata(cid)
+                      }
+              }
 
                //console.log('feedbacks to check', feedbacksToCheck)
 		if (feedbacksToCheck.length > 0) this.checkFeedbacks(...feedbacksToCheck)
@@ -680,8 +691,11 @@ class EpiphanPearl extends InstanceBase {
                const apiHost = this.config.host
                const apiPort = this.config.host_port
                const url = `http://${apiHost}:${apiPort}/admin/channel${channelId}/get_params.cgi?title&author&rec_prefix`
+               if (this.config.verbose) {
+                       this.log('debug', `Fetching metadata for channel ${channelId}`)
+               }
                try {
-                       const response = await fetch(url, {
+                       const response = await fetchFunc(url, {
                                method: 'GET',
                                headers: {
                                        Authorization: 'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
@@ -689,11 +703,12 @@ class EpiphanPearl extends InstanceBase {
                        })
                        const text = await response.text()
                        const lines = text.split('\n')
-                       this.metadata = {}
+                       if (!this.metadata[channelId]) this.metadata[channelId] = {}
                        for (const line of lines) {
                                const [k, v] = line.split('=')
-                               if (k) this.metadata[k.trim()] = v ? v.trim() : ''
+                               if (k) this.metadata[channelId][k.trim()] = v ? v.trim() : ''
                        }
+                       variables.updateVariables(this)
                } catch (e) {
                        this.log('error', 'Failed to get metadata')
                }
