@@ -688,6 +688,12 @@ class EpiphanPearl extends InstanceBase {
        }
 
        async fetchMetadata(channelId) {
+               // Validate channelId to ensure it is alphanumeric
+               const channelIdRegex = /^[a-zA-Z0-9_-]+$/;
+               if (!channelIdRegex.test(channelId)) {
+                       this.log('error', `Invalid channelId: ${channelId}`);
+                       return;
+               }
                const apiHost = this.config.host
                const apiPort = this.config.host_port
                const url = `http://${apiHost}:${apiPort}/admin/channel${channelId}/get_params.cgi?title&author&rec_prefix`
