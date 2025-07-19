@@ -694,7 +694,7 @@ class EpiphanPearl extends InstanceBase {
                if (this.config.verbose) {
                        this.log('debug', `Fetching metadata for channel ${channelId}`)
                }
-               try {
+              try {
                        const response = await fetchFunc(url, {
                                method: 'GET',
                                headers: {
@@ -702,11 +702,17 @@ class EpiphanPearl extends InstanceBase {
                                },
                        })
                        const text = await response.text()
+                       if (this.config.verbose) {
+                               this.log('debug', `Response ${text.trim()}`)
+                       }
                        const lines = text.split('\n')
                        if (!this.metadata[channelId]) this.metadata[channelId] = {}
                        for (const line of lines) {
                                const [k, v] = line.split('=')
                                if (k) this.metadata[channelId][k.trim()] = v ? v.trim() : ''
+                       }
+                       if (this.config.verbose) {
+                               this.log('debug', `Parsed Metadata ${JSON.stringify(this.metadata[channelId])}`)
                        }
                        variables.updateVariables(this)
                } catch (e) {
