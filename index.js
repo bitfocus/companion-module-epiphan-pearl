@@ -170,7 +170,9 @@ class EpiphanPearl extends InstanceBase {
                } catch (e) {
                        if (this.config.verbose) {
                                this.log('debug', 'API v2.0 check failed: ' + e.message)
+                       }
                }
+
        }
 
 	/**
@@ -390,7 +392,7 @@ class EpiphanPearl extends InstanceBase {
                                requests.push(this.sendRequest('get', '/api/system/ident', {}))
                                requests.push(this.sendRequest('get', '/api/afu/status', {}))
                        }
-                       ;[channels, recorders, recorders_status, systemStatus, firmware, identity, afu] = await Promise.all(requests)
+                       [channels, recorders, recorders_status, systemStatus, firmware, identity, afu] = await Promise.all(requests)
                } catch (error) {
                        this.log('error', 'No valid answer from device')
                        return
