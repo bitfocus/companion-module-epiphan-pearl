@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 ## [Unreleased]
 
+## [2.2.0]
+### Added
+* Support for Pearl API v2.0 with automatic fallback
+* Verbose logging option
+* New variables for channel, recorder, system and device information
+* Actions for starting/stopping streaming and recording individually
+* Actions to reboot or shutdown the device
+* Actions to get and set content metadata
+
 ---
 ## [2.1.0] (2023-05-26)
 

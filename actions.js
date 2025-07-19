@@ -68,8 +68,8 @@ module.exports = {
 			},
 		}
 
-		actions['channelStreaming'] = {
-			name: 'Start/stop streaming',
+               actions['controlStreaming'] = {
+                       name: 'Control streaming',
 			options: [
 				{
 					type: 'dropdown',
@@ -158,8 +158,8 @@ module.exports = {
 			},
 		}
 
-		actions['recorderRecording'] = {
-			name: 'Control recording',
+               actions['recorderRecording'] = {
+                       name: 'Control recording',
 			options: [
 				{
 					type: 'dropdown',
@@ -229,8 +229,9 @@ module.exports = {
 				}
 				// Send request
 				this.sendRequest(type, url, body).then(callback)
-			},
-		}
+                       },
+               }
+
 		actions['insertMarker'] = {
 			name: 'Insert Marker',
 			options: [
@@ -322,8 +323,8 @@ module.exports = {
 				}
 			},
 		}
-		actions['setLayoutData'] = {
-			name: 'Set layout data',
+               actions['setLayoutData'] = {
+                       name: 'Set layout data',
 			options: [
 				{
 					type: 'dropdown',
@@ -381,11 +382,98 @@ module.exports = {
 				}
 				try {
 					await this.sendRequest('PUT', url, body)
-				} catch (error) {
-					this.log('error', 'Layout data could not be sent')
-				}
-			},
-		}
+                               } catch (error) {
+                                       this.log('error', 'Layout data could not be sent')
+                               }
+                       },
+               }
+
+               actions['systemReboot'] = {
+                       name: 'Reboot system',
+                       options: [],
+                       callback: () => {
+                               this.sendRequest('post', '/api/system/control/reboot', {})
+                       },
+               }
+
+               actions['systemShutdown'] = {
+                       name: 'Shutdown system',
+                       options: [],
+                       callback: () => {
+                               this.sendRequest('post', '/api/system/control/shutdown', {})
+                       },
+               }
+
+               actions['getContentMetadata'] = {
+                       name: 'Get Content Metadata',
+                       options: [
+                               {
+                                       type: 'dropdown',
+                                       label: 'Channel',
+                                       id: 'channel',
+                                       choices: this.choicesChannel(),
+                                       default: this.firstId(this.choicesChannel()),
+                               },
+                       ],
+                       callback: async (action) => {
+                               const channel = action.options.channel
+                               const apiHost = this.config.host
+                               const apiPort = this.config.host_port
+                               const url = `http://${apiHost}:${apiPort}/admin/channel${channel}/get_params.cgi?title&author&rec_prefix`
+                               try {
+                                       const response = await fetch(url, {
+                                               method: 'GET',
+                                               headers: {
+                                                       Authorization: 'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
+                                               },
+                                       })
+                                       const text = await response.text()
+                                       const lines = text.split('\n')
+                                       this.metadata = {}
+                                       for (const line of lines) {
+                                               const [k, v] = line.split('=')
+                                               if (k) this.metadata[k.trim()] = v ? v.trim() : ''
+                                       }
+                               } catch (e) {
+                                       this.log('error', 'Failed to get metadata')
+                               }
+                       },
+               }
+
+               actions['setContentMetadata'] = {
+                       name: 'Set Content Metadata',
+                       options: [
+                               {
+                                       type: 'dropdown',
+                                       label: 'Channel',
+                                       id: 'channel',
+                                       choices: this.choicesChannel(),
+                                       default: this.firstId(this.choicesChannel()),
+                               },
+                               { id: 'title', type: 'textinput', label: 'Title', default: '', useVariables: true },
+                               { id: 'author', type: 'textinput', label: 'Author', default: '', useVariables: true },
+                               { id: 'prefix', type: 'textinput', label: 'Filename Prefix', default: '', useVariables: true },
+                       ],
+                       callback: async (action) => {
+                               const channel = action.options.channel
+                               const apiHost = this.config.host
+                               const apiPort = this.config.host_port
+                               const title = encodeURIComponent(await this.parseVariablesInString(action.options.title))
+                               const author = encodeURIComponent(await this.parseVariablesInString(action.options.author))
+                               const prefix = encodeURIComponent(await this.parseVariablesInString(action.options.prefix))
+                               const url = `http://${apiHost}:${apiPort}/admin/channel${channel}/set_params.cgi?title=${title}&author=${author}&rec_prefix=${prefix}`
+                               try {
+                                       await fetch(url, {
+                                               method: 'GET',
+                                               headers: {
+                                                       Authorization: 'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
+                                               },
+                                       })
+                               } catch (e) {
+                                       this.log('error', 'Failed to set metadata')
+                               }
+                       },
+               }
 
 		return actions
 	},

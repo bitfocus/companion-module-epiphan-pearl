@@ -40,16 +40,28 @@ const get_config_fields = () => {
 			width: 6,
 			default: '',
 		},
-		{
-			type: 'number',
-			id: 'pollfreq',
-			label: 'Feedback polling frequency in seconds',
-			width: 6,
-			default: 10,
-			min: 1,
-			max: 300,
-		},
-	]
+                {
+                        type: 'number',
+                        id: 'pollfreq',
+                        label: 'Feedback polling frequency in seconds',
+                        width: 6,
+                        default: 10,
+                        min: 1,
+                        max: 300,
+                },
+               {
+                        type: 'checkbox',
+                        id: 'use_api_v2',
+                        label: 'Use API v2.0 (requires firmware 4.24.1+)',
+                        default: true,
+                },
+                {
+                        type: 'checkbox',
+                        id: 'verbose',
+                        label: 'Enable verbose logging',
+                        default: false,
+                },
+        ]
 }
 
 module.exports = { get_config_fields }
