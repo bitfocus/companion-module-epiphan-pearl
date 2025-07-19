@@ -74,12 +74,15 @@ module.exports = {
             values['identity_description'] = self.state.identity.description || ''
         }
         if (self.metadata) {
-            variables.push({ variableId: 'metadata_title', name: 'Metadata Title' })
-            variables.push({ variableId: 'metadata_author', name: 'Metadata Author' })
-            variables.push({ variableId: 'metadata_rec_prefix', name: 'Recording Prefix' })
-            values['metadata_title'] = self.metadata.title || ''
-            values['metadata_author'] = self.metadata.author || ''
-            values['metadata_rec_prefix'] = self.metadata.rec_prefix || ''
+            for (const cid of Object.keys(self.metadata)) {
+                const md = self.metadata[cid]
+                variables.push({ variableId: `channel_${cid}_metadata_title`, name: `Channel ${cid} Metadata Title` })
+                variables.push({ variableId: `channel_${cid}_metadata_author`, name: `Channel ${cid} Metadata Author` })
+                variables.push({ variableId: `channel_${cid}_metadata_rec_prefix`, name: `Channel ${cid} Recording Prefix` })
+                values[`channel_${cid}_metadata_title`] = md.title || ''
+                values[`channel_${cid}_metadata_author`] = md.author || ''
+                values[`channel_${cid}_metadata_rec_prefix`] = md.rec_prefix || ''
+            }
         }
 
         self.setVariableDefinitions(variables)
