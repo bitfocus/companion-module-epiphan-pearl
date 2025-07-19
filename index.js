@@ -12,12 +12,13 @@ const actions = require('./actions')
 const feedbacks = require('./feedbacks')
 const presets = require('./presets')
 const { get_config_fields } = require('./config')
+const variables = require('./variables')
 
 /**
  * Companion instance class for the Epiphan Pearl.
  *
  * @extends InstanceBase
- * @version 2.1.0
+ * @version 2.2.0
  * @since 1.0.0
  */
 class EpiphanPearl extends InstanceBase {
@@ -30,25 +31,33 @@ class EpiphanPearl extends InstanceBase {
 	 * @param {string} id - the instance ID
 	 * @param {Object} config - saved user configuration parameters
 	 */
-	constructor(internal) {
-		super(internal)
+       constructor(internal) {
+               super(internal)
 
-		/**
-		 * Object holding all the state of the pearl
-		 * structure is similar to the api nodes
-		 */
-		this.state = {
-			channels: {},
-			recorders: {},
-		}
+               /**
+                * Object holding all the state of the pearl
+                * structure is similar to the api nodes
+                */
+               this.state = {
+                       channels: {},
+                       recorders: {},
+               }
 
-		Object.assign(this, {
-			...actions,
-			...feedbacks,
-			...presets,
-			//...variables
-		})
-	}
+               this.metadata = {}
+
+               /**
+                * base path for the pearl API
+                * will be updated during init when firmware is checked
+                */
+               this.apiBasePath = '/api'
+
+               Object.assign(this, {
+                       ...actions,
+                       ...feedbacks,
+                       ...presets,
+                       //...variables
+               })
+       }
 
 	// noinspection JSUnusedGlobalSymbols
 	/**
@@ -82,13 +91,14 @@ class EpiphanPearl extends InstanceBase {
 	 * @since 1.0.0
 	 * @param config the configuration object
 	 */
-	async init(config) {
-		this.updateStatus(InstanceStatus.Connecting)
+       async init(config) {
+               this.updateStatus(InstanceStatus.Connecting)
 
-		await this.configUpdated(config)
-		this.updateSystem()
-		this.initInterval()
-	}
+               await this.configUpdated(config)
+               await this.determineApiBase()
+               this.updateSystem()
+               this.initInterval()
+       }
 
 	// noinspection JSUnusedGlobalSymbols
 	/**
@@ -98,7 +108,7 @@ class EpiphanPearl extends InstanceBase {
 	 * @since 1.0.0
 	 * @param {Object} config - the new configuration
 	 */
-	async configUpdated(config) {
+        async configUpdated(config) {
 		if (!config.host || config.host.match(new RegExp(Regex.IP.slice(1, -1))) === null) {
 			this.log('error', 'invalid IP given in configuration: ' + config.host)
 			return
@@ -121,13 +131,47 @@ class EpiphanPearl extends InstanceBase {
 
 			this.config = config
 
-			if (oldconfig.pollfreq !== this.config.pollfreq) {
-				// polling frequency has changed, update interval
-				clearInterval(this.timer)
-				this.initInterval()
-			}
-		}
-	}
+                       if (oldconfig.pollfreq !== this.config.pollfreq) {
+                               // polling frequency has changed, update interval
+                               clearInterval(this.timer)
+                               this.initInterval()
+                       }
+               }
+       }
+
+       /**
+        * Determine which API version should be used based on firmware
+        */
+       async determineApiBase() {
+               this.apiBasePath = '/api'
+               if (!this.config.use_api_v2) {
+                       return
+               }
+               const apiHost = this.config.host
+               const apiPort = this.config.host_port
+               const url = `http://${apiHost}:${apiPort}/api/v2.0/system/firmware/version`
+               try {
+                       const response = await fetch(url, {
+                               method: 'GET',
+                               timeout: 3000,
+                               headers: {
+                                       Authorization: 'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
+                               },
+                       })
+                       if (response.ok) {
+                               const data = await response.json()
+                               const version = data.result || data
+                               const parts = version.split('.').map((v) => parseInt(v, 10))
+                               const verNum = parts[0] * 10000 + parts[1] * 100 + parts[2]
+                               if (verNum >= 42401) {
+                                       this.apiBasePath = '/api/v2.0'
+                               }
+                       }
+               } catch (e) {
+                       if (this.config.verbose) {
+                               this.log('debug', 'API v2.0 check failed: ' + e.message)
+               }
+       }
 
 	/**
 	 * INTERNAL: handler of status changes
@@ -185,9 +229,9 @@ class EpiphanPearl extends InstanceBase {
 	 * @param {?Object} body - Optional body to send
 	 */
 	async sendRequest(type, url, body = {}) {
-		const apiHost = this.config.host,
-			apiPort = this.config.host_port,
-			baseUrl = 'http://' + apiHost + ':' + apiPort
+               const apiHost = this.config.host,
+                       apiPort = this.config.host_port,
+                       baseUrl = 'http://' + apiHost + ':' + apiPort
 
 		if (url === null || url === '') {
 			this.setStatus(InstanceStatus.BadConfig, 'No URL given for sendRequest')
@@ -207,7 +251,14 @@ class EpiphanPearl extends InstanceBase {
 			body = {}
 		}
 
-		const requestUrl = baseUrl + url
+               let apiUrl = url
+               if (url.startsWith('/api/')) {
+                       apiUrl = this.apiBasePath + url.slice(4)
+               }
+               const requestUrl = baseUrl + apiUrl
+               if (this.config.verbose) {
+                       this.log('debug', `Request ${type} ${requestUrl}`)
+               }
 		//this.log('debug', 'Starting request to: ' + type + ' ' + baseUrl + url + ' body: ' + JSON.stringify(body))
 
 		let response
@@ -250,7 +301,10 @@ class EpiphanPearl extends InstanceBase {
 			throw new Error('Non-successful response status code: ' + http.STATUS_CODES[response.status])
 		}
 
-		const responseBody = await response.json()
+               const responseBody = await response.json()
+               if (this.config.verbose) {
+                       this.log('debug', `Response ${JSON.stringify(responseBody)}`)
+               }
 		if (responseBody && responseBody.status && responseBody.status !== 'ok') {
 			this.setStatus(
 				InstanceStatus.ConnectionFailure,
@@ -323,17 +377,24 @@ class EpiphanPearl extends InstanceBase {
 		} // start with a fresh object, during the update some properties will be unavailable, so it is best to not do live updates
 
 		// Get all channels and recorders available (in parallel)
-		let channels, recorders, recorders_status
-		try {
-			[channels, recorders, recorders_status] = await Promise.all([
-				this.sendRequest('get', '/api/channels?publishers=yes&encoders=yes', {}),
-				this.sendRequest('get', '/api/recorders', {}),
-				this.sendRequest('get', '/api/recorders/status', {}),
-			])
-		} catch (error) {
-			this.log('error', 'No valid answer from device')
-			return
-		}
+               let channels, recorders, recorders_status, systemStatus, firmware, identity, afu
+               try {
+                       const requests = [
+                               this.sendRequest('get', '/api/channels?publishers=yes&encoders=yes', {}),
+                               this.sendRequest('get', '/api/recorders', {}),
+                               this.sendRequest('get', '/api/recorders/status', {}),
+                       ]
+                       if (this.apiBasePath === '/api/v2.0') {
+                               requests.push(this.sendRequest('get', '/api/system/status', {}))
+                               requests.push(this.sendRequest('get', '/api/system/firmware', {}))
+                               requests.push(this.sendRequest('get', '/api/system/ident', {}))
+                               requests.push(this.sendRequest('get', '/api/afu/status', {}))
+                       }
+                       ;[channels, recorders, recorders_status, systemStatus, firmware, identity, afu] = await Promise.all(requests)
+               } catch (error) {
+                       this.log('error', 'No valid answer from device')
+                       return
+               }
 
 		channels.forEach((channel) => {
 			state.channels[channel.id] = { ...channel }
@@ -345,10 +406,15 @@ class EpiphanPearl extends InstanceBase {
 			state.recorders[recorder.id] = { ...recorder }
 		})
 
-		recorders_status.forEach((recorder) => {
-			if (state.recorders[recorder.id] === undefined) state.recorders[recorder.id] = {} // just for the event a recorder has been created between call to recorders and recorders/status
-			state.recorders[recorder.id].status = recorder.status
-		})
+               recorders_status.forEach((recorder) => {
+                       if (state.recorders[recorder.id] === undefined) state.recorders[recorder.id] = {} // just for the event a recorder has been created between call to recorders and recorders/status
+                       state.recorders[recorder.id].status = recorder.status
+               })
+
+               if (systemStatus) state.systemStatus = systemStatus
+               if (firmware) state.firmware = firmware
+               if (identity) state.identity = identity
+               if (afu) state.afu = afu
 
 		// Get all layouts and publishers for all channels and all recorder states (in parallel)
 		await Promise.allSettled([
@@ -436,7 +502,7 @@ class EpiphanPearl extends InstanceBase {
 		let feedbacksToCheck = [] // this feedbacks need to be updated
 		if (updateNeeded) {
 			//console.log('update is needed: new', JSON.stringify(state), '\n old', JSON.stringify(this.state))
-			feedbacksToCheck = ['channelLayout', 'channelStreaming', 'recorderRecording'] // recheck everything after reconfiguration, could be more fine grained but not worth for such a small amount of feedbacks
+                       feedbacksToCheck = ['channelLayout', 'streamingState', 'recorderRecording'] // recheck everything after reconfiguration, could be more fine grained but not worth for such a small amount of feedbacks
 		} else {
 			if (
 				channelIds.reduce(
@@ -486,7 +552,7 @@ class EpiphanPearl extends InstanceBase {
 					''
 				)
 			) {
-				feedbacksToCheck.push('channelStreaming')
+                               feedbacksToCheck.push('streamingState')
 			}
 			if (
 				recorderIds.reduce((acc, curr) => `${acc},${JSON.stringify(state.recorders[curr].status.state)}`, '') !==
@@ -497,8 +563,17 @@ class EpiphanPearl extends InstanceBase {
 		}
 
 		// now finally swap the state object
-		this.state = { ...state }
-		//console.log('feedbacks to check', feedbacksToCheck)
+               this.state = { ...state }
+
+               // Update variables
+               variables.updateVariables(this)
+
+               if (!this.metadata.title && Object.keys(this.state.channels).length > 0) {
+                       const firstChannel = Object.keys(this.state.channels)[0]
+                       await this.fetchMetadata(firstChannel)
+               }
+
+               //console.log('feedbacks to check', feedbacksToCheck)
 		if (feedbacksToCheck.length > 0) this.checkFeedbacks(...feedbacksToCheck)
 		if (updateNeeded) {
 			this.updateSystem()
@@ -584,19 +659,42 @@ class EpiphanPearl extends InstanceBase {
 	 * @private
 	 * @since 1.0.0
 	 */
-	async updateRecorderStatus() {
-		const recoders = await this.sendRequest('get', '/api/recorders/status', {})
-		if (!recoders) {
-			return
-		}
+       async updateRecorderStatus() {
+               const recoders = await this.sendRequest('get', '/api/recorders/status', {})
+               if (!recoders) {
+                       return
+               }
 
 		for (const recorder of recoders) {
 			this.state.recorders[recorder.id].status = recorder.status
 		}
 
-		this.log('debug', 'Updating RECORDER_STATES and then call checkFeedbacks(recorderRecording)')
-		this.checkFeedbacks('recorderRecording')
-	}
+               this.log('debug', 'Updating RECORDER_STATES and then call checkFeedbacks(recorderRecording)')
+               this.checkFeedbacks('recorderRecording')
+       }
+
+       async fetchMetadata(channelId) {
+               const apiHost = this.config.host
+               const apiPort = this.config.host_port
+               const url = `http://${apiHost}:${apiPort}/admin/channel${channelId}/get_params.cgi?title&author&rec_prefix`
+               try {
+                       const response = await fetch(url, {
+                               method: 'GET',
+                               headers: {
+                                       Authorization: 'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
+                               },
+                       })
+                       const text = await response.text()
+                       const lines = text.split('\n')
+                       this.metadata = {}
+                       for (const line of lines) {
+                               const [k, v] = line.split('=')
+                               if (k) this.metadata[k.trim()] = v ? v.trim() : ''
+                       }
+               } catch (e) {
+                       this.log('error', 'Failed to get metadata')
+               }
+       }
 }
 
 const upgradeToBooleanFeedbacks = CreateConvertToBooleanFeedbackUpgradeScript({
@@ -604,10 +702,10 @@ const upgradeToBooleanFeedbacks = CreateConvertToBooleanFeedbackUpgradeScript({
 		fg: 'color',
 		bg: 'bgcolor',
 	},
-	channelStreaming: {
-		fg: 'color',
-		bg: 'bgcolor',
-	},
+       streamingState: {
+               fg: 'color',
+               bg: 'bgcolor',
+       },
 	recorderRecording: {
 		fg: 'color',
 		bg: 'bgcolor',

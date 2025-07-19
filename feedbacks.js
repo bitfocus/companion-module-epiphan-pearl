@@ -49,8 +49,8 @@ module.exports = {
 			},
 		}
 
-		feedbacks['channelStreaming'] = {
-			name: 'Change style if streaming',
+               feedbacks['streamingState'] = {
+                       name: 'Change style if streaming',
 			type: 'boolean',
 			description: 'Change style if specified channel is streaming',
 			defaultStyle: {
@@ -65,8 +65,8 @@ module.exports = {
 					choices: this.choicesChannelPublishers(),
 					default: this.firstId(this.choicesChannelPublishers()),
 				},
-			],
-			callback: (feedback) => {
+                        ],
+                        callback: (feedback) => {
 				if (!feedback.options.channelIdpublisherId) {
 					return false
 				}
