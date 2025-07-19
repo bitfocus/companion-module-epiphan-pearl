@@ -4,6 +4,7 @@
   "homepage": "https://github.com/bitfocus/companion-module-epiphan-pearl#readme",
   "main": "index.js",
   "scripts": {
+    "format": "prettier -w .",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "license": "MIT",
