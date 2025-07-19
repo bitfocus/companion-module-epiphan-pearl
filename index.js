@@ -20,6 +20,8 @@ const presets = require('./presets')
 const { get_config_fields } = require('./config')
 const variables = require('./variables')
 const upgradeScripts = require('./upgrades')
+// Minimum firmware version (4.24.01) that supports API v2.0
+const MIN_API_V2_VERSION = 42401
 
 /**
  * Companion instance class for the Epiphan Pearl.
@@ -176,7 +178,7 @@ class EpiphanPearl extends InstanceBase {
                                const version = data.result || data
                                const parts = version.split('.').map((v) => parseInt(v, 10))
                                const verNum = parts[0] * 10000 + parts[1] * 100 + parts[2]
-                               if (verNum >= 42401) {
+                               if (verNum >= MIN_API_V2_VERSION) {
                                        this.apiBasePath = '/api/v2.0'
                                }
                        }
