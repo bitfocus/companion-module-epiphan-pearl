@@ -6,18 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
-## [Unreleased]
 
-## [2.2.0]
-### Added
+## [2.2.0] (2025-07-10)
+
+### New Features
 * Support for Pearl API v2.0 with automatic fallback
 * Verbose logging option
 * New variables for channel, recorder, system and device information
-* Actions for starting/stopping streaming and recording individually
+* Actions for starting/stopping streaming and recording
 * Actions to reboot or shutdown the device
 * Actions to get and set content metadata
 
----
 ## [2.1.0] (2023-05-26)
 
 ## New Features
