@@ -49,6 +49,18 @@ const get_config_fields = () => {
 			min: 1,
 			max: 300,
 		},
+		{
+			type: 'checkbox',
+			id: 'use_api_v2',
+			label: 'Use API v2.0 (if available)',
+			default: true,
+		},
+		{
+			type: 'checkbox',
+			id: 'verbose',
+			label: 'Enable verbose logging',
+			default: false,
+		},
 	]
 }
 

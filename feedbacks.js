@@ -49,7 +49,7 @@ module.exports = {
 			},
 		}
 
-		feedbacks['channelStreaming'] = {
+		feedbacks['streamingState'] = {
 			name: 'Change style if streaming',
 			type: 'boolean',
 			description: 'Change style if specified channel is streaming',
@@ -113,7 +113,10 @@ module.exports = {
 				try {
 					return this.state.recorders[feedback.options.recorderId]?.status?.state === 'started'
 				} catch (error) {
-					this.log('error', `trying to read feedback for a non-existing recorder (${feedback.options.recorderId})`)
+					this.log(
+						'error',
+						`trying to read feedback for a non-existing recorder (${feedback.options.recorderId})`
+					)
 					return false
 				}
 			},

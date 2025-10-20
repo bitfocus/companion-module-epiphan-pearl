@@ -1,4 +1,11 @@
 const { InstanceStatus } = require('@companion-module/base')
+const variables = require('./variables')
+
+// use global fetch provided by Node 18+
+if (typeof global.fetch !== 'function') {
+	throw new Error('Global fetch API is not available. Please use Node 18 or newer')
+}
+const fetchFunc = global.fetch
 
 module.exports = {
 	/**
@@ -27,7 +34,10 @@ module.exports = {
 					body,
 					callback
 
-				if (typeof action.options.channelIdlayoutId !== 'string' || !action.options.channelIdlayoutId.includes('-')) {
+				if (
+					typeof action.options.channelIdlayoutId !== 'string' ||
+					!action.options.channelIdlayoutId.includes('-')
+				) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
 						'Channel and layout are not known! Please review your button config'
@@ -68,8 +78,8 @@ module.exports = {
 			},
 		}
 
-		actions['channelStreaming'] = {
-			name: 'Start/stop streaming',
+		actions['controlStreaming'] = {
+			name: 'Control streaming',
 			options: [
 				{
 					type: 'dropdown',
@@ -217,7 +227,10 @@ module.exports = {
 				} else if (startStopAction === 99) {
 					return
 				} else {
-					this.setStatus(InstanceStatus.UnknownWarning, 'Called an unknown action! Please review your button config.')
+					this.setStatus(
+						InstanceStatus.UnknownWarning,
+						'Called an unknown action! Please review your button config.'
+					)
 					this.log('error', 'Called an unknown action: ' + action.options.startStopAction)
 					return
 				}
@@ -231,6 +244,7 @@ module.exports = {
 				this.sendRequest(type, url, body).then(callback)
 			},
 		}
+
 		actions['insertMarker'] = {
 			name: 'Insert Marker',
 			options: [
@@ -253,7 +267,9 @@ module.exports = {
 			callback: async (action) => {
 				let type = 'post'
 				let url = `/api/channels/${action.options.channel}/bookmarks`
-				let body = { text: await this.parseVariablesInString(action.options.markertext) }
+				let body = {
+					text: await this.parseVariablesInString(action.options.markertext),
+				}
 
 				// Send request
 				try {
@@ -281,7 +297,10 @@ module.exports = {
 				},
 			],
 			callback: async (action) => {
-				if (typeof action.options.channelIdlayoutId !== 'string' || !action.options.channelIdlayoutId.includes('-')) {
+				if (
+					typeof action.options.channelIdlayoutId !== 'string' ||
+					!action.options.channelIdlayoutId.includes('-')
+				) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
 						'Channel and layout are not known! Please review your button config'
@@ -343,7 +362,10 @@ module.exports = {
 				},
 			],
 			callback: async (action) => {
-				if (typeof action.options.channelIdlayoutId !== 'string' || !action.options.channelIdlayoutId.includes('-')) {
+				if (
+					typeof action.options.channelIdlayoutId !== 'string' ||
+					!action.options.channelIdlayoutId.includes('-')
+				) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
 						'Channel and layout are not known! Please review your button config'
@@ -383,6 +405,109 @@ module.exports = {
 					await this.sendRequest('PUT', url, body)
 				} catch (error) {
 					this.log('error', 'Layout data could not be sent')
+				}
+			},
+		}
+
+		actions['systemReboot'] = {
+			name: 'Reboot system',
+			options: [],
+			callback: () => {
+				this.sendRequest('post', '/api/system/control/reboot', {})
+			},
+		}
+
+		actions['systemShutdown'] = {
+			name: 'Shutdown system',
+			options: [],
+			callback: () => {
+				this.sendRequest('post', '/api/system/control/shutdown', {})
+			},
+		}
+
+		actions['getContentMetadata'] = {
+			name: 'Get Content Metadata',
+			options: [
+				{
+					type: 'dropdown',
+					label: 'Channel',
+					id: 'channel',
+					choices: this.choicesChannel(),
+					default: this.firstId(this.choicesChannel()),
+				},
+			],
+			callback: async (action) => {
+				const channel = action.options.channel
+				if (this.config.verbose) {
+					this.log('debug', `Action get metadata for channel ${channel}`)
+				}
+				await this.fetchMetadata(channel)
+			},
+		}
+
+		actions['setContentMetadata'] = {
+			name: 'Set Content Metadata',
+			options: [
+				{
+					type: 'dropdown',
+					label: 'Channel',
+					id: 'channel',
+					choices: this.choicesChannel(),
+					default: this.firstId(this.choicesChannel()),
+				},
+				{
+					id: 'title',
+					type: 'textinput',
+					label: 'Title',
+					default: '',
+					useVariables: true,
+				},
+				{
+					id: 'author',
+					type: 'textinput',
+					label: 'Author',
+					default: '',
+					useVariables: true,
+				},
+				{
+					id: 'prefix',
+					type: 'textinput',
+					label: 'Filename Prefix',
+					default: '',
+					useVariables: true,
+				},
+			],
+			callback: async (action) => {
+				const channel = action.options.channel
+				const apiHost = this.config.host
+				const apiPort = this.config.host_port
+				const titleRaw = await this.parseVariablesInString(action.options.title)
+				const authorRaw = await this.parseVariablesInString(action.options.author)
+				const prefixRaw = await this.parseVariablesInString(action.options.prefix)
+				const urlObj = new URL(`http://${apiHost}:${apiPort}/admin/channel${channel}/set_params.cgi`)
+				urlObj.searchParams.set('title', titleRaw)
+				urlObj.searchParams.set('author', authorRaw)
+				urlObj.searchParams.set('rec_prefix', prefixRaw)
+				const url = urlObj.toString()
+				if (this.config.verbose) {
+					this.log('debug', `Action set metadata for channel ${channel}`)
+				}
+				try {
+					await fetchFunc(url, {
+						method: 'GET',
+						headers: {
+							Authorization:
+								'Basic ' +
+								Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
+						},
+					})
+					if (!this.metadata[channel]) this.metadata[channel] = {}
+					this.metadata[channel].title = titleRaw
+					this.metadata[channel].author = authorRaw
+					this.metadata[channel].rec_prefix = prefixRaw
+					variables.updateVariables(this)
+				} catch (e) {
+					this.log('error', 'Failed to set metadata')
 				}
 			},
 		}

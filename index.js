@@ -8,16 +8,26 @@ const {
 } = require('@companion-module/base')
 const http = require('http')
 
+// use global fetch provided by Node 18+
+if (typeof global.fetch !== 'function') {
+	throw new Error('Global fetch API is not available. Please use Node 18 or newer')
+}
+const fetchFunc = global.fetch
+
 const actions = require('./actions')
 const feedbacks = require('./feedbacks')
 const presets = require('./presets')
 const { get_config_fields } = require('./config')
+const variables = require('./variables')
+const upgradeScripts = require('./upgrades')
+// Minimum firmware version (4.24.01) that supports API v2.0
+const MIN_API_V2_VERSION = 42401
 
 /**
  * Companion instance class for the Epiphan Pearl.
  *
  * @extends InstanceBase
- * @version 2.1.0
+ * @version 2.2.0
  * @since 1.0.0
  */
 class EpiphanPearl extends InstanceBase {
@@ -41,6 +51,15 @@ class EpiphanPearl extends InstanceBase {
 			channels: {},
 			recorders: {},
 		}
+
+		// store content metadata for each channel
+		this.metadata = {}
+
+		/**
+		 * base path for the pearl API
+		 * will be updated during init when firmware is checked
+		 */
+		this.apiBasePath = '/api'
 
 		Object.assign(this, {
 			...actions,
@@ -86,6 +105,12 @@ class EpiphanPearl extends InstanceBase {
 		this.updateStatus(InstanceStatus.Connecting)
 
 		await this.configUpdated(config)
+		await this.determineApiBase()
+		await this.dataPoller()
+		// fetch metadata for all channels once during init
+		for (const channelId of Object.keys(this.state.channels)) {
+			await this.fetchMetadata(channelId)
+		}
 		this.updateSystem()
 		this.initInterval()
 	}
@@ -125,6 +150,42 @@ class EpiphanPearl extends InstanceBase {
 				// polling frequency has changed, update interval
 				clearInterval(this.timer)
 				this.initInterval()
+			}
+		}
+	}
+
+	/**
+	 * Determine which API version should be used based on firmware
+	 */
+	async determineApiBase() {
+		this.apiBasePath = '/api'
+		if (!this.config.use_api_v2) {
+			return
+		}
+		const apiHost = this.config.host
+		const apiPort = this.config.host_port
+		const url = `http://${apiHost}:${apiPort}/api/v2.0/system/firmware/version`
+		try {
+			const response = await fetchFunc(url, {
+				method: 'GET',
+				timeout: 3000,
+				headers: {
+					Authorization:
+						'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
+				},
+			})
+			if (response.ok) {
+				const data = await response.json()
+				const version = data.result || data
+				const parts = version.split('.').map((v) => parseInt(v, 10))
+				const verNum = parts[0] * 10000 + parts[1] * 100 + parts[2]
+				if (verNum >= MIN_API_V2_VERSION) {
+					this.apiBasePath = '/api/v2.0'
+				}
+			}
+		} catch (e) {
+			if (this.config.verbose) {
+				this.log('debug', 'API v2.0 check failed: ' + e.message)
 			}
 		}
 	}
@@ -207,7 +268,14 @@ class EpiphanPearl extends InstanceBase {
 			body = {}
 		}
 
-		const requestUrl = baseUrl + url
+		let apiUrl = url
+		if (url.startsWith('/api/')) {
+			apiUrl = this.apiBasePath + url.slice(4)
+		}
+		const requestUrl = baseUrl + apiUrl
+		if (this.config.verbose) {
+			this.log('debug', `Request ${type} ${requestUrl}`)
+		}
 		//this.log('debug', 'Starting request to: ' + type + ' ' + baseUrl + url + ' body: ' + JSON.stringify(body))
 
 		let response
@@ -216,7 +284,8 @@ class EpiphanPearl extends InstanceBase {
 				method: type,
 				timeout: 3000,
 				headers: {
-					Authorization: 'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
+					Authorization:
+						'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
 				},
 			}
 
@@ -225,7 +294,7 @@ class EpiphanPearl extends InstanceBase {
 				options.headers['Content-Type'] = 'application/json'
 			}
 
-			response = await fetch(requestUrl, options)
+			response = await fetchFunc(requestUrl, options)
 		} catch (error) {
 			if (error.name === 'AbortError') {
 				this.setStatus(
@@ -246,22 +315,37 @@ class EpiphanPearl extends InstanceBase {
 				InstanceStatus.ConnectionFailure,
 				'Non-successful response status code: ' + http.STATUS_CODES[response.status] + ' ' + requestUrl
 			)
-			this.log('debug', 'Non-successful response status code: ' + http.STATUS_CODES[response.status] + ' ' + requestUrl)
+			this.log(
+				'debug',
+				'Non-successful response status code: ' + http.STATUS_CODES[response.status] + ' ' + requestUrl
+			)
 			throw new Error('Non-successful response status code: ' + http.STATUS_CODES[response.status])
 		}
 
 		const responseBody = await response.json()
+		if (this.config.verbose) {
+			this.log('debug', `Response ${JSON.stringify(responseBody)}`)
+		}
 		if (responseBody && responseBody.status && responseBody.status !== 'ok') {
 			this.setStatus(
 				InstanceStatus.ConnectionFailure,
-				'Non-successful response from pearl: ' + requestUrl + ' - ' + (body.message ? body.message : 'No error message')
+				'Non-successful response from pearl: ' +
+					requestUrl +
+					' - ' +
+					(body.message ? body.message : 'No error message')
 			)
 			this.log(
 				'debug',
-				'Non-successful response from pearl: ' + requestUrl + ' - ' + (body.message ? body.message : 'No error message')
+				'Non-successful response from pearl: ' +
+					requestUrl +
+					' - ' +
+					(body.message ? body.message : 'No error message')
 			)
 			throw new Error(
-				'Non-successful response from pearl: ' + requestUrl + ' - ' + (body.message ? body.message : 'No error message')
+				'Non-successful response from pearl: ' +
+					requestUrl +
+					' - ' +
+					(body.message ? body.message : 'No error message')
 			)
 		}
 
@@ -302,9 +386,6 @@ class EpiphanPearl extends InstanceBase {
 	 * @since 1.0.0
 	 */
 	initInterval() {
-		// Run one time first
-		this.dataPoller()
-		// Poll data from pearl regulary
 		this.timer = setInterval(this.dataPoller.bind(this), Math.ceil(this.config.pollfreq * 1000) || 10000)
 	}
 
@@ -323,13 +404,22 @@ class EpiphanPearl extends InstanceBase {
 		} // start with a fresh object, during the update some properties will be unavailable, so it is best to not do live updates
 
 		// Get all channels and recorders available (in parallel)
-		let channels, recorders, recorders_status
+		let channels, recorders, recorders_status, systemStatus, firmware, identity, afu
 		try {
-			[channels, recorders, recorders_status] = await Promise.all([
+			const requests = [
 				this.sendRequest('get', '/api/channels?publishers=yes&encoders=yes', {}),
 				this.sendRequest('get', '/api/recorders', {}),
 				this.sendRequest('get', '/api/recorders/status', {}),
-			])
+			]
+			if (this.apiBasePath === '/api/v2.0') {
+				requests.push(this.sendRequest('get', '/api/system/status', {}))
+				requests.push(this.sendRequest('get', '/api/system/firmware', {}))
+				requests.push(this.sendRequest('get', '/api/system/ident', {}))
+				requests.push(this.sendRequest('get', '/api/afu/status', {}))
+			}
+			;[channels, recorders, recorders_status, systemStatus, firmware, identity, afu] = await Promise.all(
+				requests
+			)
 		} catch (error) {
 			this.log('error', 'No valid answer from device')
 			return
@@ -350,6 +440,11 @@ class EpiphanPearl extends InstanceBase {
 			state.recorders[recorder.id].status = recorder.status
 		})
 
+		if (systemStatus) state.systemStatus = systemStatus
+		if (firmware) state.firmware = firmware
+		if (identity) state.identity = identity
+		if (afu) state.afu = afu
+
 		// Get all layouts and publishers for all channels and all recorder states (in parallel)
 		await Promise.allSettled([
 			...channels.map(async (channel) => {
@@ -369,7 +464,11 @@ class EpiphanPearl extends InstanceBase {
 				})
 			}),
 			...channels.map(async (channel) => {
-				const publishersstatus = await this.sendRequest('get', '/api/channels/' + channel.id + '/publishers/status', {})
+				const publishersstatus = await this.sendRequest(
+					'get',
+					'/api/channels/' + channel.id + '/publishers/status',
+					{}
+				)
 				publishersstatus.forEach((publisher) => {
 					if (state.channels[channel.id].publishers[publisher.id] === undefined)
 						state.channels[channel.id].publishers[publisher.id] = {}
@@ -419,7 +518,9 @@ class EpiphanPearl extends InstanceBase {
 		} else if (
 			channelIds.reduce(
 				(acc, curr) =>
-					`${acc},${Object.keys(state.channels[curr].layouts).map((id) => state.channels[curr].layouts[id].name)}`,
+					`${acc},${Object.keys(state.channels[curr].layouts).map(
+						(id) => state.channels[curr].layouts[id].name
+					)}`,
 				''
 			) !==
 			channelIds.reduce(
@@ -436,12 +537,14 @@ class EpiphanPearl extends InstanceBase {
 		let feedbacksToCheck = [] // this feedbacks need to be updated
 		if (updateNeeded) {
 			//console.log('update is needed: new', JSON.stringify(state), '\n old', JSON.stringify(this.state))
-			feedbacksToCheck = ['channelLayout', 'channelStreaming', 'recorderRecording'] // recheck everything after reconfiguration, could be more fine grained but not worth for such a small amount of feedbacks
+			feedbacksToCheck = ['channelLayout', 'streamingState', 'recorderRecording'] // recheck everything after reconfiguration, could be more fine grained but not worth for such a small amount of feedbacks
 		} else {
 			if (
 				channelIds.reduce(
 					(acc, curr) =>
-						`${acc},${Object.keys(state.channels[curr].layouts).map((id) => state.channels[curr].layouts[id].active)}`,
+						`${acc},${Object.keys(state.channels[curr].layouts).map(
+							(id) => state.channels[curr].layouts[id].active
+						)}`,
 					''
 				) !==
 				channelIds.reduce(
@@ -457,7 +560,9 @@ class EpiphanPearl extends InstanceBase {
 			if (
 				channelIds.reduce(
 					(acc, curr) =>
-						`${acc},${Object.keys(state.channels[curr].layouts).map((id) => state.channels[curr].layouts[id].active)}`,
+						`${acc},${Object.keys(state.channels[curr].layouts).map(
+							(id) => state.channels[curr].layouts[id].active
+						)}`,
 					''
 				) !==
 				channelIds.reduce(
@@ -486,11 +591,17 @@ class EpiphanPearl extends InstanceBase {
 					''
 				)
 			) {
-				feedbacksToCheck.push('channelStreaming')
+				feedbacksToCheck.push('streamingState')
 			}
 			if (
-				recorderIds.reduce((acc, curr) => `${acc},${JSON.stringify(state.recorders[curr].status.state)}`, '') !==
-				recorderIds.reduce((acc, curr) => `${acc},${JSON.stringify(this.state.recorders[curr].status.state)}`, '')
+				recorderIds.reduce(
+					(acc, curr) => `${acc},${JSON.stringify(state.recorders[curr].status.state)}`,
+					''
+				) !==
+				recorderIds.reduce(
+					(acc, curr) => `${acc},${JSON.stringify(this.state.recorders[curr].status.state)}`,
+					''
+				)
 			) {
 				feedbacksToCheck.push('recorderRecording')
 			}
@@ -498,6 +609,17 @@ class EpiphanPearl extends InstanceBase {
 
 		// now finally swap the state object
 		this.state = { ...state }
+
+		// Update variables
+		variables.updateVariables(this)
+
+		// ensure metadata is available for all channels
+		for (const cid of Object.keys(this.state.channels)) {
+			if (!this.metadata[cid]) {
+				await this.fetchMetadata(cid)
+			}
+		}
+
 		//console.log('feedbacks to check', feedbacksToCheck)
 		if (feedbacksToCheck.length > 0) this.checkFeedbacks(...feedbacksToCheck)
 		if (updateNeeded) {
@@ -597,6 +719,49 @@ class EpiphanPearl extends InstanceBase {
 		this.log('debug', 'Updating RECORDER_STATES and then call checkFeedbacks(recorderRecording)')
 		this.checkFeedbacks('recorderRecording')
 	}
+
+	async fetchMetadata(channelId) {
+		// Validate channelId to ensure it is alphanumeric
+		const channelIdRegex = /^[a-zA-Z0-9_-]+$/
+		if (!channelIdRegex.test(channelId)) {
+			this.log('error', `Invalid channelId: ${channelId}`)
+			return
+		}
+		const apiHost = this.config.host
+		const apiPort = this.config.host_port
+		const url = `http://${apiHost}:${apiPort}/admin/channel${channelId}/get_params.cgi?title&author&rec_prefix`
+		if (this.config.verbose) {
+			this.log('debug', `Fetching metadata for channel ${channelId}`)
+		}
+		try {
+			const response = await fetchFunc(url, {
+				method: 'GET',
+				headers: {
+					Authorization:
+						'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
+				},
+			})
+			const text = await response.text()
+			if (this.config.verbose) {
+				this.log('debug', `Response ${text.trim()}`)
+			}
+			const lines = text.split('\n')
+			if (!this.metadata[channelId]) this.metadata[channelId] = {}
+			for (const line of lines) {
+				const [rawKey, rawVal] = line.split('=')
+				if (!rawKey) continue
+				const key = rawKey.trim()
+				const val = rawVal ? rawVal.trim() : ''
+				this.metadata[channelId][key] = val
+			}
+			if (this.config.verbose) {
+				this.log('debug', `Parsed Metadata ${JSON.stringify(this.metadata[channelId])}`)
+			}
+			variables.updateVariables(this)
+		} catch (e) {
+			this.log('error', 'Failed to get metadata')
+		}
+	}
 }
 
 const upgradeToBooleanFeedbacks = CreateConvertToBooleanFeedbackUpgradeScript({
@@ -604,7 +769,7 @@ const upgradeToBooleanFeedbacks = CreateConvertToBooleanFeedbackUpgradeScript({
 		fg: 'color',
 		bg: 'bgcolor',
 	},
-	channelStreaming: {
+	streamingState: {
 		fg: 'color',
 		bg: 'bgcolor',
 	},
@@ -614,4 +779,4 @@ const upgradeToBooleanFeedbacks = CreateConvertToBooleanFeedbackUpgradeScript({
 	},
 })
 
-runEntrypoint(EpiphanPearl, [upgradeToBooleanFeedbacks])
+runEntrypoint(EpiphanPearl, [upgradeToBooleanFeedbacks, ...upgradeScripts])

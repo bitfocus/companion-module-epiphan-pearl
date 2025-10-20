@@ -65,7 +65,7 @@ module.exports = {
 					{
 						down: [
 							{
-								actionId: 'channelStreaming',
+								actionId: 'controlStreaming',
 								options: {
 									channelIdpublisherId: publisher.id,
 									startStopAction: 3, // toggle
@@ -77,7 +77,7 @@ module.exports = {
 				],
 				feedbacks: [
 					{
-						feedbackId: 'channelStreaming',
+						feedbackId: 'streamingState',
 						options: {
 							channelIdpublisherId: publisher.id,
 						},
