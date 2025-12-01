@@ -7,10 +7,10 @@
   resolved "https://registry.npmjs.org/@aashutoshrathi/word-wrap/-/word-wrap-1.2.6.tgz"
   integrity sha512-1Yjs2SvM8TflER/OD3cOjhWWOZb58A2t7wpE2S9XfBYTiIl+XFhQG2bjy4Pu1I+EAlCNUzRDYDdFwFYUKvXcIA==
 
-"@companion-module/base@^1.12.1":
-  version "1.12.1"
-  resolved "https://registry.npmjs.org/@companion-module/base/-/base-1.12.1.tgz"
-  integrity sha512-4hKs1g6XE8QCBh/dHYUa1seDl0U84TbpS8QnD8P+mFqMe7TupqgRkfAmLf3Ai9Fw8P7tE2zlFurMG6Y9iyA6YA==
+"@companion-module/base@^1.13.5":
+  version "1.13.5"
+  resolved "https://registry.yarnpkg.com/@companion-module/base/-/base-1.13.5.tgz#db9bccc63fc5cb9e674af772f4ced66d2c28ce65"
+  integrity sha512-HnlerPP6Z0wb6+ujP/otJClvKG/nblFsiLEza4miNzCvK9xG6Vcl5Cv229wPNV5VIjscO5LEu9Q5SMjv4IuC5g==
   dependencies:
     ajv "^8.17.1"
     colord "^2.9.3"
