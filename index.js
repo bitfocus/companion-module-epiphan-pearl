@@ -14,6 +14,24 @@ if (typeof global.fetch !== 'function') {
 }
 const fetchFunc = global.fetch
 
+function createTimeoutSignal(timeoutMs) {
+	const controller = new AbortController()
+	const timer = setTimeout(() => controller.abort(), timeoutMs)
+	return {
+		signal: controller.signal,
+		cancel: () => clearTimeout(timer),
+	}
+}
+
+async function fetchWithTimeout(url, options, timeoutMs) {
+	const { signal, cancel } = createTimeoutSignal(timeoutMs)
+	try {
+		return await fetchFunc(url, { ...options, signal })
+	} finally {
+		cancel()
+	}
+}
+
 const actions = require('./actions')
 const feedbacks = require('./feedbacks')
 const presets = require('./presets')
@@ -166,14 +184,17 @@ class EpiphanPearl extends InstanceBase {
 		const apiPort = this.config.host_port
 		const url = `http://${apiHost}:${apiPort}/api/v2.0/system/firmware/version`
 		try {
-			const response = await fetchFunc(url, {
-				method: 'GET',
-				timeout: 3000,
-				headers: {
-					Authorization:
-						'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
+			const response = await fetchWithTimeout(
+				url,
+				{
+					method: 'GET',
+					headers: {
+						Authorization:
+							'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
+					},
 				},
-			})
+				3000
+			)
 			if (response.ok) {
 				const data = await response.json()
 				const version = data.result || data
@@ -282,7 +303,6 @@ class EpiphanPearl extends InstanceBase {
 		try {
 			let options = {
 				method: type,
-				timeout: 3000,
 				headers: {
 					Authorization:
 						'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
@@ -294,7 +314,7 @@ class EpiphanPearl extends InstanceBase {
 				options.headers['Content-Type'] = 'application/json'
 			}
 
-			response = await fetchFunc(requestUrl, options)
+			response = await fetchWithTimeout(requestUrl, options, 3000)
 		} catch (error) {
 			if (error.name === 'AbortError') {
 				this.setStatus(
@@ -302,12 +322,12 @@ class EpiphanPearl extends InstanceBase {
 					'Request was aborted: ' + requestUrl + ' reason: ' + error.message
 				)
 				this.log('debug', error.message)
-				throw new Error(error)
+				throw error
 			}
 
 			this.setStatus(InstanceStatus.ConnectionFailure, error.message)
 			this.log('debug', error.message)
-			throw new Error(error)
+			throw error
 		}
 
 		if (!response.ok) {
@@ -734,13 +754,17 @@ class EpiphanPearl extends InstanceBase {
 			this.log('debug', `Fetching metadata for channel ${channelId}`)
 		}
 		try {
-			const response = await fetchFunc(url, {
-				method: 'GET',
-				headers: {
-					Authorization:
-						'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
+			const response = await fetchWithTimeout(
+				url,
+				{
+					method: 'GET',
+					headers: {
+						Authorization:
+							'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
+					},
 				},
-			})
+				3000
+			)
 			const text = await response.text()
 			if (this.config.verbose) {
 				this.log('debug', `Response ${text.trim()}`)
