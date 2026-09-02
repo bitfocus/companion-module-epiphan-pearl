@@ -2,7 +2,7 @@
 	"id": "epiphan-pearl",
 	"name": "epiphan-pearl",
 	"shortname": "pearl",
-	"description": "Epiphan Pearl module for Companion",
+	"description": "Epiphan Pearl module for Companion (REST API v2.0)",
 	"version": "0.0.0",
 	"license": "MIT",
 	"repository": "git+https://github.com/bitfocus/companion-module-epiphan-pearl.git",
@@ -29,6 +29,6 @@
 		"entrypoint": "../index.js"
 	},
 	"manufacturer": "Epiphan",
-	"products": ["Pearl"],
-	"keywords": ["Stream", "Encode", "Recording"]
+	"products": ["Pearl-2", "Pearl Mini", "Pearl Nano", "Pearl Nexus"],
+	"keywords": ["Stream", "Encode", "Recording", "Epiphan", "Pearl", "SRT", "RTMP", "NDI"]
 }

@@ -8,6 +8,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.0] (2026-09-02)
+
+### New Features
+
+- Full coverage of the Pearl REST API v2.0 (firmware 4.24.1+) with automatic fallback to the legacy API on older firmware
+- Actions: control all recorders, set channel and publisher names, enable/disable publishers and their single touch flag,
+  set RTMP and SRT destinations, patch publisher settings and add publishers from JSON
+- Actions: input audio mute, gain (stereo pair or channel A/B), delay and phantom power, patch input settings, create
+  network inputs (RTSP, SRT, NDI, Web Graphics, Dante) from JSON
+- Actions: set output source, single touch toggle, eject storage, apply configuration presets (all or selected sections)
+- Actions: CMS event start/stop/pause/resume/extend for the upcoming/ongoing event or a custom id, create ad-hoc event,
+  ad-hoc session logout
+- Actions: refresh connectivity details, run speed test, refresh state now
+- Feedbacks: publisher state, recorder state, any streaming, any recording, single touch pressed/OK, storage state and
+  free-space-below, AFU state, CPU load high, CPU temperature high, CMS event status
+- Live preview images of channels, inputs and outputs as feedbacks (Stream Deck thumbnails), with configurable refresh
+  interval and width; only previews placed on buttons are fetched
+- Variables for publishers (type, duration, configured), recorders (name, duration HH:MM:SS, total, last archive file),
+  inputs, outputs, storages, single touch controls, AFU queue/progress, CMS events (with countdowns), connectivity,
+  speed test, configuration presets, firmware revision and product id
+- Presets for all recorders, outputs, input mute/unmute, previews, single touch, storage, system, events, AFU and
+  configuration presets
+- New connection settings: request timeout, preview refresh interval and width, poll CMS schedule, poll last archive
+  file, poll network connectivity details
+- Poller nudges a refresh shortly after every successful control action so feedbacks update without waiting for the
+  next interval
+
+### Changes
+
+- Source split into `src/` (instance, api, poller, choices, actions, feedbacks, variables, presets, config, upgrades,
+  utils); `index.js` is now only the entrypoint
+- State is rebuilt on every poll and diffed per domain so only affected feedbacks are re-checked
+- Requests use the `/api/v2.0` base when available; the few endpoints v2.0 does not offer (layout list and settings,
+  recorder reset, content metadata) stay on the legacy API
+- Module targets `@companion-module/base` 1.12 and the `node22` runtime; manifest lists Pearl-2, Pearl Mini,
+  Pearl Nano and Pearl Nexus
+- Test suite (`node --test`) with an in-memory Pearl mock covering v2.0 and legacy behaviour
+- Rewritten HELP.md with connection settings, all actions/feedbacks/variables/presets, JSON examples, tips and known
+  limitations
+
+### Bug Fixes
+
+- Request timeout is now real (`AbortSignal.timeout`); the previous `timeout:` fetch option had no effect
+- Fixed `this.debug is not a function` crash when validating action options
+- The error message returned by the device is now logged instead of a generic failure
+- Bookmarks and active layout use the v2.0 query-parameter conventions (both v1 and v2 forms are sent, so both API
+  versions accept them)
+- Recorder reset works on v2.0 firmware (the endpoint only exists in the legacy API and is now always called there)
+- Variable definitions are only re-registered when the set of variables changes, removing redundant churn on every poll
+- Line endings normalised from CRLF to LF
+- ESLint moved to flat config (`eslint.config.mjs`)
+- Manifest runtime set to `node22`
+
 ## [2.2.0] (2025-10-20)
 
 ### New Features

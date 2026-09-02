@@ -189,7 +189,9 @@ state empty rather than aborting the whole poll):
 
 `async pollPreviews()` (bound to `this.previewTimer`, interval `preview_interval` s, only when > 0):
 for each key in `this.previewSubscriptions` with count > 0 fetch the image, store in `this.previews`,
-then `checkFeedbacks('channelPreview', 'inputPreview', 'outputPreview')` if anything changed.
+then `checkFeedbacks('channelPreview', 'inputPreview', 'outputPreview')` if anything changed. A call while a refresh is
+already running queues exactly one follow-up refresh (so a key subscribed meanwhile gets its first image) and resolves
+when that follow-up is done; an image whose key was unsubscribed while in flight is not cached. No-op on v1.
 
 `updateSystem()` = setActionDefinitions(getActions()) + setFeedbackDefinitions(getFeedbacks()) + setPresetDefinitions(getPresets()).
 
@@ -354,10 +356,13 @@ so any prefix other than `local`/`internal`/`custom` works; `pearl` matches the 
 `variableValues`, `checkedFeedbacks`; methods `log`, `updateStatus`, `setActionDefinitions`, `setFeedbackDefinitions`, `setPresetDefinitions`,
 `setVariableDefinitions`, `setVariableValues`, `checkFeedbacks`, `subscribeFeedbacks`, `saveConfig`, `parseVariablesInString` (identity),
 `setCustomVariableValue` (stored), `getVariableValue`), `InstanceStatus`, `Regex`, `combineRgb`, `runEntrypoint` (no-op),
-`CreateConvertToBooleanFeedbackUpgradeScript` (returns a function). `createInstance(configOverrides)` returns an initialised instance
-pointed at the mock server. Tests run with `node --test test/`.
+`CreateConvertToBooleanFeedbackUpgradeScript` (returns a function). `createInstance({ mock, config })` returns an initialised instance
+pointed at the given mock server (`config` = overrides of the harness `DEFAULT_CONFIG`); `runAction(instance, id, options)`,
+`runFeedback(instance, id, options)`, `subscribeFeedback` / `unsubscribeFeedback` invoke definitions the way Companion would.
+Every suite starts its own mock and destroys the instance in `after()`. Tests run with `node --test "test/**/*.test.js"`
+(`yarn test`); Node >= 21 no longer expands a bare directory argument.
 
-`test/mock-pearl.js` exports `startMockPearl({ firmware = '4.24.1', legacyOnly = false })` -> `{ url, port, state, requests, close() }`.
+`test/mock-pearl.js` exports `startMockPearl({ firmware = '4.24.1', legacyOnly = false, port = 0 })` -> `{ url, port, state, requests, reset(), close() }`.
 It serves every endpoint the module uses from an in-memory model (2 channels with layouts and publishers, 3 recorders, inputs,
 1 output, storages, single touch, presets, events, afu, system), records `{ method, path, query, body }` for each request,
 mutates state on control calls (start/stop publishers and recorders, layout activation, names, output source, single touch toggle,

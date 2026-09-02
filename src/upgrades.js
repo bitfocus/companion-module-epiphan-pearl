@@ -1,3 +1,18 @@
+/**
+ * Default values for config fields that were added after the first release.
+ * Any field that is undefined in a stored config gets its default here.
+ */
+const CONFIG_DEFAULTS = {
+	use_api_v2: true,
+	verbose: false,
+	timeout: 5000,
+	preview_interval: 2,
+	preview_width: 144,
+	poll_events: true,
+	poll_archive: false,
+	poll_connectivity: false,
+}
+
 module.exports = [
 	// Set default values for new config options
 	function setDefaultConfig(context, props) {
@@ -7,14 +22,13 @@ module.exports = [
 			updatedFeedbacks: [],
 		}
 
+		if (!props.config) return result
+
 		const changed = {}
-
-		if (props.config.use_api_v2 === undefined) {
-			changed.use_api_v2 = true
-		}
-
-		if (props.config.verbose === undefined) {
-			changed.verbose = false
+		for (const [key, value] of Object.entries(CONFIG_DEFAULTS)) {
+			if (props.config[key] === undefined) {
+				changed[key] = value
+			}
 		}
 
 		if (Object.keys(changed).length > 0) {
@@ -49,3 +63,5 @@ module.exports = [
 		return result
 	},
 ]
+
+module.exports.CONFIG_DEFAULTS = CONFIG_DEFAULTS
