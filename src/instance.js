@@ -82,7 +82,10 @@ class EpiphanPearl extends InstanceBase {
 
 		/** device state, rebuilt on every poll (see doc/ARCHITECTURE.md) */
 		this.state = emptyState()
-		/** content metadata per channel from the legacy get_params.cgi: { [cid]: { title, author, rec_prefix } } */
+		/**
+		 * content metadata per channel from the legacy get_params.cgi: { [cid]: { title, author, rec_prefix } }.
+		 * A failed fetch leaves a retryable marker with the extra fields `_failedAt` (ms) and `_attempts`.
+		 */
 		this.metadata = {}
 		/** cached preview images: { [key]: { png64, fetchedAt } } */
 		this.previews = {}
@@ -98,10 +101,17 @@ class EpiphanPearl extends InstanceBase {
 		/** sorted variable ids joined, kept by variables.updateVariables */
 		this.lastVariableIds = ''
 
+		/** incremented by every configUpdated(); a poll started under an older generation discards its result */
+		this.configGeneration = 0
+		/** number of updateSystem() calls so far (lets configUpdated skip a redundant definitions update) */
+		this.systemUpdateCount = 0
+
 		this.timer = undefined
 		this.previewTimer = undefined
 		this.pollSoonTimer = undefined
 		this.pollInProgress = false
+		/** promise of the poll currently running (pollAll returns it to overlapping callers) */
+		this.pollPromise = undefined
 		this.previewsInProgress = false
 		this.previewsPromise = undefined
 		this.previewsRerun = undefined
@@ -139,12 +149,23 @@ class EpiphanPearl extends InstanceBase {
 	 */
 	async configUpdated(config) {
 		this.stopTimers()
+		// a poll that is still running belongs to the old configuration: it must not swap in its state
+		this.configGeneration++
+		if (this.pollPromise) {
+			try {
+				await this.pollPromise
+			} catch {
+				// pollAll never rejects, but be safe
+			}
+		}
 		this.config = normaliseConfig(config)
 
 		const problem = validateConfig(this.config)
 		if (problem) {
 			this.log('error', problem)
 			this.applyStatus(InstanceStatus.BadConfig, problem)
+			// definitions must exist even while the config is unusable
+			this.updateSystem()
 			return
 		}
 
@@ -155,16 +176,40 @@ class EpiphanPearl extends InstanceBase {
 		this.pollCounter = 0
 		this.pollErrorLogged = false
 
+		const updatesBefore = this.systemUpdateCount
 		try {
 			await this.determineApiBase()
 			await this.pollAll()
-			this.updateSystem()
 		} catch (error) {
 			this.log('error', `Initialisation failed: ${error?.message || error}`)
 		}
+		// the first poll already rebuilt the definitions when the structure changed; do not do it twice
+		if (this.systemUpdateCount === updatesBefore) this.updateSystem()
+		this.resubscribePreviews()
 
 		this.initInterval()
 		this.initPreviewInterval()
+	}
+
+	/**
+	 * INTERNAL: ask Companion to re-send subscribe() for every placed preview feedback.
+	 * Companion only calls subscribe once when a feedback is first sent, so after a config change the
+	 * subscriptions are rebuilt from scratch. When the host does not deliver any (e.g. a stub that has
+	 * no feedback instances) the previous subscriptions are kept.
+	 */
+	resubscribePreviews() {
+		if (typeof this.subscribeFeedbacks !== 'function') return
+		const previous = this.previewSubscriptions
+		this.previewSubscriptions = new Map()
+		try {
+			this.subscribeFeedbacks('channelPreview', 'inputPreview', 'outputPreview')
+		} catch (error) {
+			this.log('debug', `re-subscribing preview feedbacks failed: ${error?.message || error}`)
+		}
+		if (this.previewSubscriptions.size === 0 && previous instanceof Map && previous.size > 0) {
+			this.previewSubscriptions = previous
+			this.pollPreviews().catch(() => {})
+		}
 	}
 
 	/**
@@ -239,6 +284,7 @@ class EpiphanPearl extends InstanceBase {
 	 * INTERNAL: (re)set action, feedback and preset definitions. Never throws.
 	 */
 	updateSystem() {
+		this.systemUpdateCount = (this.systemUpdateCount || 0) + 1
 		const steps = [
 			['actions', () => this.setActionDefinitions(this.getActions())],
 			['feedbacks', () => this.setFeedbackDefinitions(this.getFeedbacks())],
@@ -296,7 +342,20 @@ class EpiphanPearl extends InstanceBase {
 			}
 			variables.updateVariables(this)
 		} catch (error) {
-			this.log('error', `Failed to get metadata for channel ${cid}: ${error?.message || error}`)
+			// leave a retryable marker so the poller backs off instead of hammering the device every poll
+			const previous = this.metadata[cid] || {}
+			const attempts = (Number(previous._attempts) || 0) + 1
+			this.metadata[cid] = {
+				title: previous.title ?? '',
+				author: previous.author ?? '',
+				rec_prefix: previous.rec_prefix ?? '',
+				_failedAt: Date.now(),
+				_attempts: attempts,
+			}
+			this.log(
+				attempts === 1 ? 'error' : 'debug',
+				`Failed to get metadata for channel ${cid} (attempt ${attempts}): ${error?.message || error}`,
+			)
 		}
 	}
 

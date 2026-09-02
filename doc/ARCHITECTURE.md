@@ -69,12 +69,20 @@ this.state = {
 
 Other instance fields:
 
-- `this.metadata[cid] = { title, author, rec_prefix }` (legacy `/admin/channelN/get_params.cgi`)
-- `this.apiBasePath` = `'/api'` or `'/api/v2.0'` (decided once at init by `determineApiBase()`)
+- `this.metadata[cid] = { title, author, rec_prefix }` (legacy `/admin/channelN/get_params.cgi`). A failed fetch stores a
+  retryable marker `{ title: '', author: '', rec_prefix: '', _failedAt: Date.now(), _attempts: n }` (previously known values are
+  kept); `utils.metadataRetryDue(entry)` says when it is due again (`60 s * min(attempts, 10)`). Only the first failure logs
+  'error', later ones 'debug'. Keys starting with `_` are internal and never become variables.
+- `this.apiBasePath` = `'/api'` or `'/api/v2.0'` (decided by `determineApiBase()` in every `configUpdated()`)
 - `this.isV2` getter = `this.apiBasePath === '/api/v2.0'`
 - `this.previews = { [key]: { png64, fetchedAt } }` where key is `channel:<cid>`, `input:<sid>`, `output:<did>`
-- `this.previewSubscriptions = Map<key, count>` maintained by preview feedback subscribe/unsubscribe
+- `this.previewSubscriptions = Map<key, count>` maintained by preview feedback subscribe/unsubscribe. Keys are registered
+  regardless of `preview_interval` (Companion calls `subscribe` only once per feedback); `configUpdated()` keeps them and
+  calls `subscribeFeedbacks('channelPreview','inputPreview','outputPreview')` so Companion re-sends subscribe for placed feedbacks.
 - `this.pollCounter` integer incremented every poll (used for "every Nth poll" work)
+- `this.pollPromise` promise of the running poll (`pollAll()` returns it to overlapping callers; `configUpdated()` awaits it)
+- `this.configGeneration` incremented by every `configUpdated()`; a poll started under an older generation discards its result
+- `this.systemUpdateCount` number of `updateSystem()` calls (lets `configUpdated()` skip a redundant definitions update)
 - `this.timer`, `this.previewTimer` interval handles
 - `this.lastVariableIds` string (sorted variable ids joined) to avoid redundant `setVariableDefinitions`
 
@@ -96,7 +104,15 @@ Other instance fields:
 | poll_connectivity | checkbox  | false           | poll /system/connectivity/details every 6th poll                      |
 | verbose           | checkbox  | false           |                                                                       |
 
-`upgrades.js` adds defaults for every new field when undefined (extend `setDefaultConfig`).
+`upgrades.js` adds defaults for new fields when undefined. Companion runs each upgrade script only once per connection,
+so an existing script is never extended: `setDefaultConfig` (v2.2.0) only sets `use_api_v2` / `verbose`, and the appended
+`setDefaultConfigV230` fills `timeout`, `preview_interval`, `preview_width`, `poll_events`, `poll_archive`, `poll_connectivity`.
+The exported order is fixed: `setDefaultConfig`, `renameStreaming`, `setDefaultConfigV230`; a future version appends
+a new script (values from `CONFIG_DEFAULTS`, which must match the field defaults above).
+
+`configUpdated(config)`: stops the timers, bumps `configGeneration`, awaits a running `pollPromise`, normalises and validates the
+config (BadConfig -> still `updateSystem()` so definitions exist, then return), resets state/metadata/previews,
+`determineApiBase()`, `pollAll()`, `updateSystem()` only if that poll did not already do it, re-subscribes previews, restarts timers.
 
 ## Request layer (`src/api.js`)
 
@@ -158,7 +174,10 @@ Behaviour:
 
 ## Poller (`src/poller.js`)
 
-`async pollAll()` is the only poll entry point (bound to `this.timer`). It must never throw.
+`async pollAll()` is the only poll entry point (bound to `this.timer`). It must never throw. While a poll is running
+`this.pollPromise` holds its promise and an overlapping call returns that promise instead of starting a second poll.
+`pollAllInner()` captures `this.configGeneration` at its start and skips the state swap / feedback checks / metadata
+step when `configUpdated()` changed the generation meanwhile.
 
 Order of work (all requests via `Promise.allSettled`, a failed optional request leaves that part of
 state empty rather than aborting the whole poll):
@@ -185,13 +204,15 @@ state empty rather than aborting the whole poll):
      singleTouch -> `singleTouchPressed`, `singleTouchOk`; afu -> `afuState`; systemStatus -> `cpuLoadHigh`, `cpuTempHigh`;
      events -> `eventStatus`.
 7. `variables.updateVariables(this)`.
-8. Metadata: fetch legacy metadata for channels not yet in `this.metadata` (as today).
+8. Metadata: fetch legacy metadata for channels not yet in `this.metadata` and for failure markers whose back-off has
+   elapsed (`utils.metadataRetryDue`).
 
 `async pollPreviews()` (bound to `this.previewTimer`, interval `preview_interval` s, only when > 0):
 for each key in `this.previewSubscriptions` with count > 0 fetch the image, store in `this.previews`,
 then `checkFeedbacks('channelPreview', 'inputPreview', 'outputPreview')` if anything changed. A call while a refresh is
 already running queues exactly one follow-up refresh (so a key subscribed meanwhile gets its first image) and resolves
-when that follow-up is done; an image whose key was unsubscribed while in flight is not cached. No-op on v1.
+when that follow-up is done; an image whose key was unsubscribed while in flight is not cached. No-op on v1 and while
+`preview_interval` is 0 (subscriptions are kept, nothing is fetched).
 
 `updateSystem()` = setActionDefinitions(getActions()) + setFeedbackDefinitions(getFeedbacks()) + setPresetDefinitions(getPresets()).
 
@@ -224,37 +245,40 @@ bookmarks/layouts use the v2 parameter conventions above.
 
 New actions (all textinputs `useVariables: true`, values run through `await this.parseVariablesInString`):
 
-| id                      | options                                                                                                                           | request                                                                                                         |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| recorderControlAll      | action start/stop                                                                                                                 | `POST /recorders/control/{start                                                                                 | stop}` |
-| setChannelName          | channel, name                                                                                                                     | `PUT /channels/{cid}/name?name=`                                                                                |
-| setPublisherName        | publisher (no all), name                                                                                                          | `PUT /channels/{cid}/publishers/{pid}/name?name=`                                                               |
-| setPublisherEnabled     | publisher (no all), enabled true/false                                                                                            | `PATCH .../settings {common:{enabled}}`                                                                         |
-| setPublisherSingleTouch | publisher (no all), single_touch true/false                                                                                       | `PATCH .../settings {common:{single_touch}}`                                                                    |
-| setRtmpDestination      | publisher, url, stream, username, password (blank = unchanged)                                                                    | `PATCH .../settings {rtmp:{...non-blank}}`                                                                      |
-| setSrtDestination       | publisher, mode caller/listener/rendezvous, url, stream_id, port, latency (blank = unchanged)                                     | `PATCH .../settings {srt:{mode,...}}`                                                                           |
-| patchPublisherSettings  | publisher, json                                                                                                                   | `PATCH .../settings <json>`                                                                                     |
-| addPublisher            | channel, name, json settings                                                                                                      | `POST /channels/{cid}/publishers {name, settings}`                                                              |
-| setOutputSource         | output, source dropdown (choicesOutputSources) or custom text when source === 'custom'                                            | `PUT /outputs/{did}/settings?source=`; on success set `state.outputs[did].source`                               |
-| inputAudioMute          | input (audio inputs), mute true/false                                                                                             | `PATCH /inputs/{sid}/settings {local_audio:{mute}}`                                                             |
-| inputAudioGain          | input, gain number, channel both/A/B                                                                                              | both: `{local_audio:{gain}}`; A/B: `{local_audio:{stereo_pair:false,channels:{channelA:{gain}}}}`               |
-| inputAudioDelay         | input, delay -300..300                                                                                                            | `PATCH {audio:{delay}}`                                                                                         |
-| inputPhantomPower       | input, on/off                                                                                                                     | `PATCH {local_audio:{phantom_power}}`                                                                           |
-| patchInputSettings      | input, json                                                                                                                       | `PATCH /inputs/{sid}/settings <json>`                                                                           |
-| createNetworkInput      | type (rtsp/srt/ndi/web-graphics/dante), name, json settings                                                                       | `POST /inputs {type,name,settings}`                                                                             |
-| singleTouchToggle       | stc                                                                                                                               | `POST /system/singletouchcontrol/{stcid}/control/toggle`                                                        |
-| applyConfigPreset       | preset, sections multidropdown (system, network, sources, edid, channels, afu, cms, avstudio, frontscreen, displays; empty = all) | `POST /system/presets/{name}/control/apply {sections}`; log if result.reboot                                    |
-| storageEject            | storage                                                                                                                           | `POST /system/storages/{stid}/control/eject`                                                                    |
-| eventControl            | event alias dropdown (+ 'custom' with id text), action start/stop/pause/resume                                                    | `POST /schedule/events/{id}/control/{action}`                                                                   |
-| eventExtend             | event alias/id, seconds (default 300)                                                                                             | `POST /schedule/events/{id}/control/extend {finish}`                                                            |
-| createAdhocEvent        | json body                                                                                                                         | `POST /schedule/events <json>`                                                                                  |
-| adhocSessionLogout      | –                                                                                                                                 | `DELETE /schedule/events/adhoc/session`                                                                         |
-| refreshConnectivity     | –                                                                                                                                 | `GET /system/connectivity/details` -> `state.connectivity`, update variables                                    |
-| runSpeedTest            | mode uplink/downlink, protocol tcp/udp, timeout s (default 10)                                                                    | `GET /system/connectivity/tools/speedtest` with request timeout = (timeout+15)s -> `state.speedtest`, variables |
-| refreshPoll             | –                                                                                                                                 | `await this.pollAll()`                                                                                          |
+| id                      | options                                                                                                                           | request                                                                                                                                                                         |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| recorderControlAll      | action start/stop                                                                                                                 | `POST /recorders/control/{start                                                                                                                                                 | stop}` |
+| setChannelName          | channel, name                                                                                                                     | `PUT /channels/{cid}/name?name=`                                                                                                                                                |
+| setPublisherName        | publisher (no all), name                                                                                                          | `PUT /channels/{cid}/publishers/{pid}/name?name=`                                                                                                                               |
+| setPublisherEnabled     | publisher (no all), enabled true/false                                                                                            | `PATCH .../settings {common:{enabled}}`                                                                                                                                         |
+| setPublisherSingleTouch | publisher (no all), single_touch true/false                                                                                       | `PATCH .../settings {common:{single_touch}}`                                                                                                                                    |
+| setRtmpDestination      | publisher, url, stream, username, password (blank = unchanged)                                                                    | `PATCH .../settings {rtmp:{...non-blank}}`                                                                                                                                      |
+| setSrtDestination       | publisher, mode unchanged (default)/caller/listener/rendezvous, url, stream_id, port, latency (blank = unchanged)                 | `PATCH .../settings {srt:{...non-blank}}`; `mode` only when not 'unchanged'; url/stream_id/port only where the mode applies (all three when unchanged); nothing to send -> warn |
+| patchPublisherSettings  | publisher, json                                                                                                                   | `PATCH .../settings <json>`                                                                                                                                                     |
+| addPublisher            | channel, name, json settings                                                                                                      | `POST /channels/{cid}/publishers {name, settings}`; `settings.common` defaults to `{enabled:false,single_touch:false}`                                                          |
+| setOutputSource         | output, source dropdown (choicesOutputSources) or custom text when source === 'custom'                                            | `PUT /outputs/{did}/settings?source=`; on success set `state.outputs[did].source`                                                                                               |
+| inputAudioMute          | input (audio inputs), mute true/false                                                                                             | `PATCH /inputs/{sid}/settings` with `audioSettingsBody(sid,'mute',v)`: id contains hdmi -> `{hdmi:{audio:{mute}}}`, sdi -> `{sdi:{audio:{mute}}}`, else `{local_audio:{mute}}`  |
+| inputAudioGain          | input, gain number, channel both/A/B                                                                                              | both: `{local_audio:{gain}}`; A/B: `{local_audio:{stereo_pair:false,channels:{channelA:{gain}}}}`                                                                               |
+| inputAudioDelay         | input, delay -300..300                                                                                                            | `audioSettingsBody(sid,'delay',v)`: hdmi -> `{hdmi:{audio:{delay}}}`, sdi -> `{sdi:{audio:{delay}}}`, else `{audio:{delay}}` (HdmiInputSettings / SdiInputSettings)             |
+| inputPhantomPower       | input, on/off                                                                                                                     | `PATCH {local_audio:{phantom_power}}`                                                                                                                                           |
+| patchInputSettings      | input, json                                                                                                                       | `PATCH /inputs/{sid}/settings <json>`                                                                                                                                           |
+| createNetworkInput      | type (rtsp/srt/ndi/web-graphics/dante), name, json settings                                                                       | `POST /inputs {type,name,settings}`                                                                                                                                             |
+| singleTouchToggle       | stc                                                                                                                               | `POST /system/singletouchcontrol/{stcid}/control/toggle`                                                                                                                        |
+| applyConfigPreset       | preset, sections multidropdown (system, network, sources, edid, channels, afu, cms, avstudio, frontscreen, displays; empty = all) | `POST /system/presets/{name}/control/apply {sections}`; log if result.reboot                                                                                                    |
+| storageEject            | storage                                                                                                                           | `POST /system/storages/{stid}/control/eject`                                                                                                                                    |
+| eventControl            | event alias dropdown (+ 'custom' with id text), action start/stop/pause/resume                                                    | `POST /schedule/events/{id}/control/{action}`                                                                                                                                   |
+| eventExtend             | event alias/id, seconds (default 300)                                                                                             | `POST /schedule/events/{id}/control/extend {finish}`                                                                                                                            |
+| createAdhocEvent        | json body                                                                                                                         | `POST /schedule/events <json>`                                                                                                                                                  |
+| adhocSessionLogout      | –                                                                                                                                 | `DELETE /schedule/events/adhoc/session`                                                                                                                                         |
+| refreshConnectivity     | –                                                                                                                                 | `GET /system/connectivity/details` -> `state.connectivity`, update variables                                                                                                    |
+| runSpeedTest            | mode uplink/downlink, protocol tcp/udp, timeout s (default 10)                                                                    | `GET /system/connectivity/tools/speedtest` with request timeout = (timeout+15)s -> `state.speedtest`, variables                                                                 |
+| refreshPoll             | –                                                                                                                                 | `await this.pollAll()`                                                                                                                                                          |
 
 Actions touching v2-only endpoints must check `this.isV2` and log a warning + return when false.
 Actions never throw: wrap requests in try/catch and `this.log('error', ...)`.
+Every action that takes a channel option validates it with `parseChannel(label, value)` against `this.state.channels`
+("no channel selected" / "unknown channel X" at 'error', then return); layouts/publishers use `parseLayout` /
+`parsePublisher` the same way. Every id interpolated into a request path goes through `enc()` (`encodeURIComponent`).
 Deliberately not exposed: factory reset, delete publisher, ad-hoc session login (credentials).
 After a successful control action the poller is nudged: `this.schedulePollSoon()` (a one-shot 750 ms
 timer that runs `pollAll` once, coalesced).
@@ -288,7 +312,7 @@ Advanced feedbacks returning `{ png64 }` (or `{}` when no image yet):
 | inputPreview   | input   | `input:<sid>`   |
 | outputPreview  | output  | `output:<did>`  |
 
-Each has `subscribe(feedback)` incrementing `previewSubscriptions` for its key and `unsubscribe` decrementing
+Each has `subscribe(feedback)` incrementing `previewSubscriptions` for its key (also while previews are disabled) and `unsubscribe` decrementing
 (delete at 0 and drop the cached image). Subscribe triggers `this.pollPreviews()` once so the first image
 appears without waiting for the interval.
 
@@ -338,7 +362,9 @@ Keep existing (Channels layouts, Publishers toggle, Recorders toggle + reset). A
 - `AFU`: status display with afuState uploading (blue) / error (red)
 - `Config presets`: one button per device configuration preset (applyConfigPreset, empty sections = all)
 
-Preset ids must be unique and stable: `${category}_${safeId(...)}`. Use `type: 'button'`, `name` (not `label`).
+Preset ids must be unique and stable: `${category}_${safeId(...)}`; when two ids collide after `safeId` (e.g. config presets
+"Show A" and "Show_A") the later ones get a `_2`, `_3`, ... suffix instead of being dropped. Every variable reference built
+from an entity id uses `safeId(id)`, exactly like the variable ids. Use `type: 'button'`, `name` (not `label`).
 Variables referenced in preset text/options are written as `$(pearl:variable_id)`. Companion rewrites the `pearl:` prefix
 to the actual connection label when a preset is added to a button (`replaceAllVariables` in companion/lib/Instance/Definitions.ts),
 so any prefix other than `local`/`internal`/`custom` works; `pearl` matches the manifest shortname and is the convention here.

@@ -1,7 +1,7 @@
 const { describe, it, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 
-const { createInstance, InstanceStatus } = require('./harness')
+const { createInstance, InstanceStatus, DEFAULT_CONFIG, subscribeFeedback, runFeedback } = require('./harness')
 const { startMockPearl } = require('./mock-pearl')
 
 const VARIABLE_ID_RE = /^[a-zA-Z0-9_-]+$/
@@ -358,5 +358,98 @@ describe('init edge cases', () => {
 		assert.equal(instance.timer, undefined)
 		assert.equal(instance.currentStatus, InstanceStatus.Disconnected)
 		await mock.close()
+	})
+
+	it('a bad config still publishes action, feedback and preset definitions', async () => {
+		const mock = await startMockPearl()
+		const instance = await createInstance({ mock, config: { host: 'not a host!' } })
+		try {
+			assert.equal(instance.currentStatus, InstanceStatus.BadConfig)
+			assert.ok(instance.definitions.actions.refreshPoll, 'actions defined')
+			assert.ok(instance.definitions.feedbacks.channelPreview, 'feedbacks defined')
+			assert.equal(typeof instance.definitions.presets, 'object')
+			assert.equal(mock.requests.length, 0)
+		} finally {
+			await instance.destroy()
+			await mock.close()
+		}
+	})
+})
+
+describe('configUpdated', () => {
+	it('keeps preview subscriptions and enables previews without a restart', async () => {
+		const mock = await startMockPearl()
+		const instance = await createInstance({ mock }) // DEFAULT_CONFIG has preview_interval 0
+		try {
+			await subscribeFeedback(instance, 'channelPreview', { channel: '1' })
+			assert.equal(instance.previewSubscriptions.get('channel:1'), 1)
+			assert.equal(instance.previewTimer, undefined)
+			assert.deepEqual(await runFeedback(instance, 'channelPreview', { channel: '1' }), {})
+
+			mock.requests.length = 0
+			await instance.configUpdated({ ...DEFAULT_CONFIG, host_port: mock.port, preview_interval: 1 })
+
+			assert.ok(instance.previewTimer, 'preview timer started')
+			assert.equal(instance.previewSubscriptions.get('channel:1'), 1, 'subscription preserved')
+			// Companion is asked to re-send subscribe() for the placed preview feedbacks
+			assert.deepEqual(instance.subscribeFeedbacksCalls.at(-1), [
+				'channelPreview',
+				'inputPreview',
+				'outputPreview',
+			])
+			await instance.pollPreviews()
+			assert.ok(mock.requests.some((r) => r.path === '/api/v2.0/channels/1/preview'))
+			const result = await runFeedback(instance, 'channelPreview', { channel: '1' })
+			assert.equal(typeof result.png64, 'string')
+		} finally {
+			await instance.destroy()
+			await mock.close()
+		}
+	})
+
+	it('waits for a running poll, discards its result and rebuilds the definitions once', async () => {
+		const mock = await startMockPearl()
+		const instance = await createInstance({ mock })
+		try {
+			assert.equal(instance.systemUpdateCount, 1, 'init rebuilt the definitions exactly once')
+			assert.equal(instance.pollCounter, 1)
+
+			const running = instance.pollAll()
+			assert.ok(instance.pollPromise)
+			const update = instance.configUpdated({ ...DEFAULT_CONFIG, host_port: mock.port, pollfreq: 200 })
+			await Promise.all([running, update])
+
+			assert.equal(instance.config.pollfreq, 200)
+			assert.equal(instance.pollCounter, 1, 'the poll that was running during the change does not count')
+			assert.equal(Object.keys(instance.state.channels).length, 2)
+			assert.equal(instance.systemUpdateCount, 2, 'the first poll of the new config rebuilt the definitions')
+			assert.equal(instance.currentStatus, InstanceStatus.Ok)
+			assert.deepEqual(
+				instance.calls.log.filter((l) => l.level === 'error'),
+				[],
+			)
+			assert.ok(instance.timer)
+		} finally {
+			await instance.destroy()
+			await mock.close()
+		}
+	})
+
+	it('resets the state for the new device and switches the API base', async () => {
+		const v2 = await startMockPearl()
+		const legacy = await startMockPearl({ legacyOnly: true, firmware: '4.20.0' })
+		const instance = await createInstance({ mock: v2 })
+		try {
+			assert.equal(instance.apiBasePath, '/api/v2.0')
+			legacy.requests.length = 0
+			await instance.configUpdated({ ...DEFAULT_CONFIG, host_port: legacy.port })
+			assert.equal(instance.apiBasePath, '/api')
+			assert.equal(Object.keys(instance.state.inputs).length, 0, 'no v2 state left over')
+			assert.ok(legacy.requests.some((r) => r.path === '/api/channels'))
+		} finally {
+			await instance.destroy()
+			await v2.close()
+			await legacy.close()
+		}
 	})
 })

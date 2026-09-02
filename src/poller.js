@@ -1,5 +1,5 @@
 const variables = require('./variables')
-const { stableJson, emptyState } = require('./utils')
+const { stableJson, emptyState, metadataRetryDue } = require('./utils')
 
 /** every Nth poll the slow changing system information is refreshed */
 const STRUCTURE_REFRESH_EVERY = 30
@@ -78,21 +78,24 @@ module.exports = {
 	},
 
 	/**
-	 * Poll everything. Never throws. Overlapping calls are skipped.
+	 * Poll everything. Never throws. An overlapping call does not start a second poll but
+	 * returns the promise of the poll that is already running.
 	 */
 	async pollAll() {
-		if (this.pollInProgress) {
+		if (this.pollPromise) {
 			if (this.config?.verbose) this.log('debug', 'Poll skipped, previous poll still running')
-			return
+			return this.pollPromise
 		}
 		this.pollInProgress = true
-		try {
-			await this.pollAllInner()
-		} catch (error) {
-			this.log('error', `Poll failed: ${error?.message || error}`)
-		} finally {
-			this.pollInProgress = false
-		}
+		this.pollPromise = this.pollAllInner()
+			.catch((error) => {
+				this.log('error', `Poll failed: ${error?.message || error}`)
+			})
+			.finally(() => {
+				this.pollInProgress = false
+				this.pollPromise = undefined
+			})
+		return this.pollPromise
 	},
 
 	/**
@@ -101,6 +104,8 @@ module.exports = {
 	async pollAllInner() {
 		if (!this.config || !this.config.host) return
 
+		// configUpdated() bumps the generation; a poll started before that must not swap in its result
+		const gen = this.configGeneration
 		this.pollCounter = (this.pollCounter || 0) + 1
 		const firstPoll = this.pollCounter === 1
 		const refreshSystemInfo = firstPoll || (this.pollCounter - 1) % STRUCTURE_REFRESH_EVERY === 0
@@ -337,6 +342,10 @@ module.exports = {
 		}
 
 		// ---- 5./6. swap state and diff
+		if (gen !== this.configGeneration) {
+			if (this.config.verbose) this.log('debug', 'Poll result discarded, configuration changed meanwhile')
+			return
+		}
 		const structureChanged = this.structureKey(prev) !== this.structureKey(state)
 		const feedbacksToCheck = []
 		if (!structureChanged) {
@@ -364,8 +373,9 @@ module.exports = {
 			this.log('error', `Updating variables failed: ${error?.message || error}`)
 		}
 
-		// ---- 8. metadata for channels we have not seen yet
-		const missing = Object.keys(this.state.channels).filter((cid) => !this.metadata?.[cid])
+		// ---- 8. metadata for channels we have not seen yet (or whose failed fetch is due for a retry)
+		const now = Date.now()
+		const missing = Object.keys(this.state.channels).filter((cid) => metadataRetryDue(this.metadata?.[cid], now))
 		if (missing.length > 0) {
 			await Promise.allSettled(missing.map((cid) => this.fetchMetadata(cid)))
 		}
@@ -511,6 +521,8 @@ module.exports = {
 		}
 		if (!this.previewSubscriptions || this.previewSubscriptions.size === 0) return
 		if (!this.isV2) return
+		// previews disabled in the configuration: subscriptions are kept, images are not fetched
+		if (!(Number(this.config?.preview_interval) > 0)) return
 		this.previewsInProgress = true
 		this.previewsPromise = this.pollPreviewsInner().finally(() => {
 			this.previewsInProgress = false

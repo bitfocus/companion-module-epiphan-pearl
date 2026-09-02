@@ -45,16 +45,16 @@ Text options accept Companion variables (for example `$(internal:time_hms)` as a
 
 #### Streams / publishers
 
-| Action                         | Notes                                                                                                                                                                             |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Control streaming**          | Start, stop or toggle a single publisher or all publishers of a channel.                                                                                                          |
-| **Set publisher name**         | Renames a publisher. _v2.0 only._                                                                                                                                                 |
-| **Set publisher enabled**      | Enables/disables a publisher (disabled publishers are skipped by "all publishers" start). _v2.0 only._                                                                            |
-| **Set publisher single touch** | Includes/excludes a publisher from the front-panel single touch control. _v2.0 only._                                                                                             |
-| **Set RTMP destination**       | Sets URL, stream key, username and/or password of an RTMP(S) publisher. Blank fields are left unchanged. _v2.0 only._                                                             |
-| **Set SRT destination**        | Sets mode (caller/listener/rendezvous), URL, stream id, port and/or latency of an SRT publisher. Blank fields are left unchanged. _v2.0 only._                                    |
-| **Patch publisher settings**   | Sends an arbitrary JSON partial update to a publisher's settings (`PATCH .../publishers/{pid}/settings`). Use this for protocol settings without a dedicated action. _v2.0 only._ |
-| **Add publisher**              | Creates a new publisher on a channel from a name and a JSON settings object (`POST .../publishers`). _v2.0 only._                                                                 |
+| Action                         | Notes                                                                                                                                                                                                                                                                               |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Control streaming**          | Start, stop or toggle a single publisher or all publishers of a channel.                                                                                                                                                                                                            |
+| **Set publisher name**         | Renames a publisher. _v2.0 only._                                                                                                                                                                                                                                                   |
+| **Set publisher enabled**      | Enables/disables a publisher (disabled publishers are skipped by "all publishers" start). _v2.0 only._                                                                                                                                                                              |
+| **Set publisher single touch** | Includes/excludes a publisher from the front-panel single touch control. _v2.0 only._                                                                                                                                                                                               |
+| **Set RTMP destination**       | Sets URL, stream key, username and/or password of an RTMP(S) publisher. Blank fields are left unchanged. _v2.0 only._                                                                                                                                                               |
+| **Set SRT destination**        | Sets URL, stream id, port and/or latency of an SRT publisher and optionally its mode (caller/listener/rendezvous). The default mode _Unchanged_ keeps the mode configured on the device and only sends the fields you fill in; blank fields are always left unchanged. _v2.0 only._ |
+| **Patch publisher settings**   | Sends an arbitrary JSON partial update to a publisher's settings (`PATCH .../publishers/{pid}/settings`). Use this for protocol settings without a dedicated action. _v2.0 only._                                                                                                   |
+| **Add publisher**              | Creates a new publisher on a channel from a name and a JSON settings object (`POST .../publishers`). _v2.0 only._                                                                                                                                                                   |
 
 Example body for **Patch publisher settings** (RTMP, taken from the API reference):
 
@@ -92,14 +92,14 @@ Other publisher types use the same shape with `type` set to `rtsp`, `srt`, `hls`
 
 #### Inputs
 
-| Action                   | Notes                                                                                                                                                                |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Input audio mute**     | Mutes/unmutes an analog/local audio input. _v2.0 only._                                                                                                              |
-| **Input audio gain**     | Sets the gain (dB) of an audio input, for the stereo pair or for channel A / B individually (splitting the stereo pair). _v2.0 only._                                |
-| **Input audio delay**    | Sets the audio delay of an input in milliseconds (-300..300). _v2.0 only._                                                                                           |
-| **Input phantom power**  | Switches 48 V phantom power on or off on inputs that support it. _v2.0 only._                                                                                        |
-| **Patch input settings** | Sends an arbitrary JSON partial update to an input's settings (`PATCH /inputs/{sid}/settings`). Not all inputs accept settings (the Pearl answers 405). _v2.0 only._ |
-| **Create network input** | Creates a new RTSP, SRT, NDI, Web Graphics or Dante input from a type, a name and a JSON settings object (`POST /inputs`). _v2.0 only._                              |
+| Action                   | Notes                                                                                                                                                                                        |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Input audio mute**     | Mutes/unmutes the audio of an input. HDMI and SDI inputs are addressed through their `hdmi.audio` / `sdi.audio` settings, analog, USB and network inputs through `local_audio`. _v2.0 only._ |
+| **Input audio gain**     | Sets the gain (dB) of an audio input, for the stereo pair or for channel A / B individually (splitting the stereo pair). _v2.0 only._                                                        |
+| **Input audio delay**    | Sets the audio delay of an input in milliseconds (-300..300). HDMI and SDI inputs use their `hdmi.audio` / `sdi.audio` settings, all other inputs `audio.delay`. _v2.0 only._                |
+| **Input phantom power**  | Switches 48 V phantom power on or off on inputs that support it. _v2.0 only._                                                                                                                |
+| **Patch input settings** | Sends an arbitrary JSON partial update to an input's settings (`PATCH /inputs/{sid}/settings`). Not all inputs accept settings (the Pearl answers 405). _v2.0 only._                         |
+| **Create network input** | Creates a new RTSP, SRT, NDI, Web Graphics or Dante input from a type, a name and a JSON settings object (`POST /inputs`). _v2.0 only._                                                      |
 
 Example settings for **Create network input** (type `srt`, SRT listener, taken from the API reference):
 

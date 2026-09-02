@@ -125,6 +125,20 @@ describe('actions against a v2.0 device', () => {
 		assert.ok(errors(instance).some((m) => /409/.test(m) && /not being recorded/.test(m)))
 	})
 
+	it('channel actions validate the selected channel against the device state', async () => {
+		await runAction(instance, 'insertMarker', { channel: '99', markertext: 'x' })
+		assert.equal(recorded(mock, 'POST').length, 0)
+		assert.ok(errors(instance).some((m) => /insert marker: unknown channel 99/.test(m)))
+
+		await runAction(instance, 'getContentMetadata', { channel: '' })
+		await runAction(instance, 'setContentMetadata', { channel: undefined, title: 't', author: 'a', prefix: 'p' })
+		await runAction(instance, 'setChannelName', { channel: '../etc', name: 'x' })
+		assert.equal(recorded(mock).length, 0)
+		assert.ok(errors(instance).some((m) => /get content metadata: no channel selected/.test(m)))
+		assert.ok(errors(instance).some((m) => /set content metadata: no channel selected/.test(m)))
+		assert.ok(errors(instance).some((m) => /set name: unknown channel \.\.\/etc/.test(m)))
+	})
+
 	it('getLayoutData stores the legacy layout JSON in a custom variable', async () => {
 		await runAction(instance, 'getLayoutData', { channelIdlayoutId: '1-1', destination: 'layout1' })
 		one(mock, 'GET', '/api/channels/1/layouts/1/settings')
@@ -323,6 +337,49 @@ describe('actions against a v2.0 device', () => {
 		mock.reset()
 	})
 
+	it('setSrtDestination mode "unchanged" is the default and sends only the non-blank fields', async () => {
+		const options = Object.fromEntries(instance.definitions.actions.setSrtDestination.options.map((o) => [o.id, o]))
+		assert.equal(options.mode.default, 'unchanged')
+		assert.equal(options.mode.choices[0].id, 'unchanged')
+		// url / stream id / port are all offered while the mode is kept, otherwise only where applicable
+		assert.ok(options.url.isVisible({ mode: 'unchanged' }))
+		assert.ok(options.stream_id.isVisible({ mode: 'unchanged' }))
+		assert.ok(options.port.isVisible({ mode: 'unchanged' }))
+		assert.ok(!options.port.isVisible({ mode: 'caller' }))
+		assert.ok(!options.stream_id.isVisible({ mode: 'listener' }))
+		assert.ok(!options.url.isVisible({ mode: 'listener' }))
+
+		await runAction(instance, 'setSrtDestination', {
+			channelIdpublisherId: '1-1',
+			mode: 'unchanged',
+			url: 'srt://host:9000',
+			stream_id: 'abc',
+			port: '1030',
+			latency: '120',
+		})
+		const req = one(mock, 'PATCH', `${V2}/channels/1/publishers/1/settings`)
+		assert.deepEqual(req.body, { srt: { url: 'srt://host:9000', stream_id: 'abc', port: 1030, latency: 120 } })
+		assert.equal('mode' in req.body.srt, false)
+
+		mock.requests.length = 0
+		await runAction(instance, 'setSrtDestination', {
+			channelIdpublisherId: '1-1',
+			mode: 'unchanged',
+			url: '',
+			stream_id: '',
+			port: '',
+			latency: '',
+		})
+		assert.equal(recorded(mock, 'PATCH').length, 0)
+		assert.ok(instance.calls.log.some((l) => l.level === 'warn' && /nothing to change/.test(l.message)))
+
+		// an unknown / missing mode option (old button config) behaves like "unchanged"
+		mock.requests.length = 0
+		await runAction(instance, 'setSrtDestination', { channelIdpublisherId: '1-1', latency: '300' })
+		assert.deepEqual(one(mock, 'PATCH', `${V2}/channels/1/publishers/1/settings`).body, { srt: { latency: 300 } })
+		mock.reset()
+	})
+
 	it('patchPublisherSettings sends the JSON verbatim, rejects invalid JSON', async () => {
 		await runAction(instance, 'patchPublisherSettings', {
 			channelIdpublisherId: '1-0',
@@ -351,10 +408,25 @@ describe('actions against a v2.0 device', () => {
 		assert.equal(mock.state.channels['1'].publishers['2'].name, 'New RTMP')
 		assert.ok(instance.calls.log.some((l) => l.level === 'info' && /Publisher added/.test(l.message)))
 
+		// PublisherSettings requires common.enabled: a missing "common" block is defaulted
+		mock.requests.length = 0
+		await runAction(instance, 'addPublisher', {
+			channel: '1',
+			name: 'SRT out',
+			json: '{"type":"srt","srt":{"mode":"listener","port":1040}}',
+		})
+		const req2 = one(mock, 'POST', `${V2}/channels/1/publishers`)
+		assert.deepEqual(req2.body.settings.common, { enabled: false, single_touch: false })
+		assert.deepEqual(req2.body.settings.srt, { mode: 'listener', port: 1040 })
+
 		mock.requests.length = 0
 		await runAction(instance, 'addPublisher', { channel: '1', name: '', json: '{"rtmp":{"url":"rtmp://a"}}' })
 		assert.equal(recorded(mock, 'POST').length, 0)
 		assert.ok(errors(instance).some((m) => /"type"/.test(m)))
+
+		await runAction(instance, 'addPublisher', { channel: '42', name: '', json: '{"type":"rtmp"}' })
+		assert.equal(recorded(mock, 'POST').length, 0)
+		assert.ok(errors(instance).some((m) => /add publisher: unknown channel 42/.test(m)))
 		mock.reset()
 		await instance.pollAll()
 	})
@@ -401,6 +473,37 @@ describe('actions against a v2.0 device', () => {
 		await runAction(instance, 'inputAudioMute', { input: 'hdmi-a', mute: 'true' })
 		one(mock, 'PATCH', `${V2}/inputs/hdmi-a/settings`)
 		assert.ok(errors(instance).some((m) => /405/.test(m)))
+	})
+
+	it('inputAudioMute / inputAudioDelay nest HDMI and SDI audio under hdmi.audio / sdi.audio', async () => {
+		// HdmiInputSettings / SdiInputSettings in doc/pearl-api-v2.0.yaml
+		await runAction(instance, 'inputAudioMute', { input: 'hdmi-a', mute: 'true' })
+		let req = one(mock, 'PATCH', `${V2}/inputs/hdmi-a/settings`)
+		assert.deepEqual(req.body, { hdmi: { audio: { mute: true } } })
+
+		mock.requests.length = 0
+		await runAction(instance, 'inputAudioDelay', { input: 'hdmi-a', delay: 20 })
+		req = one(mock, 'PATCH', `${V2}/inputs/hdmi-a/settings`)
+		assert.deepEqual(req.body, { hdmi: { audio: { delay: 20 } } })
+
+		mock.requests.length = 0
+		await runAction(instance, 'inputAudioMute', { input: 'D2P0.SDI-B', mute: 'false' })
+		req = one(mock, 'PATCH', `${V2}/inputs/D2P0.SDI-B/settings`)
+		assert.deepEqual(req.body, { sdi: { audio: { mute: false } } })
+
+		mock.requests.length = 0
+		await runAction(instance, 'inputAudioDelay', { input: 'D2P0.SDI-B', delay: -20 })
+		req = one(mock, 'PATCH', `${V2}/inputs/D2P0.SDI-B/settings`)
+		assert.deepEqual(req.body, { sdi: { audio: { delay: -20 } } })
+
+		// analog inputs keep the flat shape
+		mock.requests.length = 0
+		await runAction(instance, 'inputAudioMute', { input: 'analog-a', mute: 'true' })
+		assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`).body, { local_audio: { mute: true } })
+		mock.requests.length = 0
+		await runAction(instance, 'inputAudioDelay', { input: 'analog-a', delay: 5 })
+		assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`).body, { audio: { delay: 5 } })
+		mock.reset()
 	})
 
 	it('inputAudioGain for both channels and for a single channel', async () => {

@@ -177,13 +177,20 @@ describe('boolean feedbacks', () => {
 		await instance.pollAll()
 	})
 
-	it('preview feedbacks return {} while previews are disabled (preview_interval 0)', async () => {
+	it('preview feedbacks return {} while previews are disabled (preview_interval 0) but keep their subscription', async () => {
 		assert.deepEqual(await runFeedback(instance, 'channelPreview', { channel: '1' }), {})
 		assert.deepEqual(await runFeedback(instance, 'inputPreview', { input: 'hdmi-a' }), {})
 		assert.deepEqual(await runFeedback(instance, 'outputPreview', { output: 'D1' }), {})
+		mock.requests.length = 0
 		await subscribeFeedback(instance, 'channelPreview', { channel: '1' })
+		// Companion calls subscribe only once per feedback, so the key must be registered even while
+		// previews are off; otherwise enabling previews later would never fetch an image
+		assert.equal(instance.previewSubscriptions.get('channel:1'), 1)
+		await instance.pollPreviews()
+		assert.ok(!mock.requests.some((r) => r.path.endsWith('/preview')), 'no image is fetched while disabled')
+		assert.deepEqual(await runFeedback(instance, 'channelPreview', { channel: '1' }), {})
+		await unsubscribeFeedback(instance, 'channelPreview', { channel: '1' })
 		assert.equal(instance.previewSubscriptions.size, 0)
-		assert.ok(!mock.requests.some((r) => r.path.endsWith('/preview')))
 	})
 
 	it('no feedback callback ever throws', async () => {

@@ -74,13 +74,16 @@ function previewsEnabled(self) {
 /**
  * Register interest in a preview image. Increments the subscription counter and
  * triggers one immediate preview poll so the first image appears without waiting.
+ * The key is registered even while previews are disabled (preview_interval 0): Companion calls
+ * subscribe only once per feedback, so the subscription has to survive a later config change that
+ * enables previews. pollPreviews() itself is a no-op while previews are disabled.
  *
  * @param {object} self instance
  * @param {string|null} key
  */
 function subscribePreview(self, key) {
 	try {
-		if (!key || !previewsEnabled(self)) return
+		if (!key) return
 		if (!(self.previewSubscriptions instanceof Map)) self.previewSubscriptions = new Map()
 		self.previewSubscriptions.set(key, (self.previewSubscriptions.get(key) || 0) + 1)
 		const result = self.pollPreviews?.()

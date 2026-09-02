@@ -116,12 +116,12 @@ module.exports = {
 	getPresets() {
 		const presets = {}
 
+		// ids that collide after safeId() (e.g. config presets "Show A" and "Show_A") get a _2, _3, ... suffix
 		const add = (id, preset) => {
-			if (presets[id] !== undefined) {
-				this.log('debug', `duplicate preset id ${id}, keeping the first one`)
-				return
-			}
-			presets[id] = preset
+			let unique = id
+			for (let n = 2; presets[unique] !== undefined; n++) unique = `${id}_${n}`
+			if (unique !== id) this.log('debug', `duplicate preset id ${id}, using ${unique}`)
+			presets[unique] = preset
 		}
 
 		// ---------------------------------------------------------------------
@@ -321,7 +321,7 @@ module.exports = {
 				button({
 					category: CAT_PREVIEWS,
 					name: `Preview ${channel.label}`,
-					text: v(`channel_${channel.id}_name`),
+					text: v(`channel_${safeId(String(channel.id))}_name`),
 					size: 7,
 					styleExtra: previewStyle,
 					feedbacks: [{ feedbackId: 'channelPreview', options: { channel: channel.id } }],

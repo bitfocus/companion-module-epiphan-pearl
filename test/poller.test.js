@@ -162,11 +162,15 @@ describe('poller diffing', () => {
 		assert.deepEqual(presets.query, { details: 'true' })
 	})
 
-	it('overlapping polls are skipped', async () => {
+	it('overlapping polls share the running poll instead of starting a second one', async () => {
 		mock.requests.length = 0
 		const first = instance.pollAll()
+		assert.ok(instance.pollPromise, 'the running poll is exposed as pollPromise')
+		assert.equal(instance.pollInProgress, true)
 		const second = instance.pollAll()
 		await Promise.all([first, second])
+		assert.equal(instance.pollPromise, undefined)
+		assert.equal(instance.pollInProgress, false)
 		assert.equal(mock.requests.filter((r) => r.path === '/api/v2.0/channels').length, 1)
 	})
 

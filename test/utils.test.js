@@ -108,6 +108,27 @@ describe('utils', () => {
 		assert.equal(utils.bytesToGb(undefined), '')
 	})
 
+	it('metadataRetryDue backs off failed metadata fetches', () => {
+		const now = 10_000_000
+		assert.equal(utils.metadataRetryDue(undefined, now), true, 'never fetched')
+		assert.equal(utils.metadataRetryDue(null, now), true)
+		assert.equal(utils.metadataRetryDue({ title: 'x', author: '', rec_prefix: '' }, now), false, 'fetched fine')
+		const marker = (ageMs, attempts) => ({
+			title: '',
+			author: '',
+			rec_prefix: '',
+			_failedAt: now - ageMs,
+			_attempts: attempts,
+		})
+		assert.equal(utils.metadataRetryDue(marker(1000, 1), now), false)
+		assert.equal(utils.metadataRetryDue(marker(60_001, 1), now), true)
+		assert.equal(utils.metadataRetryDue(marker(60_001, 2), now), false)
+		assert.equal(utils.metadataRetryDue(marker(120_001, 2), now), true)
+		assert.equal(utils.metadataRetryDue(marker(600_000, 50), now), false, 'factor capped at 10')
+		assert.equal(utils.metadataRetryDue(marker(600_001, 50), now), true)
+		assert.equal(utils.metadataRetryDue({ _failedAt: now - 60_001 }, now), true, 'missing attempts counts as 1')
+	})
+
 	it('emptyState has the documented shape', () => {
 		const s = utils.emptyState()
 		assert.deepEqual(Object.keys(s).sort(), [

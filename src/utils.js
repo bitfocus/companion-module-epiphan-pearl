@@ -211,6 +211,26 @@ function clampNumber(value, def, min, max) {
 	return Math.min(max, Math.max(min, num))
 }
 
+/** base back-off between metadata retries (multiplied by the number of failed attempts, capped at 10) */
+const METADATA_RETRY_BASE_MS = 60000
+const METADATA_RETRY_MAX_FACTOR = 10
+
+/**
+ * Decide whether the legacy content metadata of a channel has to be (re)fetched.
+ * `entry` is `this.metadata[cid]`: undefined (never fetched) -> true; a successful entry -> false;
+ * a failure marker `{ _failedAt, _attempts }` -> true once `60 s * min(attempts, 10)` have passed.
+ * @param {object|undefined} entry
+ * @param {number} [now=Date.now()]
+ * @returns {boolean}
+ */
+function metadataRetryDue(entry, now = Date.now()) {
+	if (!entry || typeof entry !== 'object') return true
+	const failedAt = Number(entry._failedAt)
+	if (!Number.isFinite(failedAt)) return false
+	const attempts = Math.min(Math.max(1, Number(entry._attempts) || 1), METADATA_RETRY_MAX_FACTOR)
+	return now - failedAt > METADATA_RETRY_BASE_MS * attempts
+}
+
 /**
  * The empty shape of the instance state, see doc/ARCHITECTURE.md "Instance state"
  * @returns {object}
@@ -249,5 +269,6 @@ module.exports = {
 	parseKeyValueText,
 	firmwareVersionNumber,
 	clampNumber,
+	metadataRetryDue,
 	emptyState,
 }

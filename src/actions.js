@@ -19,7 +19,9 @@ const CHOICES_START_STOP = [
 	{ id: 'start', label: 'Start' },
 	{ id: 'stop', label: 'Stop' },
 ]
+const SRT_MODE_UNCHANGED = 'unchanged'
 const CHOICES_SRT_MODE = [
+	{ id: SRT_MODE_UNCHANGED, label: 'Unchanged (keep current mode)' },
 	{ id: 'caller', label: 'Caller' },
 	{ id: 'listener', label: 'Listener' },
 	{ id: 'rendezvous', label: 'Rendezvous' },
@@ -56,6 +58,27 @@ const isTrue = (v) => v === true || v === 'true'
 const toInt = (v, fallback) => {
 	const n = Number.parseInt(v, 10)
 	return Number.isFinite(n) ? n : fallback
+}
+
+/**
+ * Body for `PATCH /inputs/{sid}/settings` that changes one audio field of an input.
+ *
+ * The InputSettings schema in doc/pearl-api-v2.0.yaml nests the audio settings of HDMI and SDI
+ * inputs under `hdmi.audio.{mute,delay}` (HdmiInputSettings) and `sdi.audio.{mute,delay}`
+ * (SdiInputSettings), while analog, USB and network inputs use `local_audio.mute` / `audio.delay`.
+ * The input type is derived from the input id (e.g. `hdmi-a`, `D2P0.sdi-b`).
+ *
+ * @param {string} sid input id
+ * @param {'mute'|'delay'} field
+ * @param {boolean|number} value
+ * @returns {object} request body
+ */
+function audioSettingsBody(sid, field, value) {
+	const id = String(sid).toLowerCase()
+	if (id.includes('hdmi')) return { hdmi: { audio: { [field]: value } } }
+	if (id.includes('sdi')) return { sdi: { audio: { [field]: value } } }
+	if (field === 'delay') return { audio: { delay: value } }
+	return { local_audio: { [field]: value } }
 }
 
 module.exports = {
@@ -120,6 +143,20 @@ module.exports = {
 				return null
 			}
 			return [cid, lid]
+		}
+
+		/** Validate a channel option against state. Returns the channel id as string or null. */
+		const parseChannel = (label, value) => {
+			const cid = value === undefined || value === null ? '' : String(value)
+			if (!cid) {
+				this.log('error', `${label}: no channel selected`)
+				return null
+			}
+			if (!this.state.channels[cid]) {
+				this.log('error', `${label}: unknown channel ${cid}`)
+				return null
+			}
+			return cid
 		}
 
 		/** Split a "cid-pid" (or "cid-all") option and validate it. Returns [cid, pid] or null. */
@@ -231,7 +268,7 @@ module.exports = {
 				if (!pair) return
 				const [cid, lid] = pair
 				// v1 wants the id in the body, v2 wants it as a query parameter; both accept both
-				await this.request('PUT', `/channels/${cid}/layouts/active`, {
+				await this.request('PUT', `/channels/${enc(cid)}/layouts/active`, {
 					query: { id: lid },
 					body: { id: Number(lid) },
 				})
@@ -289,8 +326,8 @@ module.exports = {
 
 				const path =
 					pid !== 'all'
-						? `/channels/${cid}/publishers/${pid}/control/${verb}`
-						: `/channels/${cid}/publishers/control/${verb}`
+						? `/channels/${enc(cid)}/publishers/${enc(pid)}/control/${verb}`
+						: `/channels/${enc(cid)}/publishers/control/${verb}`
 				await this.request('POST', path)
 				this.schedulePollSoon()
 			}),
@@ -334,12 +371,12 @@ module.exports = {
 				}
 
 				if (selected === 0) {
-					await this.request('POST', `/recorders/${rid}/control/stop`)
+					await this.request('POST', `/recorders/${enc(rid)}/control/stop`)
 				} else if (selected === 1) {
-					await this.request('POST', `/recorders/${rid}/control/start`)
+					await this.request('POST', `/recorders/${enc(rid)}/control/start`)
 				} else if (selected === 2) {
 					// reset only exists in the legacy API
-					await this.request('POST', `/recorders/${rid}/control/reset`, { base: 'v1' })
+					await this.request('POST', `/recorders/${enc(rid)}/control/reset`, { base: 'v1' })
 				} else {
 					this.log('error', `Recorder: start/stop/reset: unknown action ${action.options.startStopAction}`)
 					return
@@ -363,10 +400,11 @@ module.exports = {
 				},
 			],
 			callback: wrap('Recorder: insert marker', async (action) => {
-				const cid = action.options.channel
+				const cid = parseChannel('Recorder: insert marker', action.options.channel)
+				if (!cid) return
 				const text = await parse(action.options.markertext)
 				// v2 wants the text as a query parameter, v1 in the body; send both
-				await this.request('POST', `/channels/${cid}/bookmarks`, { query: { text }, body: { text } })
+				await this.request('POST', `/channels/${enc(cid)}/bookmarks`, { query: { text }, body: { text } })
 				this.log('info', `Marker successfully sent: ${text}`)
 			}),
 		}
@@ -392,7 +430,9 @@ module.exports = {
 				const pair = parseLayout('Channel: get layout data', action.options.channelIdlayoutId)
 				if (!pair) return
 				const [cid, lid] = pair
-				const result = await this.request('GET', `/channels/${cid}/layouts/${lid}/settings`, { base: 'v1' })
+				const result = await this.request('GET', `/channels/${enc(cid)}/layouts/${enc(lid)}/settings`, {
+					base: 'v1',
+				})
 				const layoutData = JSON.stringify(result)
 				this.log(
 					'debug',
@@ -429,7 +469,7 @@ module.exports = {
 				const [cid, lid] = pair
 				const body = await parseJson('Channel: set layout data', 'Layout Data', action.options.source)
 				if (!body) return
-				await this.request('PUT', `/channels/${cid}/layouts/${lid}/settings`, { base: 'v1', body })
+				await this.request('PUT', `/channels/${enc(cid)}/layouts/${enc(lid)}/settings`, { base: 'v1', body })
 				this.schedulePollSoon()
 			}),
 		}
@@ -457,7 +497,8 @@ module.exports = {
 			description: 'Refreshes the channel_N_metadata_* variables (title, author, filename prefix)',
 			options: [optChannel()],
 			callback: wrap('Channel: get content metadata', async (action) => {
-				const cid = action.options.channel
+				const cid = parseChannel('Channel: get content metadata', action.options.channel)
+				if (!cid) return
 				if (this.config.verbose) this.log('debug', `Action get metadata for channel ${cid}`)
 				await this.fetchMetadata(cid)
 			}),
@@ -473,25 +514,20 @@ module.exports = {
 				optText('prefix', 'Filename Prefix'),
 			],
 			callback: wrap('Channel: set content metadata', async (action) => {
-				const cid = String(action.options.channel)
-				if (!/^[a-zA-Z0-9_-]+$/.test(cid)) {
-					this.log('error', `Channel: set content metadata: invalid channel id ${cid}`)
-					return
-				}
+				const cid = parseChannel('Channel: set content metadata', action.options.channel)
+				if (!cid) return
 				const title = await parse(action.options.title)
 				const author = await parse(action.options.author)
 				const rec_prefix = await parse(action.options.prefix)
 				if (this.config.verbose) this.log('debug', `Action set metadata for channel ${cid}`)
 				// legacy admin endpoint, answers text/plain
-				await this.request('GET', `/admin/channel${cid}/set_params.cgi`, {
+				await this.request('GET', `/admin/channel${enc(cid)}/set_params.cgi`, {
 					base: 'raw',
 					text: true,
 					query: { title, author, rec_prefix },
 				})
-				if (!this.metadata[cid]) this.metadata[cid] = {}
-				this.metadata[cid].title = title
-				this.metadata[cid].author = author
-				this.metadata[cid].rec_prefix = rec_prefix
+				// a fresh object: drops a failure marker (_failedAt/_attempts) left by fetchMetadata
+				this.metadata[cid] = { title, author, rec_prefix }
 				variables.updateVariables(this)
 			}),
 		}
@@ -528,13 +564,14 @@ module.exports = {
 			options: [optChannel(), optText('name', 'New name')],
 			callback: wrap('Channel: set name', async (action) => {
 				if (!requireV2('Channel: set name')) return
-				const cid = action.options.channel
+				const cid = parseChannel('Channel: set name', action.options.channel)
+				if (!cid) return
 				const name = (await parse(action.options.name)).trim()
 				if (!name) {
 					this.log('error', 'Channel: set name: name must not be empty')
 					return
 				}
-				await this.request('PUT', `/channels/${cid}/name`, { query: { name } })
+				await this.request('PUT', `/channels/${enc(cid)}/name`, { query: { name } })
 				this.schedulePollSoon()
 			}),
 		}
@@ -552,7 +589,7 @@ module.exports = {
 					this.log('error', 'Stream: set name: name must not be empty')
 					return
 				}
-				await this.request('PUT', `/channels/${cid}/publishers/${pid}/name`, { query: { name } })
+				await this.request('PUT', `/channels/${enc(cid)}/publishers/${enc(pid)}/name`, { query: { name } })
 				this.schedulePollSoon()
 			}),
 		}
@@ -575,7 +612,7 @@ module.exports = {
 				const pair = parsePublisher('Stream: enable/disable', action.options.channelIdpublisherId, false)
 				if (!pair) return
 				const [cid, pid] = pair
-				await this.request('PATCH', `/channels/${cid}/publishers/${pid}/settings`, {
+				await this.request('PATCH', `/channels/${enc(cid)}/publishers/${enc(pid)}/settings`, {
 					body: { common: { enabled: isTrue(action.options.enabled) } },
 				})
 				this.schedulePollSoon()
@@ -600,7 +637,7 @@ module.exports = {
 				const pair = parsePublisher('Stream: single touch', action.options.channelIdpublisherId, false)
 				if (!pair) return
 				const [cid, pid] = pair
-				await this.request('PATCH', `/channels/${cid}/publishers/${pid}/settings`, {
+				await this.request('PATCH', `/channels/${enc(cid)}/publishers/${enc(pid)}/settings`, {
 					body: { common: { single_touch: isTrue(action.options.single_touch) } },
 				})
 				this.schedulePollSoon()
@@ -633,7 +670,7 @@ module.exports = {
 					this.log('warn', 'Stream: set RTMP destination: all fields blank, nothing to change')
 					return
 				}
-				await this.request('PATCH', `/channels/${cid}/publishers/${pid}/settings`, { body: { rtmp } })
+				await this.request('PATCH', `/channels/${enc(cid)}/publishers/${enc(pid)}/settings`, { body: { rtmp } })
 				this.schedulePollSoon()
 			}),
 		}
@@ -641,7 +678,7 @@ module.exports = {
 		actions['setSrtDestination'] = {
 			name: 'Stream: set SRT destination',
 			description:
-				'Updates mode, URL/port, stream id and latency of an SRT publisher. Blank fields are left unchanged.',
+				'Updates mode, URL/port, stream id and latency of an SRT publisher. Mode "Unchanged" keeps the current mode; blank fields are left unchanged.',
 			options: [
 				optPublisherOnly(),
 				{
@@ -649,19 +686,21 @@ module.exports = {
 					id: 'mode',
 					label: 'Mode',
 					choices: CHOICES_SRT_MODE,
-					default: 'caller',
+					default: SRT_MODE_UNCHANGED,
+					tooltip:
+						'Unchanged keeps the mode configured on the device and only sends the non-blank fields below',
 				},
 				optText('url', 'SRT URL', {
-					tooltip: 'e.g. srt://host:port (blank = unchanged)',
+					tooltip: 'caller / rendezvous: e.g. srt://host:port (blank = unchanged)',
 					isVisible: (options) => options.mode !== 'listener',
 				}),
 				optText('stream_id', 'Stream id', {
-					tooltip: 'blank = unchanged',
-					isVisible: (options) => options.mode === 'caller',
+					tooltip: 'caller only (blank = unchanged)',
+					isVisible: (options) => options.mode === 'caller' || options.mode === 'unchanged',
 				}),
 				optText('port', 'Listen port', {
-					tooltip: '1024..65535 (blank = unchanged)',
-					isVisible: (options) => options.mode === 'listener',
+					tooltip: 'listener only: 1024..65535 (blank = unchanged)',
+					isVisible: (options) => options.mode === 'listener' || options.mode === 'unchanged',
 				}),
 				optText('latency', 'Latency (ms)', { tooltip: '80..8000 (blank = unchanged)' }),
 			],
@@ -670,18 +709,22 @@ module.exports = {
 				const pair = parsePublisher('Stream: set SRT destination', action.options.channelIdpublisherId, false)
 				if (!pair) return
 				const [cid, pid] = pair
-				const mode = CHOICES_SRT_MODE.some((c) => c.id === action.options.mode) ? action.options.mode : 'caller'
-				const srt = { mode }
+				const mode = CHOICES_SRT_MODE.some((c) => c.id === action.options.mode)
+					? action.options.mode
+					: SRT_MODE_UNCHANGED
+				const keepMode = mode === SRT_MODE_UNCHANGED
+				const srt = {}
+				if (!keepMode) srt.mode = mode
 
-				if (mode !== 'listener') {
+				if (keepMode || mode !== 'listener') {
 					const url = (await parse(action.options.url)).trim()
 					if (url) srt.url = url
 				}
-				if (mode === 'caller') {
+				if (keepMode || mode === 'caller') {
 					const streamId = (await parse(action.options.stream_id)).trim()
 					if (streamId) srt.stream_id = streamId
 				}
-				if (mode === 'listener') {
+				if (keepMode || mode === 'listener') {
 					const portText = (await parse(action.options.port)).trim()
 					if (portText) {
 						const port = toInt(portText, NaN)
@@ -701,8 +744,15 @@ module.exports = {
 					}
 					srt.latency = latency
 				}
+				if (Object.keys(srt).length === 0) {
+					this.log(
+						'warn',
+						'Stream: set SRT destination: mode unchanged and all fields blank, nothing to change',
+					)
+					return
+				}
 
-				await this.request('PATCH', `/channels/${cid}/publishers/${pid}/settings`, { body: { srt } })
+				await this.request('PATCH', `/channels/${enc(cid)}/publishers/${enc(pid)}/settings`, { body: { srt } })
 				this.schedulePollSoon()
 			}),
 		}
@@ -725,7 +775,7 @@ module.exports = {
 				const [cid, pid] = pair
 				const body = await parseJson('Stream: patch settings', 'Settings JSON', action.options.json)
 				if (!body) return
-				await this.request('PATCH', `/channels/${cid}/publishers/${pid}/settings`, { body })
+				await this.request('PATCH', `/channels/${enc(cid)}/publishers/${enc(pid)}/settings`, { body })
 				this.schedulePollSoon()
 			}),
 		}
@@ -744,7 +794,8 @@ module.exports = {
 			],
 			callback: wrap('Stream: add publisher', async (action) => {
 				if (!requireV2('Stream: add publisher')) return
-				const cid = action.options.channel
+				const cid = parseChannel('Stream: add publisher', action.options.channel)
+				if (!cid) return
 				const settings = await parseJson('Stream: add publisher', 'Settings JSON', action.options.json)
 				if (!settings) return
 				if (!settings.type) {
@@ -754,10 +805,14 @@ module.exports = {
 					)
 					return
 				}
+				// PublisherSettings requires common.enabled; a new publisher starts disabled unless told otherwise
+				if (!settings.common || typeof settings.common !== 'object' || Array.isArray(settings.common)) {
+					settings.common = { enabled: false, single_touch: false }
+				}
 				const name = (await parse(action.options.name)).trim()
 				const body = { settings }
 				if (name) body.name = name
-				const result = await this.request('POST', `/channels/${cid}/publishers`, { body })
+				const result = await this.request('POST', `/channels/${enc(cid)}/publishers`, { body })
 				this.log('info', `Publisher added on channel ${cid}: ${JSON.stringify(result)}`)
 				this.schedulePollSoon()
 			}),
@@ -838,7 +893,7 @@ module.exports = {
 					return
 				}
 				await this.request('PATCH', `/inputs/${enc(sid)}/settings`, {
-					body: { local_audio: { mute: isTrue(action.options.mute) } },
+					body: audioSettingsBody(sid, 'mute', isTrue(action.options.mute)),
 				})
 				this.schedulePollSoon()
 			}),
@@ -912,7 +967,9 @@ module.exports = {
 					return
 				}
 				const delay = Math.min(300, Math.max(-300, toInt(action.options.delay, 0)))
-				await this.request('PATCH', `/inputs/${enc(sid)}/settings`, { body: { audio: { delay } } })
+				await this.request('PATCH', `/inputs/${enc(sid)}/settings`, {
+					body: audioSettingsBody(sid, 'delay', delay),
+				})
 				this.schedulePollSoon()
 			}),
 		}
