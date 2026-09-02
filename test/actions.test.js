@@ -1,7 +1,7 @@
 const { describe, it, before, after, beforeEach } = require('node:test')
 const assert = require('node:assert/strict')
 
-const { createInstance, runAction } = require('./harness')
+const { createInstance, runAction, runFeedback } = require('./harness')
 const { startMockPearl } = require('./mock-pearl')
 
 const V2 = '/api/v2.0'
@@ -439,11 +439,17 @@ describe('actions against a v2.0 device', () => {
 		assert.equal(mock.state.outputs.D1.source, '2')
 		assert.equal(instance.state.outputs.D1.source, '2')
 		assert.equal(instance.variableValues.output_D1_source, '2')
+		// the optimistic feedback (no read endpoint exists for the real source) matches the value just set
+		assert.equal(await runFeedback(instance, 'outputSourceOptimistic', { output: 'D1', source: '2' }), true)
+		assert.equal(await runFeedback(instance, 'outputSourceOptimistic', { output: 'D1', source: 'console' }), false)
+		assert.ok(instance.checkedFeedbacks.some((ids) => ids.includes('outputSourceOptimistic')))
 
 		mock.requests.length = 0
 		await runAction(instance, 'setOutputSource', { output: 'D1', source: 'custom', customSource: ' console ' })
 		req = one(mock, 'PUT', `${V2}/outputs/D1/settings`)
 		assert.deepEqual(req.query, { source: 'console' })
+		assert.equal(await runFeedback(instance, 'outputSourceOptimistic', { output: 'D1', source: 'console' }), true)
+		assert.equal(await runFeedback(instance, 'outputSourceOptimistic', { output: 'D1', source: '2' }), false)
 
 		// the optimistic value survives a poll (the API cannot read it back)
 		await instance.pollAll()
@@ -597,6 +603,12 @@ describe('actions against a v2.0 device', () => {
 		assert.deepEqual(mock.state.appliedPresets[0].name, 'Show A')
 		assert.equal(mock.state.appliedPresets[0].sections.length, 10)
 		assert.ok(instance.calls.log.some((l) => l.level === 'info' && /rebooting/.test(l.message)))
+		// optimistic: the API has no read endpoint for which preset is currently applied
+		assert.equal(instance.state.lastConfigPreset.name, 'Show A')
+		assert.equal(instance.variableValues.last_config_preset, 'Show A')
+		assert.equal(await runFeedback(instance, 'configPresetApplied', { preset: 'Show A' }), true)
+		assert.equal(await runFeedback(instance, 'configPresetApplied', { preset: 'Default' }), false)
+		assert.ok(instance.checkedFeedbacks.some((ids) => ids.includes('configPresetApplied')))
 
 		mock.requests.length = 0
 		await runAction(instance, 'applyConfigPreset', { preset: 'Show A', sections: ['channels', 'sources'] })
@@ -607,6 +619,8 @@ describe('actions against a v2.0 device', () => {
 		await runAction(instance, 'applyConfigPreset', { preset: 'Nope', sections: [] })
 		one(mock, 'POST', `${V2}/system/presets/Nope/control/apply`)
 		assert.ok(errors(instance).some((m) => /404/.test(m)))
+		// a failed apply must not overwrite the last successfully applied preset
+		assert.equal(instance.state.lastConfigPreset.name, 'Show A')
 		mock.reset()
 	})
 

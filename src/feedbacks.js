@@ -208,6 +208,47 @@ module.exports = {
 			},
 		}
 
+		feedbacks['channelLayoutPreview'] = {
+			type: 'advanced',
+			name: 'Channel: layout preview (active layout only)',
+			description:
+				"Show a live preview image on a layout-switch button, but only while that layout is the channel's " +
+				'active one — the Pearl API only exposes a live image of what a channel is currently outputting, ' +
+				'not a stored thumbnail for every layout, so a button for a layout you are not on stays plain. ' +
+				'Requires preview interval > 0 in the connection settings.',
+			options: [
+				{
+					type: 'dropdown',
+					label: 'Channel / layout',
+					id: 'channelIdlayoutId',
+					choices: this.choicesChannelLayout(),
+					default: this.firstId(this.choicesChannelLayout()),
+				},
+			],
+			callback: (feedback) => {
+				try {
+					const pair = splitPair(feedback.options.channelIdlayoutId)
+					if (!pair) return {}
+					const [channelId, layoutId] = pair
+					if (this.state.channels?.[channelId]?.layouts?.[layoutId]?.active !== true) return {}
+					if (!previewsEnabled(this)) return {}
+					const png64 = this.previews?.[previewKey('channel', channelId)]?.png64
+					return typeof png64 === 'string' && png64.length > 0 ? { png64 } : {}
+				} catch (error) {
+					this.log('error', `layout preview feedback failed: ${error?.message ?? error}`)
+					return {}
+				}
+			},
+			subscribe: (feedback) => {
+				const pair = splitPair(feedback.options.channelIdlayoutId)
+				if (pair) subscribePreview(this, previewKey('channel', pair[0]))
+			},
+			unsubscribe: (feedback) => {
+				const pair = splitPair(feedback.options.channelIdlayoutId)
+				if (pair) unsubscribePreview(this, previewKey('channel', pair[0]))
+			},
+		}
+
 		feedbacks['streamingState'] = {
 			name: 'Change style if streaming',
 			type: 'boolean',
@@ -660,6 +701,67 @@ module.exports = {
 		feedbacks['channelPreview'] = previewFeedback(this, 'channel', 'Channel', this.choicesChannel())
 		feedbacks['inputPreview'] = previewFeedback(this, 'input', 'Input', this.choicesInputs())
 		feedbacks['outputPreview'] = previewFeedback(this, 'output', 'Output', this.choicesOutputs())
+
+		// ---------------------------------------------------------------------
+		// Optimistic feedbacks: the Pearl API has no read endpoint for these, so they only reflect
+		// the last value this Companion connection itself set, not a value confirmed by the device.
+		// ---------------------------------------------------------------------
+
+		feedbacks['outputSourceOptimistic'] = {
+			type: 'boolean',
+			name: 'Output: source matches (optimistic)',
+			description:
+				'Highlights the source last selected for this output through this connection. The API has no way ' +
+				'to read the output source back, so this is not verified against the device — it goes stale if the ' +
+				'source is changed from the Pearl web UI or another controller.',
+			defaultStyle: { color: WHITE, bgcolor: BLUE },
+			options: [
+				{
+					type: 'dropdown',
+					label: 'Output',
+					id: 'output',
+					choices: this.choicesOutputs(),
+					default: this.firstId(this.choicesOutputs()),
+				},
+				{
+					type: 'dropdown',
+					label: 'Source',
+					id: 'source',
+					choices: this.choicesOutputSources(),
+					default: this.firstId(this.choicesOutputSources()),
+				},
+			],
+			callback: (feedback) => {
+				const did = String(feedback.options.output ?? '')
+				const source = String(feedback.options.source ?? '')
+				if (!did || !source) return false
+				return this.state.outputs?.[did]?.source === source
+			},
+		}
+
+		feedbacks['configPresetApplied'] = {
+			type: 'boolean',
+			name: 'Config preset: last applied (optimistic)',
+			description:
+				'Highlights the configuration preset last applied through this connection. The API has no way to ' +
+				'read which preset (if any) currently matches the device configuration, so this only reflects the ' +
+				'most recent "Config preset: apply" action run from Companion, not a value confirmed by the device.',
+			defaultStyle: { color: WHITE, bgcolor: BLUE },
+			options: [
+				{
+					type: 'dropdown',
+					label: 'Preset',
+					id: 'preset',
+					choices: this.choicesConfigPresets(),
+					default: this.firstId(this.choicesConfigPresets()),
+				},
+			],
+			callback: (feedback) => {
+				const preset = String(feedback.options.preset ?? '')
+				if (!preset) return false
+				return this.state.lastConfigPreset?.name === preset
+			},
+		}
 
 		return feedbacks
 	},

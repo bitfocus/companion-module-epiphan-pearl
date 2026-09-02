@@ -300,3 +300,106 @@ describe('preview feedbacks with preview_interval > 0', () => {
 		}
 	})
 })
+
+describe('channelLayoutPreview: image only on the currently active layout', () => {
+	let mock
+	let instance
+
+	before(async () => {
+		mock = await startMockPearl()
+		instance = await createInstance({ mock, config: { preview_interval: 1, preview_width: 144 } })
+		// channel '1' seeds layout '1' (Default) active, layout '2' (Picture in picture) inactive
+	})
+
+	after(async () => {
+		await instance.destroy()
+		await mock.close()
+	})
+
+	it('returns {} for a layout that is not active, even once an image is cached for its channel', async () => {
+		await subscribeFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-2' })
+		// subscribing an inactive layout still registers interest in its channel's image, so the
+		// button is ready to show one the moment you switch to it
+		assert.equal(instance.previewSubscriptions.get('channel:1'), 1)
+		await instance.pollPreviews()
+		assert.ok(instance.previews['channel:1'], 'the channel image was fetched')
+		assert.deepEqual(await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-2' }), {})
+	})
+
+	it('returns the cached image for the layout that is active', async () => {
+		const result = await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-1' })
+		assert.equal(typeof result.png64, 'string')
+		assert.equal(result.png64, PNG_1X1.toString('base64'))
+	})
+
+	it('shares its subscription key with channelPreview for the same channel', async () => {
+		await subscribeFeedback(instance, 'channelPreview', { channel: '1' })
+		assert.equal(instance.previewSubscriptions.get('channel:1'), 2)
+		await unsubscribeFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-2' })
+		// channelPreview's own subscription keeps the image alive
+		assert.equal(instance.previewSubscriptions.get('channel:1'), 1)
+		assert.ok(instance.previews['channel:1'])
+		await unsubscribeFeedback(instance, 'channelPreview', { channel: '1' })
+		assert.equal(instance.previewSubscriptions.has('channel:1'), false)
+	})
+
+	it('swaps which layout shows the image when the active layout changes', async () => {
+		await subscribeFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-1' })
+		await instance.pollPreviews()
+		assert.equal(
+			typeof (await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-1' })).png64,
+			'string',
+		)
+
+		instance.checkedFeedbacks.length = 0
+		for (const l of mock.state.channels['1'].layouts) l.active = l.id === '2'
+		await instance.pollAll()
+
+		assert.ok(instance.checkedFeedbacks.flat().includes('channelLayoutPreview'))
+		assert.deepEqual(await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-1' }), {})
+		assert.equal(
+			typeof (await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-2' })).png64,
+			'string',
+		)
+
+		mock.reset()
+		await instance.pollAll()
+		await unsubscribeFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-1' })
+	})
+
+	it('an unknown channel/layout pair is not active and never errors', async () => {
+		assert.deepEqual(await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '9-9' }), {})
+		assert.deepEqual(await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: 'garbage' }), {})
+		assert.deepEqual(await runFeedback(instance, 'channelLayoutPreview', {}), {})
+	})
+})
+
+describe('optimistic feedbacks: outputSourceOptimistic and configPresetApplied', () => {
+	let mock
+	let instance
+
+	before(async () => {
+		mock = await startMockPearl()
+		instance = await createInstance({ mock })
+	})
+
+	after(async () => {
+		await instance.destroy()
+		await mock.close()
+	})
+
+	it('outputSourceOptimistic is false for every source until an action sets one', async () => {
+		// the Output schema has no source field, so a fresh device never satisfies this feedback
+		assert.equal(
+			await runFeedback(instance, 'outputSourceOptimistic', { output: 'D1', source: 'multiview' }),
+			false,
+		)
+		assert.equal(await runFeedback(instance, 'outputSourceOptimistic', { output: 'D1', source: '' }), false)
+		assert.equal(await runFeedback(instance, 'outputSourceOptimistic', { output: '', source: 'multiview' }), false)
+	})
+
+	it('configPresetApplied is false for every preset until an action applies one', async () => {
+		assert.equal(await runFeedback(instance, 'configPresetApplied', { preset: 'Default' }), false)
+		assert.equal(await runFeedback(instance, 'configPresetApplied', { preset: '' }), false)
+	})
+})

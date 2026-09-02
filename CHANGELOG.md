@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.4.0] (2026-09-02)
+
+### New Features
+
+- Layout-switch buttons now show a live preview image of the channel while that layout is the active one, in addition
+  to the existing highlight. Only the currently active layout can show a real image (the Pearl API exposes a live view
+  of a channel's current output, not a stored thumbnail per layout), so a button for a layout you are not on stays
+  plain-colored until you switch to it, and the previous button's image disappears the moment you do
+- New feedback `Output: source matches (optimistic)` highlights the output-routing button matching the source last set
+  through Companion. The API has no endpoint to read an output's current source back, so this reflects only what this
+  connection itself last set — it goes stale if the source is changed from the Pearl web UI or another controller
+- New feedback `Config preset: last applied (optimistic)` highlights the configuration preset button last applied
+  through Companion, for the same reason: the API cannot report which preset (if any) currently matches the device
+- New variable `last_config_preset`
+
+### Changes
+
+- Output-routing and configuration-preset presets now carry their new optimistic feedback by default
+
+---
+
 ## [2.3.0] (2026-09-02)
 
 ### New Features

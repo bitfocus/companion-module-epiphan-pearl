@@ -864,6 +864,7 @@ module.exports = {
 				if (this.state.outputs?.[did]) {
 					this.state.outputs[did].source = source
 					variables.updateVariables(this)
+					this.checkFeedbacks('outputSourceOptimistic')
 				}
 				this.schedulePollSoon()
 			}),
@@ -1129,6 +1130,10 @@ module.exports = {
 				} else {
 					this.log('info', `Config preset "${name}" applied`)
 				}
+				// optimistic: the API has no way to read back which preset the device currently matches
+				this.state.lastConfigPreset = { name, appliedAt: Date.now() }
+				variables.updateVariables(this)
+				this.checkFeedbacks('configPresetApplied')
 				this.schedulePollSoon()
 			}),
 		}

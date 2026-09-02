@@ -124,8 +124,13 @@ module.exports = {
 			presets[unique] = preset
 		}
 
+		// shared by every button that can carry a live preview image (layout buttons, Previews category)
+		const previewStyle = { alignment: 'center:bottom', pngalignment: 'center:center' }
+
 		// ---------------------------------------------------------------------
-		// Channels: one button per layout (existing)
+		// Channels: one button per layout. The currently active layout also shows a live preview image
+		// of the channel (the Pearl API only exposes a live image of the current output, not a stored
+		// thumbnail per layout, so a button for a layout you are not on stays plain-colored).
 		// ---------------------------------------------------------------------
 
 		for (const layout of this.choicesChannelLayout()) {
@@ -136,6 +141,7 @@ module.exports = {
 					name: layout.label,
 					text: twoLines(layout.label),
 					size: 7,
+					styleExtra: previewStyle,
 					actions: [{ actionId: 'channelChangeLayout', options: { channelIdlayoutId: layout.id } }],
 					feedbacks: [
 						{
@@ -143,6 +149,7 @@ module.exports = {
 							options: { channelIdlayoutId: layout.id },
 							style: { color: BLACK, bgcolor: RED },
 						},
+						{ feedbackId: 'channelLayoutPreview', options: { channelIdlayoutId: layout.id } },
 					],
 				}),
 			)
@@ -275,6 +282,13 @@ module.exports = {
 								options: { output: output.id, source: source.id, customSource: '' },
 							},
 						],
+						feedbacks: [
+							{
+								feedbackId: 'outputSourceOptimistic',
+								options: { output: output.id, source: source.id },
+								style: { color: WHITE, bgcolor: BLUE },
+							},
+						],
 					}),
 				)
 			}
@@ -312,8 +326,6 @@ module.exports = {
 		// ---------------------------------------------------------------------
 		// Previews: live image per channel / input / output
 		// ---------------------------------------------------------------------
-
-		const previewStyle = { alignment: 'center:bottom', pngalignment: 'center:center' }
 
 		for (const channel of this.choicesChannel()) {
 			add(
@@ -648,6 +660,13 @@ module.exports = {
 					size: 7,
 					bgcolor: PURPLE,
 					actions: [{ actionId: 'applyConfigPreset', options: { preset: preset.id, sections: [] } }],
+					feedbacks: [
+						{
+							feedbackId: 'configPresetApplied',
+							options: { preset: preset.id },
+							style: { color: WHITE, bgcolor: BLUE },
+						},
+					],
 				}),
 			)
 		}

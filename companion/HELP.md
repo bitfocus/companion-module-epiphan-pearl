@@ -194,14 +194,15 @@ Example body for **Event: create ad-hoc event** (Kaltura, taken from the API ref
 
 ### Feedbacks
 
-All feedbacks except the previews are boolean and change the button style when true. The preview feedbacks draw an image on the button.
+All feedbacks except the previews are boolean and change the button style when true. The preview feedbacks draw an image on the button. A few feedbacks are marked _optimistic_: the API has no way to read that value back, so they only reflect the last value this connection itself set, not one confirmed by the device — they go stale if the setting is changed from the Pearl web UI or another controller.
 
 #### Channels & layouts
 
-| Feedback                                  | True when                                                 |
-| ----------------------------------------- | --------------------------------------------------------- |
-| **Change style on channel layout change** | The selected layout is the active layout of a channel.    |
-| **Channel preview image**                 | Draws the live preview image of the channel. _v2.0 only._ |
+| Feedback                                         | True when                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Change style on channel layout change**        | The selected layout is the active layout of a channel.                                                                                                                                                                                                                                                     |
+| **Channel preview image**                        | Draws the live preview image of the channel. _v2.0 only._                                                                                                                                                                                                                                                  |
+| **Channel: layout preview (active layout only)** | Draws the live preview image on a layout-switch button, but only while that layout is the channel's active one — the API only exposes a live image of what a channel is currently outputting, not a stored thumbnail per layout, so a button for a layout you are not on stays plain-colored. _v2.0 only._ |
 
 #### Streams / publishers
 
@@ -221,10 +222,11 @@ All feedbacks except the previews are boolean and change the button style when t
 
 #### Inputs and outputs
 
-| Feedback                 | True when                                                |
-| ------------------------ | -------------------------------------------------------- |
-| **Input preview image**  | Draws the live preview image of the input. _v2.0 only._  |
-| **Output preview image** | Draws the live preview image of the output. _v2.0 only._ |
+| Feedback                                | True when                                                                                                                         |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Input preview image**                 | Draws the live preview image of the input. _v2.0 only._                                                                           |
+| **Output preview image**                | Draws the live preview image of the output. _v2.0 only._                                                                          |
+| **Output: source matches (optimistic)** | The selected output's source matches the chosen source. _Optimistic_ — set when you route the output from Companion. _v2.0 only._ |
 
 #### Single touch
 
@@ -239,6 +241,12 @@ All feedbacks except the previews are boolean and change the button style when t
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Storage state**            | The storage is in the chosen state: _Ready_, _No device_, _Device present (not mounted)_, _Device read-only_ or _Formatting_. _v2.0 only._ |
 | **Storage free space below** | Free space of the storage is below the given percentage (default 10 %). _v2.0 only._                                                       |
+
+#### Configuration presets
+
+| Feedback                                     | True when                                                                                                                                                                        |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Config preset: last applied (optimistic)** | The selected configuration preset is the one this connection last applied. _Optimistic_ — the API cannot report which preset (if any) currently matches the device. _v2.0 only._ |
 
 #### CMS events
 
@@ -347,18 +355,19 @@ Use variables as `$(pearl:variable_id)` where `pearl` is the label you gave the 
 
 Firmware, product, identity and configuration preset variables are refreshed on the first poll and then every 30th poll.
 
-| Variable                                                                                                                                                                                                             | Content                                               |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| `system_status_date`                                                                                                                                                                                                 | Device date/time                                      |
-| `system_status_uptime`, `system_status_uptime_hms`                                                                                                                                                                   | Uptime in seconds and as `HH:MM:SS`                   |
-| `system_status_cpuload`, `system_cpuload_high`                                                                                                                                                                       | CPU load in percent and the device's high-load flag   |
-| `system_status_cputemp`, `system_cputemp_threshold`                                                                                                                                                                  | CPU temperature and the device's threshold            |
-| `firmware_version`, `firmware_revision`                                                                                                                                                                              | Firmware version and revision                         |
-| `product_name`, `product_id`                                                                                                                                                                                         | Device model                                          |
-| `identity_name`, `identity_location`, `identity_description`                                                                                                                                                         | Device identity fields                                |
-| `config_presets`                                                                                                                                                                                                     | Comma separated names of stored configuration presets |
-| `connectivity_external_ip`, `connectivity_mdns`, `connectivity_dns`, `connectivity_http`, `connectivity_https`, `connectivity_captive_portal`, `connectivity_icmp`, `connectivity_epiphan_edge`, `connectivity_vtun` | Network connectivity check results                    |
-| `speedtest_bandwidth_mbps`, `speedtest_protocol`, `speedtest_mode`, `speedtest_duration`, `speedtest_udp_loss`                                                                                                       | Result of the last _System: run speed test_           |
+| Variable                                                                                                                                                                                                             | Content                                                                                                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `system_status_date`                                                                                                                                                                                                 | Device date/time                                                                                                                      |
+| `system_status_uptime`, `system_status_uptime_hms`                                                                                                                                                                   | Uptime in seconds and as `HH:MM:SS`                                                                                                   |
+| `system_status_cpuload`, `system_cpuload_high`                                                                                                                                                                       | CPU load in percent and the device's high-load flag                                                                                   |
+| `system_status_cputemp`, `system_cputemp_threshold`                                                                                                                                                                  | CPU temperature and the device's threshold                                                                                            |
+| `firmware_version`, `firmware_revision`                                                                                                                                                                              | Firmware version and revision                                                                                                         |
+| `product_name`, `product_id`                                                                                                                                                                                         | Device model                                                                                                                          |
+| `identity_name`, `identity_location`, `identity_description`                                                                                                                                                         | Device identity fields                                                                                                                |
+| `config_presets`                                                                                                                                                                                                     | Comma separated names of stored configuration presets                                                                                 |
+| `last_config_preset`                                                                                                                                                                                                 | Name of the preset this connection last applied. _Optimistic_ — empty until an apply action succeeds, and not confirmed by the device |
+| `connectivity_external_ip`, `connectivity_mdns`, `connectivity_dns`, `connectivity_http`, `connectivity_https`, `connectivity_captive_portal`, `connectivity_icmp`, `connectivity_epiphan_edge`, `connectivity_vtun` | Network connectivity check results                                                                                                    |
+| `speedtest_bandwidth_mbps`, `speedtest_protocol`, `speedtest_mode`, `speedtest_duration`, `speedtest_udp_loss`                                                                                                       | Result of the last _System: run speed test_                                                                                           |
 
 ### Presets
 
@@ -366,10 +375,10 @@ Presets are generated from what the Pearl reports, so they appear after the firs
 
 | Category           | Buttons                                                                                                                                                                                                                                                   |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Channels**       | One button per layout of every channel; red while that layout is active.                                                                                                                                                                                  |
+| **Channels**       | One button per layout of every channel; red while that layout is active, and — while active — showing a live preview of the channel (the API cannot show a preview for a layout you are not on; see Feedbacks above).                                     |
 | **Publishers**     | One toggle button per publisher and per "all publishers" of a channel; green while streaming.                                                                                                                                                             |
 | **Recorders**      | Toggle and reset button per recorder (red while recording), plus _All recorders start_ / _All recorders stop_.                                                                                                                                            |
-| **Outputs**        | One button per output and source (multi-viewer, device information, console, each channel, each input).                                                                                                                                                   |
+| **Outputs**        | One button per output and source (multi-viewer, device information, console, each channel, each input); blue (optimistic) while it matches the source last set from Companion.                                                                            |
 | **Inputs**         | Mute / unmute pair per audio input.                                                                                                                                                                                                                       |
 | **Previews**       | Live thumbnail button per channel, input and output.                                                                                                                                                                                                      |
 | **Single touch**   | Toggle button per single touch control; green while pressed, red text when something it controls is unhealthy.                                                                                                                                            |
@@ -377,7 +386,7 @@ Presets are generated from what the Pearl reports, so they appear after the firs
 | **System**         | CPU load, CPU temperature, uptime, reboot and refresh buttons.                                                                                                                                                                                            |
 | **Events**         | _Start upcoming event_, _Stop ongoing event_, _Pause event_, _Resume event_, _Extend event +5 min_, and two status display buttons: _Ongoing event status_ (title, running/paused, time left) and _Upcoming event status_ (title, start time, countdown). |
 | **AFU**            | Upload status display (blue while uploading, red on error).                                                                                                                                                                                               |
-| **Config presets** | One button per configuration preset stored on the Pearl (applies all sections).                                                                                                                                                                           |
+| **Config presets** | One button per configuration preset stored on the Pearl (applies all sections); blue (optimistic) while it is the preset this connection last applied.                                                                                                    |
 
 ### Tips
 
@@ -391,7 +400,8 @@ Presets are generated from what the Pearl reports, so they appear after the firs
 ### Known limitations
 
 - **Layouts come from the legacy API.** REST API v2.0 has no endpoint to list layouts or to read/write layout settings, so the layout dropdowns, the active layout feedback and _Channel: get layout data_ / _Channel: set layout data_ still use the legacy `/api/channels/{id}/layouts` endpoints. They work on all supported firmware versions.
-- **No output source feedback.** The API can set an output's source but has no endpoint to read it back. `output_ID_source` therefore only reflects the last value set through Companion and is empty after a restart.
+- **No live preview for a layout you are not on.** The API only exposes a live image of a channel's current output, not a stored thumbnail per layout, so _Channel: layout preview (active layout only)_ only ever shows an image for the active layout's button.
+- **Output source and applied config preset are optimistic.** The API can set an output's source and apply a configuration preset, but has no endpoint to read either one back. `output_ID_source`, `last_config_preset` and the matching feedbacks therefore only reflect the last value set through Companion, are empty/false after a restart, and go stale if changed from the Pearl web UI or another controller.
 - **Not exposed on purpose.** Factory reset, deleting publishers and the ad-hoc CMS login (which would require CMS user credentials in a button) are deliberately not offered. _Event: create ad-hoc event_ on Kaltura/Panopto therefore only works when a login session already exists on the Pearl (created from its web UI) or when the CMS configuration does not require one.
 - **Content metadata uses the admin CGI.** Title/author/prefix are read and written through `/admin/channelN/get_params.cgi` and `set_params.cgi` because they are not part of the REST API. When the Pearl does not answer, the fetch is retried with an increasing back-off (1 minute after the first failure, up to 10 minutes) and only the first failure is logged as an error.
 - **Legacy firmware** (before 4.24.1, or with _Use API v2.0 (if available)_ unticked) only offers the original actions, feedbacks and variables. Everything marked _v2.0 only_ is still listed but not functional: such an action logs a warning and does nothing when triggered, such a feedback is always false, and its variables stay empty.

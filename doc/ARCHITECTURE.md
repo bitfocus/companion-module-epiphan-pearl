@@ -64,6 +64,7 @@ this.state = {
 	afu: [IdentifiedAfuStatus], // [] when unknown
 	connectivity: object | undefined, // /system/connectivity/details result
 	speedtest: object | undefined, // last speed test result
+	lastConfigPreset: { name, appliedAt } | undefined, // optimistic, set by applyConfigPreset, no read endpoint
 }
 ```
 
@@ -316,17 +317,34 @@ New boolean feedbacks (all with `defaultStyle`):
 | cpuTempHigh        | –                                                                  | `cputemp >= cputemp_threshold`                                                                      |
 | eventStatus        | which: upcoming/running/paused/ongoing                             | upcoming: events.upcoming != null; running/paused: events.ongoing?.status; ongoing: ongoing != null |
 
+Two more boolean feedbacks are **optimistic**: the Pearl API has no read endpoint for either value, so they reflect
+only what this connection itself last set, not a value confirmed by the device.
+
+| id                     | options        | true when                                 |
+| ---------------------- | -------------- | ----------------------------------------- |
+| outputSourceOptimistic | output, source | `state.outputs[did].source === source`    |
+| configPresetApplied    | preset         | `state.lastConfigPreset?.name === preset` |
+
 Advanced feedbacks returning `{ png64 }` (or `{}` when no image yet):
 
-| id             | option  | preview key     |
-| -------------- | ------- | --------------- |
-| channelPreview | channel | `channel:<cid>` |
-| inputPreview   | input   | `input:<sid>`   |
-| outputPreview  | output  | `output:<did>`  |
+| id                   | option            | preview key     | image shown when                         |
+| -------------------- | ----------------- | --------------- | ---------------------------------------- |
+| channelPreview       | channel           | `channel:<cid>` | always (once fetched)                    |
+| inputPreview         | input             | `input:<sid>`   | always (once fetched)                    |
+| outputPreview        | output            | `output:<did>`  | always (once fetched)                    |
+| channelLayoutPreview | channelIdlayoutId | `channel:<cid>` | only while that layout is the active one |
 
-Each has `subscribe(feedback)` incrementing `previewSubscriptions` for its key (also while previews are disabled) and `unsubscribe` decrementing
-(delete at 0 and drop the cached image). Subscribe triggers `this.pollPreviews()` once so the first image
-appears without waiting for the interval.
+`channelLayoutPreview` reuses the `channelPreview` cache and key (the Pearl API only exposes a live image of a
+channel's _current_ output, not a stored thumbnail per layout) so it shares the same subscription counter — a channel
+image fetched for one is available to the other without a second request. Its callback returns `{}` for any layout
+that is not the channel's active one, regardless of whether an image is cached, so a button for a layout you are not
+on stays plain-colored; switching layouts moves the image to the new active layout's button on the next diff/refresh.
+It is included in the `layouts` domain of `DOMAIN_FEEDBACKS` and in `pollPreviews()`'s `checkFeedbacks` call, alongside
+the other three preview feedbacks.
+
+Each preview feedback has `subscribe(feedback)` incrementing `previewSubscriptions` for its key (also while previews
+are disabled) and `unsubscribe` decrementing (delete at 0 and drop the cached image). Subscribe triggers
+`this.pollPreviews()` once so the first image appears without waiting for the interval.
 
 ## Variables (`src/variables.js`)
 
@@ -353,6 +371,7 @@ Keep all existing ids. Add:
 - connectivity: `connectivity_external_ip`, `connectivity_mdns`, `connectivity_dns`, `connectivity_http`, `connectivity_https`, `connectivity_captive_portal`, `connectivity_icmp`, `connectivity_epiphan_edge`, `connectivity_vtun`
 - speedtest: `speedtest_bandwidth_mbps` (1 decimal), `speedtest_protocol`, `speedtest_mode`, `speedtest_duration`, `speedtest_udp_loss`
 - `config_presets` (comma separated preset names)
+- `last_config_preset` (optimistic, see `lastConfigPreset` above; `''` until an apply action succeeds)
 
 Numbers stay numbers; unknown values are `''` (not `undefined`). `hms` = `HH:MM:SS` via `utils.formatHms(seconds)`;
 `_time` = `HH:MM` local time via `utils.formatClock(unixSeconds)`; `*_mb`/`*_gb` rounded to 1 decimal.
@@ -360,10 +379,13 @@ Countdown variables (`starts_in`, `remaining`) are recomputed each poll from `Da
 
 ## Presets (`src/presets.js`) — `getPresets()`
 
-Keep existing (Channels layouts, Publishers toggle, Recorders toggle + reset). Add categories:
+Keep existing (Channels layouts, Publishers toggle, Recorders toggle + reset), with one addition: each layout button
+also carries the `channelLayoutPreview` feedback (`styleExtra: previewStyle`, same alignment as the Previews category),
+so the currently active layout's button shows a live channel image and the others stay plain-colored. Add categories:
 
 - `Recorders`: "All recorders start", "All recorders stop" (recorderControlAll) with `anyRecording` feedback
-- `Outputs`: per output x choicesOutputSources entry (skip 'custom') -> setOutputSource
+- `Outputs`: per output x choicesOutputSources entry (skip 'custom') -> setOutputSource, with `outputSourceOptimistic`
+  (blue) so the button matching the last-set source is highlighted
 - `Inputs`: per audio input mute/unmute pair (inputAudioMute)
 - `Previews`: per channel (channelPreview advanced feedback, text = channel name, size 7, `pngalignment` center),
   per input (inputPreview), per output (outputPreview)
@@ -374,7 +396,8 @@ Keep existing (Channels layouts, Publishers toggle, Recorders toggle + reset). A
   display buttons with eventStatus feedbacks: "Ongoing event status" (title / status / remaining, green when running, yellow when
   paused) and "Upcoming event status" (title / start time / countdown, purple when an upcoming event exists)
 - `AFU`: status display with afuState uploading (blue) / error (red)
-- `Config presets`: one button per device configuration preset (applyConfigPreset, empty sections = all)
+- `Config presets`: one button per device configuration preset (applyConfigPreset, empty sections = all), with
+  `configPresetApplied` (blue) so the last-applied preset is highlighted
 
 Preset ids must be unique and stable: `${category}_${safeId(...)}`; when two ids collide after `safeId` (e.g. config presets
 "Show A" and "Show_A") the later ones get a `_2`, `_3`, ... suffix instead of being dropped. Every variable reference built

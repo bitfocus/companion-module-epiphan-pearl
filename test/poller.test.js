@@ -79,7 +79,7 @@ describe('poller diffing', () => {
 		}
 		await check(() => {
 			for (const l of mock.state.channels['1'].layouts) l.active = l.id === '2'
-		}, ['channelLayout'])
+		}, ['channelLayout', 'channelLayoutPreview'])
 		await check(() => {
 			mock.state.storages.main.free = 5e8
 		}, ['storageState', 'storageFreeBelow'])
@@ -100,6 +100,16 @@ describe('poller diffing', () => {
 		assert.equal(instance.variableValues.system_cpuload_high, true)
 		assert.equal(instance.variableValues.afu_state, 'uploading')
 		assert.equal(instance.variableValues.event_ongoing_status, 'running')
+	})
+
+	it('carries the optimistic lastConfigPreset across a poll, like speedtest', async () => {
+		// the Pearl API has no read endpoint for either value; both are set only by their action
+		// and must survive the state object being rebuilt from scratch on every poll
+		instance.state.lastConfigPreset = { name: 'Show A', appliedAt: 12345 }
+		instance.state.speedtest = { bandwidth: 1000 }
+		await instance.pollAll()
+		assert.deepEqual(instance.state.lastConfigPreset, { name: 'Show A', appliedAt: 12345 })
+		assert.deepEqual(instance.state.speedtest, { bandwidth: 1000 })
 	})
 
 	it('renaming a channel rebuilds the definitions and checks all feedbacks', async () => {

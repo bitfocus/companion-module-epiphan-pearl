@@ -251,6 +251,9 @@ function emptyState() {
 		afu: [],
 		connectivity: undefined,
 		speedtest: undefined,
+		// optimistic: the Pearl API has no read endpoint for the currently applied preset, so this only
+		// reflects what was last applied through this connection, carried over across polls like speedtest
+		lastConfigPreset: undefined,
 	}
 }
 

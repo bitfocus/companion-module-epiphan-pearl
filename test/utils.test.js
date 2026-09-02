@@ -139,6 +139,7 @@ describe('utils', () => {
 			'firmware',
 			'identity',
 			'inputs',
+			'lastConfigPreset',
 			'outputs',
 			'presets',
 			'recorders',

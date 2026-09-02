@@ -17,7 +17,8 @@ function settled(entry, fallback = undefined) {
  * Feedback ids to re-check per state domain when that domain changed
  */
 const DOMAIN_FEEDBACKS = {
-	layouts: ['channelLayout'],
+	// channelLayoutPreview shows/hides its image based on which layout is active, same trigger as channelLayout
+	layouts: ['channelLayout', 'channelLayoutPreview'],
 	publishers: ['streamingState', 'publisherState', 'anyStreaming'],
 	recorders: ['recorderRecording', 'recorderState', 'anyRecording'],
 	storages: ['storageState', 'storageFreeBelow'],
@@ -327,6 +328,8 @@ module.exports = {
 			state.identity = prev.identity
 		}
 		state.speedtest = prev.speedtest
+		// optimistic, set by the applyConfigPreset action; the API has no read endpoint for it
+		state.lastConfigPreset = prev.lastConfigPreset
 
 		const round2Results = await Promise.allSettled(round2)
 		if (this.config.verbose) {
@@ -553,7 +556,7 @@ module.exports = {
 					this.previews[key] = { png64, fetchedAt: Date.now() }
 				}),
 			)
-			if (changed) this.checkFeedbacks('channelPreview', 'inputPreview', 'outputPreview')
+			if (changed) this.checkFeedbacks('channelPreview', 'inputPreview', 'outputPreview', 'channelLayoutPreview')
 		} catch (error) {
 			this.log('error', `Preview poll failed: ${error?.message || error}`)
 		}

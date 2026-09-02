@@ -388,6 +388,8 @@ function buildVariables(self) {
 			.filter((n) => n !== '')
 			.join(','),
 	)
+	// optimistic: last preset applied through this connection, not confirmed by the device (no read endpoint)
+	add('last_config_preset', 'Last Applied Configuration Preset', state.lastConfigPreset?.name)
 
 	return { definitions, values }
 }
