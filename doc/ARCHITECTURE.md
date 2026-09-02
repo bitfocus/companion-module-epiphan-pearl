@@ -337,10 +337,9 @@ Keep existing (Channels layouts, Publishers toggle, Recorders toggle + reset). A
 - `Config presets`: one button per device configuration preset (applyConfigPreset, empty sections = all)
 
 Preset ids must be unique and stable: `${category}_${safeId(...)}`. Use `type: 'button'`, `name` (not `label`).
-Variables in preset text use the instance label placeholder `$(pearl:...)`? No: presets must use `$(INSTANCE:var)` where Companion
-substitutes the label; in @companion-module/base presets use the literal string `$(pearl:varid)` and Companion rewrites the prefix on import.
-Actually Companion expects preset text to reference `$(label:var)`; modules conventionally write `$(pearl:...)` matching the
-manifest `shortname`. Use `$(pearl:...)`.
+Variables referenced in preset text/options are written as `$(pearl:variable_id)`. Companion rewrites the `pearl:` prefix
+to the actual connection label when a preset is added to a button (`replaceAllVariables` in companion/lib/Instance/Definitions.ts),
+so any prefix other than `local`/`internal`/`custom` works; `pearl` matches the manifest shortname and is the convention here.
 
 ## Utils (`src/utils.js`)
 
