@@ -299,7 +299,7 @@ class EpiphanPearl extends InstanceBase {
 			if (error.name === 'AbortError') {
 				this.setStatus(
 					InstanceStatus.ConnectionFailure,
-					'Request was aborted: ' + requestUrl + ' reason: ' + error.message
+					'Request was aborted: ' + requestUrl + ' reason: ' + error.message,
 				)
 				this.log('debug', error.message)
 				throw new Error(error)
@@ -313,11 +313,11 @@ class EpiphanPearl extends InstanceBase {
 		if (!response.ok) {
 			this.setStatus(
 				InstanceStatus.ConnectionFailure,
-				'Non-successful response status code: ' + http.STATUS_CODES[response.status] + ' ' + requestUrl
+				'Non-successful response status code: ' + http.STATUS_CODES[response.status] + ' ' + requestUrl,
 			)
 			this.log(
 				'debug',
-				'Non-successful response status code: ' + http.STATUS_CODES[response.status] + ' ' + requestUrl
+				'Non-successful response status code: ' + http.STATUS_CODES[response.status] + ' ' + requestUrl,
 			)
 			throw new Error('Non-successful response status code: ' + http.STATUS_CODES[response.status])
 		}
@@ -332,20 +332,20 @@ class EpiphanPearl extends InstanceBase {
 				'Non-successful response from pearl: ' +
 					requestUrl +
 					' - ' +
-					(body.message ? body.message : 'No error message')
+					(body.message ? body.message : 'No error message'),
 			)
 			this.log(
 				'debug',
 				'Non-successful response from pearl: ' +
 					requestUrl +
 					' - ' +
-					(body.message ? body.message : 'No error message')
+					(body.message ? body.message : 'No error message'),
 			)
 			throw new Error(
 				'Non-successful response from pearl: ' +
 					requestUrl +
 					' - ' +
-					(body.message ? body.message : 'No error message')
+					(body.message ? body.message : 'No error message'),
 			)
 		}
 
@@ -417,9 +417,8 @@ class EpiphanPearl extends InstanceBase {
 				requests.push(this.sendRequest('get', '/api/system/ident', {}))
 				requests.push(this.sendRequest('get', '/api/afu/status', {}))
 			}
-			;[channels, recorders, recorders_status, systemStatus, firmware, identity, afu] = await Promise.all(
-				requests
-			)
+			;[channels, recorders, recorders_status, systemStatus, firmware, identity, afu] =
+				await Promise.all(requests)
 		} catch (error) {
 			this.log('error', 'No valid answer from device')
 			return
@@ -467,7 +466,7 @@ class EpiphanPearl extends InstanceBase {
 				const publishersstatus = await this.sendRequest(
 					'get',
 					'/api/channels/' + channel.id + '/publishers/status',
-					{}
+					{},
 				)
 				publishersstatus.forEach((publisher) => {
 					if (state.channels[channel.id].publishers[publisher.id] === undefined)
@@ -502,16 +501,16 @@ class EpiphanPearl extends InstanceBase {
 			channelIds.reduce(
 				(acc, curr) =>
 					`${acc},${Object.keys(state.channels[curr].publishers).map(
-						(id) => state.channels[curr].publishers[id].name
+						(id) => state.channels[curr].publishers[id].name,
 					)}`,
-				''
+				'',
 			) !==
 			channelIds.reduce(
 				(acc, curr) =>
 					`${acc},${Object.keys(this.state.channels[curr].publishers).map(
-						(id) => this.state.channels[curr].publishers[id].name
+						(id) => this.state.channels[curr].publishers[id].name,
 					)}`,
-				''
+				'',
 			)
 		) {
 			updateNeeded = true
@@ -519,16 +518,16 @@ class EpiphanPearl extends InstanceBase {
 			channelIds.reduce(
 				(acc, curr) =>
 					`${acc},${Object.keys(state.channels[curr].layouts).map(
-						(id) => state.channels[curr].layouts[id].name
+						(id) => state.channels[curr].layouts[id].name,
 					)}`,
-				''
+				'',
 			) !==
 			channelIds.reduce(
 				(acc, curr) =>
 					`${acc},${Object.keys(this.state.channels[curr].layouts).map(
-						(id) => this.state.channels[curr].layouts[id].name
+						(id) => this.state.channels[curr].layouts[id].name,
 					)}`,
-				''
+				'',
 			)
 		) {
 			updateNeeded = true
@@ -543,16 +542,16 @@ class EpiphanPearl extends InstanceBase {
 				channelIds.reduce(
 					(acc, curr) =>
 						`${acc},${Object.keys(state.channels[curr].layouts).map(
-							(id) => state.channels[curr].layouts[id].active
+							(id) => state.channels[curr].layouts[id].active,
 						)}`,
-					''
+					'',
 				) !==
 				channelIds.reduce(
 					(acc, curr) =>
 						`${acc},${Object.keys(this.state.channels[curr].layouts).map(
-							(id) => this.state.channels[curr].layouts[id].active
+							(id) => this.state.channels[curr].layouts[id].active,
 						)}`,
-					''
+					'',
 				)
 			) {
 				feedbacksToCheck.push('channelLayout')
@@ -561,16 +560,16 @@ class EpiphanPearl extends InstanceBase {
 				channelIds.reduce(
 					(acc, curr) =>
 						`${acc},${Object.keys(state.channels[curr].layouts).map(
-							(id) => state.channels[curr].layouts[id].active
+							(id) => state.channels[curr].layouts[id].active,
 						)}`,
-					''
+					'',
 				) !==
 				channelIds.reduce(
 					(acc, curr) =>
 						`${acc},${Object.keys(this.state.channels[curr].layouts).map(
-							(id) => this.state.channels[curr].layouts[id].active
+							(id) => this.state.channels[curr].layouts[id].active,
 						)}`,
-					''
+					'',
 				)
 			) {
 				feedbacksToCheck.push('channelLayout')
@@ -579,16 +578,16 @@ class EpiphanPearl extends InstanceBase {
 				channelIds.reduce(
 					(acc, curr) =>
 						`${acc},${Object.keys(state.channels[curr].publishers).map((id) =>
-							JSON.stringify(state.channels[curr].publishers[id].status)
+							JSON.stringify(state.channels[curr].publishers[id].status),
 						)}`,
-					''
+					'',
 				) !==
 				channelIds.reduce(
 					(acc, curr) =>
 						`${acc},${Object.keys(this.state.channels[curr].publishers).map((id) =>
-							JSON.stringify(this.state.channels[curr].publishers[id].status)
+							JSON.stringify(this.state.channels[curr].publishers[id].status),
 						)}`,
-					''
+					'',
 				)
 			) {
 				feedbacksToCheck.push('streamingState')
@@ -596,11 +595,11 @@ class EpiphanPearl extends InstanceBase {
 			if (
 				recorderIds.reduce(
 					(acc, curr) => `${acc},${JSON.stringify(state.recorders[curr].status.state)}`,
-					''
+					'',
 				) !==
 				recorderIds.reduce(
 					(acc, curr) => `${acc},${JSON.stringify(this.state.recorders[curr].status.state)}`,
-					''
+					'',
 				)
 			) {
 				feedbacksToCheck.push('recorderRecording')

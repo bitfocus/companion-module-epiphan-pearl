@@ -40,7 +40,7 @@ module.exports = {
 				) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Channel and layout are not known! Please review your button config'
+						'Channel and layout are not known! Please review your button config',
 					)
 					this.debug('channelIdlayoutId: ' + action.options.channelIdlayoutId)
 					return
@@ -50,7 +50,7 @@ module.exports = {
 				if (!this.state.channels[channelId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing channel! Please review your button config'
+						'Action on non existing channel! Please review your button config',
 					)
 					this.log('error', 'Action on non existing channel: ' + channelId)
 					return
@@ -58,7 +58,7 @@ module.exports = {
 				if (!this.state.channels[channelId].layouts[layoutId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing layout! Please review your button config'
+						'Action on non existing layout! Please review your button config',
 					)
 					this.log('error', 'Action on non existing layout ' + layoutId + ' on channel ' + channelId)
 					return
@@ -114,7 +114,7 @@ module.exports = {
 				) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Channel or Publisher are not valid! Please review your button config'
+						'Channel or Publisher are not valid! Please review your button config',
 					)
 					this.debug('Undefined channelIdpublisherId ... ' + action.options.channelIdpublisherId)
 					return
@@ -124,7 +124,7 @@ module.exports = {
 				if (!this.state.channels[channelId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing channel! Please review your button config.'
+						'Action on non existing channel! Please review your button config.',
 					)
 					this.log('error', 'Action on non existing channel: ' + channelId)
 					return
@@ -132,7 +132,7 @@ module.exports = {
 				if (publisherId !== 'all' && !this.state.channels[channelId].publishers[publisherId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing publisher! Please review your button config.'
+						'Action on non existing publisher! Please review your button config.',
 					)
 					this.log('error', 'Action on non existing publisher ' + publisherId + ' on channel ' + channelId)
 					return
@@ -202,7 +202,7 @@ module.exports = {
 				if (!this.state.recorders[recorderId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing recorder! Please review your button config.'
+						'Action on non existing recorder! Please review your button config.',
 					)
 					this.log('warn', 'Action on non existing recorder ' + recorderId)
 					return
@@ -229,7 +229,7 @@ module.exports = {
 				} else {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Called an unknown action! Please review your button config.'
+						'Called an unknown action! Please review your button config.',
 					)
 					this.log('error', 'Called an unknown action: ' + action.options.startStopAction)
 					return
@@ -303,7 +303,7 @@ module.exports = {
 				) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Channel and layout are not known! Please review your button config'
+						'Channel and layout are not known! Please review your button config',
 					)
 					this.debug('channelIdlayoutId: ' + action.options.channelIdlayoutId)
 					return
@@ -313,7 +313,7 @@ module.exports = {
 				if (!this.state.channels[channelId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing channel! Please review your button config'
+						'Action on non existing channel! Please review your button config',
 					)
 					this.log('error', 'Action on non existing channel: ' + channelId)
 					return
@@ -321,7 +321,7 @@ module.exports = {
 				if (!this.state.channels[channelId].layouts[layoutId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing layout! Please review your button config'
+						'Action on non existing layout! Please review your button config',
 					)
 					this.log('error', 'Action on non existing layout ' + layoutId + ' on channel ' + channelId)
 					return
@@ -333,7 +333,7 @@ module.exports = {
 					const layoutData = JSON.stringify(await this.sendRequest('GET', url, {}))
 					this.log(
 						'debug',
-						`Layout Data retrieved for Channel ${this.state.channels[channelId].name}, Layout ${this.state.channels[channelId].layouts[layoutId].name}:\n${layoutData}`
+						`Layout Data retrieved for Channel ${this.state.channels[channelId].name}, Layout ${this.state.channels[channelId].layouts[layoutId].name}:\n${layoutData}`,
 					)
 					this.setCustomVariableValue(action.options.destination, layoutData)
 				} catch (error) {
@@ -368,7 +368,7 @@ module.exports = {
 				) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Channel and layout are not known! Please review your button config'
+						'Channel and layout are not known! Please review your button config',
 					)
 					this.debug('channelIdlayoutId: ' + action.options.channelIdlayoutId)
 					return
@@ -378,7 +378,7 @@ module.exports = {
 				if (!this.state.channels[channelId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing channel! Please review your button config'
+						'Action on non existing channel! Please review your button config',
 					)
 					this.log('error', 'Action on non existing channel: ' + channelId)
 					return
@@ -386,7 +386,7 @@ module.exports = {
 				if (!this.state.channels[channelId].layouts[layoutId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing layout! Please review your button config'
+						'Action on non existing layout! Please review your button config',
 					)
 					this.log('error', 'Action on non existing layout ' + layoutId + ' on channel ' + channelId)
 					return

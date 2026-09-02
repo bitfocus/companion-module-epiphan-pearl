@@ -42,7 +42,7 @@ module.exports = {
 				} catch (error) {
 					this.log(
 						'error',
-						`trying to read feedback for a non-existing layout (Channel ${channelId}, Layout ${layoutId})`
+						`trying to read feedback for a non-existing layout (Channel ${channelId}, Layout ${layoutId})`,
 					)
 				}
 				return false
@@ -85,7 +85,7 @@ module.exports = {
 				} catch (error) {
 					this.log(
 						'error',
-						`trying to read feedback for a non-existing publisher (Channel ${channelId}, Publisher ${publisherId})`
+						`trying to read feedback for a non-existing publisher (Channel ${channelId}, Publisher ${publisherId})`,
 					)
 					return false
 				}
@@ -115,7 +115,7 @@ module.exports = {
 				} catch (error) {
 					this.log(
 						'error',
-						`trying to read feedback for a non-existing recorder (${feedback.options.recorderId})`
+						`trying to read feedback for a non-existing recorder (${feedback.options.recorderId})`,
 					)
 					return false
 				}
