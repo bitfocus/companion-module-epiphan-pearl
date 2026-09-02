@@ -79,7 +79,10 @@ Other instance fields:
 - `this.previews = { [key]: { png64, fetchedAt } }` where key is `channel:<cid>`, `input:<sid>`, `output:<did>`
 - `this.previewSubscriptions = Map<key, count>` maintained by preview feedback subscribe/unsubscribe. Keys are registered
   regardless of `preview_interval` (Companion calls `subscribe` only once per feedback); `configUpdated()` keeps them and
-  calls `subscribeFeedbacks('channelPreview','inputPreview','outputPreview')` so Companion re-sends subscribe for placed feedbacks.
+  calls `subscribeFeedbacks('channelPreview','inputPreview','outputPreview','channelLayoutPreview')` so Companion
+  re-sends subscribe for placed feedbacks (all four preview feedback ids, `channelLayoutPreview` included).
+- `this.previewFailedKeys = Set<key>` keys whose most recent fetch failed, so `pollPreviews()` logs a `'warn'` once on
+  failure and once more on recovery instead of every poll; cleared on `configUpdated()`/`destroy()`.
 - `this.pollCounter` integer incremented every poll (used for "every Nth poll" work)
 - `this.pollPromise` promise of the running poll (`pollAll()` returns it to overlapping callers; `connect()` waits for a stale one before the first poll of a new configuration)
 - `this.configGeneration` incremented by every `configUpdated()`; a poll started under an older generation discards its result
@@ -222,10 +225,15 @@ state empty rather than aborting the whole poll):
 
 `async pollPreviews()` (bound to `this.previewTimer`, interval `preview_interval` s, only when > 0):
 for each key in `this.previewSubscriptions` with count > 0 fetch the image, store in `this.previews`,
-then `checkFeedbacks('channelPreview', 'inputPreview', 'outputPreview')` if anything changed. A call while a refresh is
-already running queues exactly one follow-up refresh (so a key subscribed meanwhile gets its first image) and resolves
-when that follow-up is done; an image whose key was unsubscribed while in flight is not cached. No-op on v1 and while
-`preview_interval` is 0 (subscriptions are kept, nothing is fetched).
+then `checkFeedbacks('channelPreview', 'inputPreview', 'outputPreview', 'channelLayoutPreview')` if anything changed.
+Keys are fetched `MAX_CONCURRENT_PREVIEWS` (3) at a time rather than all at once — the Pearl is an embedded device and a
+page with many preview buttons firing simultaneous requests overwhelms it, so most of them time out instead of a few
+taking slightly longer. A key whose fetch returns null (not found or the request failed/timed out) is added to
+`this.previewFailedKeys` and logged at `'warn'` the first time only; a later success removes it and logs one `'info'`
+line, so a persistently broken preview is visible without verbose logging but a single missed poll stays quiet. A call
+while a refresh is already running queues exactly one follow-up refresh (so a key subscribed meanwhile gets its first
+image) and resolves when that follow-up is done; an image whose key was unsubscribed while in flight is not cached.
+No-op on v1 and while `preview_interval` is 0 (subscriptions are kept, nothing is fetched).
 
 `updateSystem()` = setActionDefinitions(getActions()) + setFeedbackDefinitions(getFeedbacks()) + setPresetDefinitions(getPresets()).
 
@@ -240,9 +248,11 @@ All return `[{ id, label }]` sorted as the device lists them. Existing ids forma
 - `choicesRecorders()` -> id `rid`
 - `choicesInputs()` -> id `sid`, label `name (type)`
 - `choicesInputsWithAudio()` -> inputs where `audio === true`
+- `choicesInputsWithVideo()` -> inputs where `video === true`; used for anything that shows a picture (input preview
+  feedback/preset, output routing) so an audio-only child input (e.g. "HDMI-A Audio") is never offered
 - `choicesOutputs()` -> id `did`
 - `choicesOutputSources()` -> `[{id:'multiview',label:'Multi-viewer'},{id:'deviceinfo',...},{id:'console',...}]`
-  followed by channels (`id: cid`, label `Channel: name`) and inputs (`id: sid`, label `Input: name`)
+  followed by channels (`id: cid`, label `Channel: name`) and video-capable inputs only (`id: sid`, label `Input: name`)
 - `choicesStorages()` -> id `stid`
 - `choicesSingleTouch()` -> id `stcid`
 - `choicesConfigPresets()` -> id `preset.name`
@@ -388,7 +398,8 @@ so the currently active layout's button shows a live channel image and the other
   (blue) so the button matching the last-set source is highlighted
 - `Inputs`: per audio input mute/unmute pair (inputAudioMute)
 - `Previews`: per channel (channelPreview advanced feedback, text = channel name, size 7, `pngalignment` center),
-  per input (inputPreview), per output (outputPreview)
+  per video-capable input via `choicesInputsWithVideo()` (inputPreview; audio-only inputs have nothing to show and are
+  skipped), per output (outputPreview)
 - `Single touch`: per stc toggle button with `singleTouchPressed` (green) and `singleTouchOk` false -> red text
 - `Storage`: per storage status button (text uses `$(pearl:storage_{id}_free_gb) GB free`) with storageFreeBelow 10% red
 - `System`: CPU load `$(pearl:system_status_cpuload)%` with cpuLoadHigh, CPU temp with cpuTempHigh, Uptime, Reboot (systemReboot), Refresh

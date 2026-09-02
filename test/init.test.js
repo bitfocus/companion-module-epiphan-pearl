@@ -397,6 +397,7 @@ describe('configUpdated', () => {
 				'channelPreview',
 				'inputPreview',
 				'outputPreview',
+				'channelLayoutPreview',
 			])
 			await instance.pollPreviews()
 			assert.ok(mock.requests.some((r) => r.path === '/api/v2.0/channels/1/preview'))

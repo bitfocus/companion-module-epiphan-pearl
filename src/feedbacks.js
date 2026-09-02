@@ -699,7 +699,8 @@ module.exports = {
 		// ---------------------------------------------------------------------
 
 		feedbacks['channelPreview'] = previewFeedback(this, 'channel', 'Channel', this.choicesChannel())
-		feedbacks['inputPreview'] = previewFeedback(this, 'input', 'Input', this.choicesInputs())
+		// audio-only inputs have no picture to preview (no VU meter feedback exists yet either)
+		feedbacks['inputPreview'] = previewFeedback(this, 'input', 'Input', this.choicesInputsWithVideo())
 		feedbacks['outputPreview'] = previewFeedback(this, 'output', 'Output', this.choicesOutputs())
 
 		// ---------------------------------------------------------------------

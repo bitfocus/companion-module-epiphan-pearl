@@ -104,6 +104,19 @@ module.exports = {
 			}))
 	},
 
+	/**
+	 * Inputs that carry video, i.e. can produce a live preview image or be routed to a video output.
+	 * Excludes audio-only child inputs such as "HDMI-A Audio" (they have no picture to show).
+	 */
+	choicesInputsWithVideo() {
+		return Object.values(this.state?.inputs || {})
+			.filter((input) => input.video === true)
+			.map((input) => ({
+				id: String(input.id),
+				label: input.type ? `${input.name ?? input.id} (${input.type})` : `${input.name ?? input.id}`,
+			}))
+	},
+
 	/** Outputs -> id did */
 	choicesOutputs() {
 		return Object.values(this.state?.outputs || {}).map((output) => ({
@@ -112,13 +125,14 @@ module.exports = {
 		}))
 	},
 
-	/** Output sources: static entries, then channels, then inputs */
+	/** Output sources: static entries, then channels, then video-capable inputs (an output shows a picture, so an audio-only input is never a valid source) */
 	choicesOutputSources() {
 		const choices = OUTPUT_SOURCE_STATIC.map((c) => ({ ...c }))
 		for (const channel of Object.values(this.state?.channels || {})) {
 			choices.push({ id: String(channel.id), label: `Channel: ${channel.name ?? channel.id}` })
 		}
 		for (const input of Object.values(this.state?.inputs || {})) {
+			if (input.video !== true) continue
 			choices.push({ id: String(input.id), label: `Input: ${input.name ?? input.id}` })
 		}
 		return choices

@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.4.1] (2026-09-02)
+
+### Bug Fixes
+
+- Preview images are now fetched a few at a time instead of all subscribed previews at once. On real hardware, a page
+  with a dozen or more preview buttons fired that many simultaneous requests at the Pearl, an embedded device that
+  cannot reliably answer that many concurrent requests, so most images came back blank
+- A preview that stays unreachable now logs one warning (not one every poll) and one more when it recovers, so a
+  persistently broken preview is visible without turning on verbose logging
+- `channelLayoutPreview` (the new layout-button preview) is now re-subscribed after a config change, like the other
+  three preview feedbacks; it was previously omitted from that list and lost its subscription on any config change
+- Audio-only inputs (for example an "HDMI-A Audio" child input) are no longer offered a preview button — they have no
+  picture to show — and are no longer offered as an output routing source, since an output shows a picture
+
+---
+
 ## [2.4.0] (2026-09-02)
 
 ### New Features

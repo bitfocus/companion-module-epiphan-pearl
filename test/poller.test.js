@@ -354,3 +354,76 @@ describe('poller resilience', () => {
 		}
 	})
 })
+
+describe('preview image fetching: concurrency cap and failure visibility', () => {
+	let mock
+	let instance
+
+	before(async () => {
+		mock = await startMockPearl()
+		instance = await createInstance({ mock, config: { preview_interval: 1 } })
+	})
+
+	after(async () => {
+		await instance.destroy()
+		await mock.close()
+	})
+
+	it('fetches only a few images at a time, not every subscribed key at once', async () => {
+		// eight placed preview buttons is a realistic page; firing eight simultaneous requests at the
+		// device is what caused most of them to come back blank on real hardware
+		const keys = Array.from({ length: 8 }, (_, i) => `channel:${i}`)
+		instance.previewSubscriptions = new Map(keys.map((k) => [k, 1]))
+		instance.previews = {}
+
+		let active = 0
+		let maxActive = 0
+		instance.fetchPreviewImage = async () => {
+			active++
+			maxActive = Math.max(maxActive, active)
+			await new Promise((resolve) => setTimeout(resolve, 5))
+			active--
+			return 'AAAA'
+		}
+		try {
+			await instance.pollPreviews()
+			assert.ok(maxActive <= 3, `expected at most 3 concurrent fetches, saw ${maxActive}`)
+			assert.equal(Object.keys(instance.previews).length, 8, 'every subscribed key is still fetched eventually')
+		} finally {
+			delete instance.fetchPreviewImage
+		}
+	})
+
+	it('logs a warning once while a preview stays unreachable, and once more when it recovers', async () => {
+		instance.previewSubscriptions = new Map([['channel:1', 1]])
+		instance.previews = {}
+		instance.previewFailedKeys.clear()
+		instance.calls.log.length = 0
+
+		let fail = true
+		instance.fetchPreviewImage = async () => (fail ? null : 'AAAA')
+		try {
+			await instance.pollPreviews()
+			await instance.pollPreviews()
+			await instance.pollPreviews()
+			const warnings = instance.calls.log.filter(
+				(l) => l.level === 'warn' && /could not be fetched/.test(l.message),
+			)
+			assert.equal(warnings.length, 1, 'a persistent failure is logged once, not on every poll')
+			assert.ok(instance.previewFailedKeys.has('channel:1'))
+
+			instance.calls.log.length = 0
+			fail = false
+			await instance.pollPreviews()
+			assert.ok(instance.calls.log.some((l) => l.level === 'info' && /available again/.test(l.message)))
+			assert.equal(instance.previewFailedKeys.has('channel:1'), false)
+
+			// a second success in a row must not log a second recovery
+			instance.calls.log.length = 0
+			await instance.pollPreviews()
+			assert.ok(!instance.calls.log.some((l) => l.level === 'info' && /available again/.test(l.message)))
+		} finally {
+			delete instance.fetchPreviewImage
+		}
+	})
+})

@@ -81,4 +81,29 @@ describe('presets', () => {
 		assert.equal(presets.config_presets_apply_Show_A_3.steps[0].down[0].options.preset, 'Show.A')
 		assert.ok(instance.calls.log.some((l) => l.level === 'debug' && /duplicate preset id/.test(l.message)))
 	})
+
+	it('audio-only inputs get no preview button and are not offered as an output source', () => {
+		const presets = instance.definitions.presets
+		// analog-a is audio-only (video: false) in the mock; it has no picture to preview and
+		// cannot sensibly be routed to a video output
+		assert.equal(presets['previews_input_analog-a'], undefined)
+		assert.equal(presets['outputs_D1_source_analog-a'], undefined)
+		// video-capable inputs (video-only or video+audio) keep both
+		assert.ok(presets['previews_input_hdmi-a'])
+		assert.ok(presets['previews_input_USBA'])
+		assert.ok(presets['outputs_D1_source_hdmi-a'])
+		assert.ok(presets['outputs_D1_source_USBA'])
+
+		// the same filtering applies to the underlying feedback/action option lists, not just the presets
+		const inputPreviewChoices = instance.definitions.feedbacks.inputPreview.options
+			.find((o) => o.id === 'input')
+			.choices.map((c) => c.id)
+		assert.ok(!inputPreviewChoices.includes('analog-a'))
+		assert.ok(inputPreviewChoices.includes('hdmi-a'))
+		const outputSourceChoices = instance.definitions.actions.setOutputSource.options
+			.find((o) => o.id === 'source')
+			.choices.map((c) => c.id)
+		assert.ok(!outputSourceChoices.includes('analog-a'))
+		assert.ok(outputSourceChoices.includes('hdmi-a'))
+	})
 })

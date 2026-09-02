@@ -340,7 +340,8 @@ module.exports = {
 				}),
 			)
 		}
-		for (const input of this.choicesInputs()) {
+		// audio-only inputs have no picture to preview (no VU meter feedback exists yet either)
+		for (const input of this.choicesInputsWithVideo()) {
 			add(
 				presetId(CAT_PREVIEWS, 'input', input.id),
 				button({

@@ -5,6 +5,12 @@ const { stableJson, emptyState, metadataRetryDue } = require('./utils')
 const STRUCTURE_REFRESH_EVERY = 30
 /** every Nth poll the connectivity details are refreshed (when enabled) */
 const CONNECTIVITY_EVERY = 6
+/**
+ * Preview images are fetched this many at a time rather than all at once. The Pearl is an embedded
+ * device: firing one request per placed preview button (there can easily be a dozen or more) at the
+ * same instant tends to overwhelm it, so most of them time out instead of a few taking slightly longer.
+ */
+const MAX_CONCURRENT_PREVIEWS = 3
 
 /**
  * Return the fulfilled value of a Promise.allSettled entry or `fallback`
@@ -535,27 +541,47 @@ module.exports = {
 	},
 
 	/**
-	 * INTERNAL: the actual preview refresh (never throws)
+	 * INTERNAL: the actual preview refresh (never throws). Fetches at most MAX_CONCURRENT_PREVIEWS
+	 * images at a time so a page full of preview buttons does not fire dozens of simultaneous
+	 * requests at the device.
 	 */
 	async pollPreviewsInner() {
 		try {
 			const keys = [...this.previewSubscriptions.entries()].filter(([, count]) => count > 0).map(([key]) => key)
 			if (keys.length === 0) return
 			let changed = false
-			await Promise.allSettled(
-				keys.map(async (key) => {
-					const idx = key.indexOf(':')
-					if (idx <= 0) return
-					const kind = key.slice(0, idx)
-					const id = key.slice(idx + 1)
-					const png64 = await this.fetchPreviewImage(kind, id)
-					if (png64 === null) return
-					// unsubscribed while the image was in flight: do not cache it
-					if (!this.previewSubscriptions.has(key)) return
-					if (this.previews[key]?.png64 !== png64) changed = true
-					this.previews[key] = { png64, fetchedAt: Date.now() }
-				}),
-			)
+			for (let i = 0; i < keys.length; i += MAX_CONCURRENT_PREVIEWS) {
+				const batch = keys.slice(i, i + MAX_CONCURRENT_PREVIEWS)
+				await Promise.allSettled(
+					batch.map(async (key) => {
+						const idx = key.indexOf(':')
+						if (idx <= 0) return
+						const kind = key.slice(0, idx)
+						const id = key.slice(idx + 1)
+						const png64 = await this.fetchPreviewImage(kind, id)
+						if (png64 === null) {
+							// log once per key on failure (not every poll) so a persistently broken preview is
+							// visible without turning on verbose logging; a single missed poll stays quiet
+							if (!this.previewFailedKeys.has(key)) {
+								this.previewFailedKeys.add(key)
+								this.log(
+									'warn',
+									`Preview image for ${kind} ${id} could not be fetched (no signal, or the request failed/timed out). ` +
+										'Enable verbose logging to see the underlying request. This is logged once until it recovers.',
+								)
+							}
+							return
+						}
+						if (this.previewFailedKeys.delete(key)) {
+							this.log('info', `Preview image for ${kind} ${id} is available again`)
+						}
+						// unsubscribed while the image was in flight: do not cache it
+						if (!this.previewSubscriptions.has(key)) return
+						if (this.previews[key]?.png64 !== png64) changed = true
+						this.previews[key] = { png64, fetchedAt: Date.now() }
+					}),
+				)
+			}
 			if (changed) this.checkFeedbacks('channelPreview', 'inputPreview', 'outputPreview', 'channelLayoutPreview')
 		} catch (error) {
 			this.log('error', `Preview poll failed: ${error?.message || error}`)

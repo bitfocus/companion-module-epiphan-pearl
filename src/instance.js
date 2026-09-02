@@ -91,6 +91,8 @@ class EpiphanPearl extends InstanceBase {
 		this.previews = {}
 		/** preview subscriptions maintained by the preview feedbacks: Map<key, count> */
 		this.previewSubscriptions = new Map()
+		/** keys whose last fetch failed, so a 'warn' is logged once on failure and once on recovery, not every poll */
+		this.previewFailedKeys = new Set()
 		/** incremented on every poll */
 		this.pollCounter = 0
 		/** '/api' or '/api/v2.0', decided by determineApiBase() */
@@ -167,6 +169,7 @@ class EpiphanPearl extends InstanceBase {
 		this.state = emptyState()
 		this.metadata = {}
 		this.previews = {}
+		this.previewFailedKeys.clear()
 		this.pollCounter = 0
 		this.pollErrorLogged = false
 
@@ -214,7 +217,7 @@ class EpiphanPearl extends InstanceBase {
 		const previous = this.previewSubscriptions
 		this.previewSubscriptions = new Map()
 		try {
-			this.subscribeFeedbacks('channelPreview', 'inputPreview', 'outputPreview')
+			this.subscribeFeedbacks('channelPreview', 'inputPreview', 'outputPreview', 'channelLayoutPreview')
 		} catch (error) {
 			this.log('debug', `re-subscribing preview feedbacks failed: ${error?.message || error}`)
 		}
@@ -231,6 +234,7 @@ class EpiphanPearl extends InstanceBase {
 		this.stopTimers()
 		this.previewSubscriptions.clear()
 		this.previews = {}
+		this.previewFailedKeys.clear()
 		this.applyStatus(InstanceStatus.Disconnected)
 		this.log('debug', `destroy ${this.id}`)
 	}
