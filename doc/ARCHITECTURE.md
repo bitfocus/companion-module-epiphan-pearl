@@ -12,7 +12,7 @@ things v2.0 does not expose (see "Legacy-only endpoints").
 
 ```
 index.js              entrypoint only: require('./src/instance') + runEntrypoint
-src/instance.js       EpiphanPearl extends InstanceBase; wires everything; exports { EpiphanPearl, upgradeScripts }
+src/instance.js       EpiphanPearl extends InstanceBase; wires everything; exports { EpiphanPearl, upgradeScripts, PearlApiError, MIN_API_V2_VERSION }
 src/api.js            request layer (mixin methods: request, sendRequest, fetchPreviewImage)
 src/poller.js         polling + state diff + variable/feedback refresh (mixin methods)
 src/choices.js        dropdown choice builders (mixin methods)
@@ -90,7 +90,7 @@ Other instance fields:
 
 | id                | type      | default         | notes                                                                 |
 | ----------------- | --------- | --------------- | --------------------------------------------------------------------- |
-| host              | textinput | 192.168.255.250 | IP or hostname, validated with Regex.IP or Regex.HOSTNAME             |
+| host              | textinput | 192.168.255.250 | IP or hostname, validated with `REGEX_IP_OR_HOSTNAME` (see below)     |
 | host_port         | textinput | 80              | Regex.PORT                                                            |
 | username          | textinput | admin           |                                                                       |
 | password          | textinput | ''              |                                                                       |
@@ -103,6 +103,11 @@ Other instance fields:
 | poll_archive      | checkbox  | false           | poll last archive file per recorder                                   |
 | poll_connectivity | checkbox  | false           | poll /system/connectivity/details every 6th poll                      |
 | verbose           | checkbox  | false           |                                                                       |
+
+Companion's `Regex.IP` and `Regex.HOSTNAME` are single anchored patterns, so `config.js` builds its own
+`REGEX_IP_OR_HOSTNAME` constant (`/^(?:<IP>|<HOSTNAME>)$/`, both patterns with their slashes and anchors stripped and
+combined as alternatives) and exports it alongside `getConfigFields` (`module.exports = { getConfigFields, get_config_fields, REGEX_IP_OR_HOSTNAME }`).
+The field labels are the user-facing names used in `companion/HELP.md`; keep both in sync.
 
 `upgrades.js` adds defaults for new fields when undefined. Companion runs each upgrade script only once per connection,
 so an existing script is never extended: `setDefaultConfig` (v2.2.0) only sets `use_api_v2` / `verbose`, and the appended
@@ -190,9 +195,11 @@ state empty rather than aborting the whole poll):
 2. v2 only, every poll: `/system/status`, `/afu/status` (optional), `/inputs`, `/outputs`,
    `/system/storages` + `/system/storages/{id}/status` each, `/system/singletouchcontrol` + `/{id}/state` each,
    and when `poll_events`: `/schedule/events/upcoming` and `/schedule/events/ongoing` (both `optional`; 404 -> null).
-3. v2 only, every 30th poll and on the first poll: `/system/firmware`, `/system/ident`, `/system/presets?details=true`.
+3. v2 only, on the first poll and then every 30th poll (`STRUCTURE_REFRESH_EVERY`): `/system/firmware`, `/system/ident`,
+   `/system/presets?details=true`. In between, the previous values are carried over.
 4. Conditional: `poll_archive` -> `/recorders/{rid}/archive/files?from=0&limit=1` per recorder (v2);
-   `poll_connectivity` -> `/system/connectivity/details` every 6th poll (v2).
+   `poll_connectivity` -> `/system/connectivity/details` on the first poll and then every 6th poll (`CONNECTIVITY_EVERY`, v2),
+   previous value carried over in between.
 5. Swap `this.state`. Preserve `outputs[did].source` from the previous state (optimistic value).
 6. Diff:
    - `structureKey(state)` = JSON of ids+names of channels, layouts, publishers, recorders, inputs, outputs,
@@ -358,7 +365,9 @@ Keep existing (Channels layouts, Publishers toggle, Recorders toggle + reset). A
 - `Single touch`: per stc toggle button with `singleTouchPressed` (green) and `singleTouchOk` false -> red text
 - `Storage`: per storage status button (text uses `$(pearl:storage_{id}_free_gb) GB free`) with storageFreeBelow 10% red
 - `System`: CPU load `$(pearl:system_status_cpuload)%` with cpuLoadHigh, CPU temp with cpuTempHigh, Uptime, Reboot (systemReboot), Refresh
-- `Events`: Start upcoming, Stop ongoing, Pause, Resume, Extend +5 min, plus a status display button with eventStatus feedbacks
+- `Events`: "Start upcoming event", "Stop ongoing event", "Pause event", "Resume event", "Extend event +5 min", plus two status
+  display buttons with eventStatus feedbacks: "Ongoing event status" (title / status / remaining, green when running, yellow when
+  paused) and "Upcoming event status" (title / start time / countdown, purple when an upcoming event exists)
 - `AFU`: status display with afuState uploading (blue) / error (red)
 - `Config presets`: one button per device configuration preset (applyConfigPreset, empty sections = all)
 
@@ -373,7 +382,12 @@ so any prefix other than `local`/`internal`/`custom` works; `pearl` matches the 
 
 `safeId(str)`, `formatHms(seconds)`, `formatClock(unixSeconds)`, `bytesToMb(n)`, `bytesToGb(n)`, `round1(n)`,
 `splitPair(str)` (`'1-2' -> ['1','2']`, null when invalid), `stableJson(obj)` (JSON with sorted keys, for diffing),
-`parseJsonOption(text)` (returns object or throws with a readable message), `nonBlank(obj)` (drop '' / undefined values).
+`parseJsonOption(text)` (returns object or throws with a readable message), `nonBlank(obj)` (drop '' / undefined values),
+`toQueryString(query)` (`''` or `?a=b&c=d`; booleans -> 'true'/'false', undefined/null skipped, arrays comma-joined),
+`parseKeyValueText(text)` (legacy `key=value` per line response of `get_params.cgi` -> object),
+`firmwareVersionNumber(version)` (`'4.24.1' -> 42401`, null when unparseable; compared against `MIN_API_V2_VERSION`),
+`clampNumber(value, def, min, max)` (config normalisation), `metadataRetryDue(entry, now)` (see "Other instance fields"),
+`emptyState()` (the empty shape of `this.state` described above).
 
 ## Test harness
 

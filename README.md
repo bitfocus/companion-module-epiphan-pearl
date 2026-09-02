@@ -33,6 +33,10 @@ References while working on the code:
 - [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) is the implementation contract: file layout under `src/`, state shape,
   config fields, request layer, poller behaviour, choice builders and the ids of every action, feedback, variable and
   preset. Keep it up to date when behaviour changes.
+- `src/` holds the module code (instance, api, poller, choices, actions, feedbacks, variables, presets, config, upgrades,
+  utils); `index.js` is only the entrypoint.
+- `test/` holds the `node:test` suites plus `test/harness.js` (stub of `@companion-module/base`) and `test/mock-pearl.js`
+  (in-memory Pearl serving the v2.0 and legacy endpoints the module uses).
 
 Code style is CommonJS, ES2022, tabs, single quotes, no semicolons (prettier config from `@companion-module/tools`).
 Existing action, feedback and option ids must not change so that users' buttons keep working; use `src/upgrades.js`

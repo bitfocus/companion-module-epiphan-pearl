@@ -5,58 +5,59 @@ Control and monitor Epiphan Pearl encoders (Pearl-2, Pearl Mini, Pearl Nano, Pea
 ### Requirements
 
 - **Pearl firmware 4.24.1 or newer** for the full feature set. This module talks to the Pearl REST API v2.0 (`/api/v2.0/...`).
-- **Older firmware** still works: when the v2.0 API is not available (or "Use API v2.0" is unticked) the module falls back to the legacy `/api/...` API and offers the original feature set (layouts, streaming, recording, markers, layout data, content metadata, reboot/shutdown). Everything listed below as _v2.0 only_ is hidden or logs a warning on legacy devices.
+- **Older firmware** still works: when the v2.0 API is not available (or _Use API v2.0 (if available)_ is unticked) the module falls back to the legacy `/api/...` API and offers the original feature set (layouts, streaming, recording, markers, layout data, content metadata, reboot/shutdown). Everything listed below as _v2.0 only_ stays in the action and feedback lists on legacy devices, but an action logs a warning and does nothing when triggered, and a feedback is always false (previews stay blank).
 - A Pearl user with **admin** rights (the default `admin` account). Operator accounts cannot change settings.
 - Network access from the Companion host to the Pearl's HTTP port (80 by default).
 
 ### Connection settings
 
-| Setting                               | Meaning                                                                                                                                                                                                                                                                     |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Target IP / hostname**              | IP address or DNS name of the Pearl (default `192.168.255.250`).                                                                                                                                                                                                            |
-| **Target Port**                       | HTTP port of the Pearl web UI/API (default `80`).                                                                                                                                                                                                                           |
-| **Username**                          | Pearl account name (default `admin`).                                                                                                                                                                                                                                       |
-| **Password**                          | Password for that account. Leave blank if the Pearl has no password set.                                                                                                                                                                                                    |
-| **Feedback polling frequency**        | Seconds between state polls (1..300, default `10`). Every poll refreshes channels, publishers, recorders, inputs, outputs, storage, single touch and system status. Lower values react faster but put more load on the Pearl.                                               |
-| **Request timeout**                   | Milliseconds a single request may take before it is aborted (1000..60000, default `5000`).                                                                                                                                                                                  |
-| **Use API v2.0 (if available)**       | Ticked (default): probe for the v2.0 API and use it; fall back to the legacy API if it is missing. Untick to force the legacy API.                                                                                                                                          |
-| **Preview refresh interval**          | Seconds between preview image refreshes (default `2`). `0` disables preview feedbacks entirely. Only previews that are actually placed on a button are fetched, each one costs one image request per interval, so 6 preview buttons at 2 s means 3 requests/s to the Pearl. |
-| **Preview width**                     | Width in pixels requested from the Pearl for preview images (72..720, default `144`). Larger images look sharper on big surfaces but cost more bandwidth and CPU on the Pearl.                                                                                              |
-| **Poll CMS schedule**                 | Ticked (default): poll the upcoming and ongoing CMS event every poll (Kaltura, Panopto, YuJa, Opencast...). Untick if the Pearl is not connected to a CMS.                                                                                                                  |
-| **Poll last archive file**            | Off by default. When ticked, the newest recording of every recorder is fetched each poll and exposed as `recorder_N_last_file_*` variables.                                                                                                                                 |
-| **Poll network connectivity details** | Off by default. When ticked, `/system/connectivity/details` is fetched every 6th poll and exposed as `connectivity_*` variables.                                                                                                                                            |
-| **Enable verbose logging**            | Log every request and response at debug level. Useful when reporting a problem; leave off in normal use.                                                                                                                                                                    |
+The setting names below are the labels shown in the connection's settings page.
+
+| Setting                                                                      | Meaning                                                                                                                                                                                                                                                                                                                                               |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Target IP or hostname**                                                    | IP address or DNS name of the Pearl (default `192.168.255.250`).                                                                                                                                                                                                                                                                                      |
+| **Target Port**                                                              | HTTP port of the Pearl web UI/API (default `80`).                                                                                                                                                                                                                                                                                                     |
+| **Username**                                                                 | Pearl account name (default `admin`).                                                                                                                                                                                                                                                                                                                 |
+| **Password**                                                                 | Password for that account. Leave blank if the Pearl has no password set.                                                                                                                                                                                                                                                                              |
+| **Feedback polling frequency in seconds**                                    | Seconds between state polls (1..300, default `10`). Every poll refreshes channels, publishers, recorders, inputs, outputs, storage, single touch and system status. Firmware, device identity and the list of configuration presets are fetched on the first poll and then every 30th poll. Lower values react faster but put more load on the Pearl. |
+| **Request timeout in milliseconds**                                          | Milliseconds a single request may take before it is aborted (1000..60000, default `5000`).                                                                                                                                                                                                                                                            |
+| **Use API v2.0 (if available)**                                              | Ticked (default): probe for the v2.0 API and use it; fall back to the legacy API if it is missing. Untick to force the legacy API.                                                                                                                                                                                                                    |
+| **Preview image refresh interval in seconds (0 disables preview feedbacks)** | Seconds between preview image refreshes (0..300, default `2`). `0` disables preview feedbacks entirely. Only previews that are actually placed on a button are fetched, each one costs one image request per interval, so 6 preview buttons at 2 s means 3 requests/s to the Pearl.                                                                   |
+| **Preview image width in pixels**                                            | Width in pixels requested from the Pearl for preview images (72..720, default `144`). Larger images look sharper on big surfaces but cost more bandwidth and CPU on the Pearl.                                                                                                                                                                        |
+| **Poll CMS schedule (upcoming / ongoing events)**                            | Ticked (default): poll the upcoming and ongoing CMS event every poll (Kaltura, Panopto, YuJa, Opencast...). Untick if the Pearl is not connected to a CMS.                                                                                                                                                                                            |
+| **Poll last archive file per recorder**                                      | Off by default. When ticked, the newest recording of every recorder is fetched each poll and exposed as `recorder_N_last_file_*` variables.                                                                                                                                                                                                           |
+| **Poll network connectivity details (every 6th poll)**                       | Off by default. When ticked, `/system/connectivity/details` is fetched on the first poll and then every 6th poll and exposed as `connectivity_*` variables.                                                                                                                                                                                           |
+| **Enable verbose logging**                                                   | Log every request and response at debug level. Useful when reporting a problem; leave off in normal use.                                                                                                                                                                                                                                              |
 
 ### Actions
 
-Text options accept Companion variables (for example `$(internal:time_hms)` as a marker text). Actions never disable the connection when the Pearl rejects a request: the device's error message is written to the connection log.
+Action names are shown as `Category: verb` in Companion's action picker. Text options accept Companion variables (for example `$(internal:time_hms)` as a marker text). Actions never disable the connection when the Pearl rejects a request: the device's error message is written to the connection log.
 
 #### Channels & layouts
 
-| Action                    | Notes                                                                                                                            |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Change channel layout** | Activates the selected layout of a channel.                                                                                      |
-| **Set channel name**      | Renames a channel. _v2.0 only._                                                                                                  |
-| **Insert Marker**         | Adds a chapter bookmark with the given text to the recording that is currently running on the channel (MP4/MOV recordings only). |
-| **Get layout data**       | Reads the full layout JSON of a layout into a custom variable.                                                                   |
-| **Set layout data**       | Writes a layout JSON (usually obtained with _Get layout data_) back to a layout.                                                 |
-| **Get Content Metadata**  | Reads title, author and filename prefix of a channel into the `channel_N_metadata_*` variables.                                  |
-| **Set Content Metadata**  | Sets title, author and filename prefix of a channel.                                                                             |
+| Action                            | Notes                                                                                           |
+| --------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **Channel: change layout**        | Activates the selected layout of a channel.                                                     |
+| **Channel: set name**             | Renames a channel. _v2.0 only._                                                                 |
+| **Channel: get layout data**      | Reads the full layout JSON of a layout into a custom variable.                                  |
+| **Channel: set layout data**      | Writes a layout JSON (usually obtained with _Channel: get layout data_) back to a layout.       |
+| **Channel: get content metadata** | Reads title, author and filename prefix of a channel into the `channel_N_metadata_*` variables. |
+| **Channel: set content metadata** | Sets title, author and filename prefix of a channel.                                            |
 
 #### Streams / publishers
 
-| Action                         | Notes                                                                                                                                                                                                                                                                               |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Control streaming**          | Start, stop or toggle a single publisher or all publishers of a channel.                                                                                                                                                                                                            |
-| **Set publisher name**         | Renames a publisher. _v2.0 only._                                                                                                                                                                                                                                                   |
-| **Set publisher enabled**      | Enables/disables a publisher (disabled publishers are skipped by "all publishers" start). _v2.0 only._                                                                                                                                                                              |
-| **Set publisher single touch** | Includes/excludes a publisher from the front-panel single touch control. _v2.0 only._                                                                                                                                                                                               |
-| **Set RTMP destination**       | Sets URL, stream key, username and/or password of an RTMP(S) publisher. Blank fields are left unchanged. _v2.0 only._                                                                                                                                                               |
-| **Set SRT destination**        | Sets URL, stream id, port and/or latency of an SRT publisher and optionally its mode (caller/listener/rendezvous). The default mode _Unchanged_ keeps the mode configured on the device and only sends the fields you fill in; blank fields are always left unchanged. _v2.0 only._ |
-| **Patch publisher settings**   | Sends an arbitrary JSON partial update to a publisher's settings (`PATCH .../publishers/{pid}/settings`). Use this for protocol settings without a dedicated action. _v2.0 only._                                                                                                   |
-| **Add publisher**              | Creates a new publisher on a channel from a name and a JSON settings object (`POST .../publishers`). _v2.0 only._                                                                                                                                                                   |
+| Action                                      | Notes                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Stream: start/stop**                      | Start, stop or toggle a single publisher or all publishers of a channel (_Toggle Start/Stop_ starts all when at least one is not streaming).                                                                                                                                                                                     |
+| **Stream: set name**                        | Renames a publisher. _v2.0 only._                                                                                                                                                                                                                                                                                                |
+| **Stream: enable/disable**                  | Enables/disables a publisher (disabled publishers are skipped by "all publishers" start). _v2.0 only._                                                                                                                                                                                                                           |
+| **Stream: include in single touch control** | Includes/excludes a publisher from the front-panel single touch control. _v2.0 only._                                                                                                                                                                                                                                            |
+| **Stream: set RTMP destination**            | Sets URL, stream name/key, username and/or password of an RTMP(S) publisher. Blank fields are left unchanged. _v2.0 only._                                                                                                                                                                                                       |
+| **Stream: set SRT destination**             | Sets URL, stream id, listen port and/or latency (80..8000 ms) of an SRT publisher and optionally its mode (Caller / Listener / Rendezvous). The default mode _Unchanged (keep current mode)_ keeps the mode configured on the device and only sends the fields you fill in; blank fields are always left unchanged. _v2.0 only._ |
+| **Stream: patch settings (JSON)**           | Sends an arbitrary JSON partial update to a publisher's settings (`PATCH .../publishers/{pid}/settings`). Use this for protocol settings without a dedicated action. _v2.0 only._                                                                                                                                                |
+| **Stream: add publisher**                   | Creates a new publisher on a channel from an optional name and a JSON settings object (`POST .../publishers`). `type` is required; when `common` is missing the publisher is created disabled and excluded from single touch. _v2.0 only._                                                                                       |
 
-Example body for **Patch publisher settings** (RTMP, taken from the API reference):
+Example body for **Stream: patch settings (JSON)** (RTMP, taken from the API reference):
 
 ```json
 {
@@ -65,7 +66,7 @@ Example body for **Patch publisher settings** (RTMP, taken from the API referenc
 }
 ```
 
-Example settings for **Add publisher** (RTMP push):
+Example settings for **Stream: add publisher** (RTMP push):
 
 ```json
 {
@@ -85,23 +86,24 @@ Other publisher types use the same shape with `type` set to `rtsp`, `srt`, `hls`
 
 #### Recorders
 
-| Action                    | Notes                                                                                                                                           |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Control recording**     | Start, stop, reset or toggle a single recorder (channel recorder or multi-source recorder). Reset closes the current file and starts a new one. |
-| **Control all recorders** | Start or stop every recorder on the device at once. _v2.0 only._                                                                                |
+| Action                                 | Notes                                                                                                                                           |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Recorder: start/stop/reset**         | Start, stop, reset or toggle a single recorder (channel recorder or multi-source recorder). Reset closes the current file and starts a new one. |
+| **Recorder: start/stop all recorders** | Start or stop every recorder on the device at once. _v2.0 only._                                                                                |
+| **Recorder: insert marker (bookmark)** | Adds a chapter bookmark with the given text to the recording that is currently running on the channel (MP4/MOV recordings only).                |
 
 #### Inputs
 
-| Action                   | Notes                                                                                                                                                                                        |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Input audio mute**     | Mutes/unmutes the audio of an input. HDMI and SDI inputs are addressed through their `hdmi.audio` / `sdi.audio` settings, analog, USB and network inputs through `local_audio`. _v2.0 only._ |
-| **Input audio gain**     | Sets the gain (dB) of an audio input, for the stereo pair or for channel A / B individually (splitting the stereo pair). _v2.0 only._                                                        |
-| **Input audio delay**    | Sets the audio delay of an input in milliseconds (-300..300). HDMI and SDI inputs use their `hdmi.audio` / `sdi.audio` settings, all other inputs `audio.delay`. _v2.0 only._                |
-| **Input phantom power**  | Switches 48 V phantom power on or off on inputs that support it. _v2.0 only._                                                                                                                |
-| **Patch input settings** | Sends an arbitrary JSON partial update to an input's settings (`PATCH /inputs/{sid}/settings`). Not all inputs accept settings (the Pearl answers 405). _v2.0 only._                         |
-| **Create network input** | Creates a new RTSP, SRT, NDI, Web Graphics or Dante input from a type, a name and a JSON settings object (`POST /inputs`). _v2.0 only._                                                      |
+| Action                           | Notes                                                                                                                                                                                                                     |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Input: audio mute**            | Mutes/unmutes the audio of an input. HDMI and SDI inputs are addressed through their `hdmi.audio` / `sdi.audio` settings, analog, USB and network inputs through `local_audio`. _v2.0 only._                              |
+| **Input: audio gain**            | Sets the capture gain of an audio input (0..100; dB or %, depending on the device), for the stereo pair or for channel A / B individually (channel A / B switches the input to individual channel settings). _v2.0 only._ |
+| **Input: audio delay**           | Sets the audio delay of an input in milliseconds (-300..300). HDMI and SDI inputs use their `hdmi.audio` / `sdi.audio` settings, all other inputs `audio.delay`. _v2.0 only._                                             |
+| **Input: phantom power (48V)**   | Switches 48 V phantom power on or off. Only supported on XLR analog audio inputs (Pearl Mini, Pearl Nexus). _v2.0 only._                                                                                                  |
+| **Input: patch settings (JSON)** | Sends an arbitrary JSON partial update to an input's settings (`PATCH /inputs/{sid}/settings`). Not all inputs accept settings (the Pearl answers 405). _v2.0 only._                                                      |
+| **Input: create network input**  | Creates a new RTSP, SRT, NDI, Web graphics or Dante input from a type, an optional name and a JSON settings object (`POST /inputs`). _v2.0 only._                                                                         |
 
-Example settings for **Create network input** (type `srt`, SRT listener, taken from the API reference):
+Example settings for **Input: create network input** (type `SRT`, SRT listener, taken from the API reference):
 
 ```json
 {
@@ -122,7 +124,7 @@ Example settings for **Create network input** (type `srt`, SRT listener, taken f
 
 An SRT caller uses `"srt": { "mode": "caller", "latency": 80, "encryption": null, "url": "srt://10.2.4.6:1025", "stream_id": "", "source_port": 0 }` instead.
 
-Example body for **Patch input settings** (analog audio input):
+Example body for **Input: patch settings (JSON)** (analog audio input):
 
 ```json
 {
@@ -133,38 +135,40 @@ Example body for **Patch input settings** (analog audio input):
 
 #### Outputs
 
-| Action                | Notes                                                                                                                                                             |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Set output source** | Routes a video output (HDMI/SDI out) to the multi-viewer, device info screen, console, a channel or an input. Choose _Custom_ to type any source id. _v2.0 only._ |
+| Action                 | Notes                                                                                                                                                                                  |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Output: set source** | Routes a video output (HDMI/SDI out) to the multi-viewer, device information screen, console, a channel or an input. Choose _Custom (enter below)_ to type any source id. _v2.0 only._ |
 
 #### Single touch
 
-| Action                  | Notes                                                                                                                         |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| **Single touch toggle** | Presses the single touch control: starts or stops every recorder and publisher that is included in single touch. _v2.0 only._ |
+| Action                   | Notes                                                                                                                         |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Single touch: toggle** | Presses the single touch control: starts or stops every recorder and publisher that is included in single touch. _v2.0 only._ |
 
 #### Storage
 
-| Action            | Notes                                                                 |
-| ----------------- | --------------------------------------------------------------------- |
-| **Eject storage** | Safely ejects a removable storage (USB drive / SD card). _v2.0 only._ |
+| Action             | Notes                                                                                                     |
+| ------------------ | --------------------------------------------------------------------------------------------------------- |
+| **Storage: eject** | Safely ejects a removable storage (USB drive / SD card). The main storage cannot be ejected. _v2.0 only._ |
 
 #### Configuration presets
 
-| Action                         | Notes                                                                                                                                                                                                                                                                                  |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Apply configuration preset** | Applies a configuration preset stored on the Pearl. Optionally restrict to sections (`system`, `network`, `sources`, `edid`, `channels`, `afu`, `cms`, `avstudio`, `frontscreen`, `displays`); empty means all sections. The Pearl may reboot afterwards, this is logged. _v2.0 only._ |
+| Action                   | Notes                                                                                                                                                                                                                                                                |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Config preset: apply** | Applies a configuration preset stored on the Pearl. Optionally restrict to sections (System, Network, Sources, EDID, Channels, AFU, CMS, AV Studio, Front screen, Displays); empty means all sections. The Pearl may reboot afterwards, this is logged. _v2.0 only._ |
 
 #### CMS events
 
-| Action                    | Notes                                                                                                                                                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Event control**         | Start, stop, pause or resume a scheduled CMS event. Pick the _upcoming_ or _ongoing_ event (resolved at press time) or _Custom_ and type an event id. _v2.0 only._                                                                               |
-| **Extend event**          | Adds the given number of seconds (default 300) to the finish time of the running or paused event. _v2.0 only._                                                                                                                                   |
-| **Create ad-hoc event**   | Creates an ad-hoc event on the configured CMS from a JSON body (`POST /schedule/events`). Kaltura, Panopto and Opencast are supported. For Kaltura and Panopto an ad-hoc login session is normally required first, see limitations. _v2.0 only._ |
-| **Ad-hoc session logout** | Deletes the active ad-hoc login session (`DELETE /schedule/events/adhoc/session`). _v2.0 only._                                                                                                                                                  |
+The _Event_ picker of **Event: start/stop/pause/resume** and **Event: extend** offers the aliases _Upcoming (next scheduled) event_, _Ongoing event (running or paused)_, _Running event_, _Paused event_ and _Most recent completed event_ (all resolved by the Pearl at press time), plus _Custom event id (enter below)_ to type an event id (for example from `event_upcoming_id` / `event_ongoing_id`). The default is the ongoing event.
 
-Example body for **Create ad-hoc event** (Kaltura, taken from the API reference):
+| Action                             | Notes                                                                                                                                                                                                                                            |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Event: start/stop/pause/resume** | Start, stop, pause or resume the selected scheduled CMS event. _v2.0 only._                                                                                                                                                                      |
+| **Event: extend**                  | Adds the given number of seconds (1..86400, default 300) to the finish time of the selected (running or paused) event. _v2.0 only._                                                                                                              |
+| **Event: create ad-hoc event**     | Creates an ad-hoc event on the configured CMS from a JSON body (`POST /schedule/events`). Kaltura, Panopto and Opencast are supported. For Kaltura and Panopto an ad-hoc login session is normally required first, see limitations. _v2.0 only._ |
+| **Event: ad-hoc session logout**   | Deletes the active ad-hoc login session (`DELETE /schedule/events/adhoc/session`). _v2.0 only._                                                                                                                                                  |
+
+Example body for **Event: create ad-hoc event** (Kaltura, taken from the API reference):
 
 ```json
 {
@@ -180,13 +184,13 @@ Example body for **Create ad-hoc event** (Kaltura, taken from the API reference)
 
 #### System
 
-| Action                           | Notes                                                                                                                                                                   |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Reboot system**                | Reboots the Pearl.                                                                                                                                                      |
-| **Shutdown system**              | Powers the Pearl off.                                                                                                                                                   |
-| **Refresh connectivity details** | Fetches `/system/connectivity/details` once and updates the `connectivity_*` variables (independent of the polling option). _v2.0 only._                                |
-| **Run speed test**               | Runs the built-in uplink/downlink TCP or UDP speed test for the given number of seconds (default 10) and stores the result in the `speedtest_*` variables. _v2.0 only._ |
-| **Refresh state now**            | Polls the Pearl immediately instead of waiting for the next polling interval.                                                                                           |
+| Action                                   | Notes                                                                                                                                                                                                    |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **System: reboot**                       | Reboots the Pearl.                                                                                                                                                                                       |
+| **System: shutdown**                     | Powers the Pearl off.                                                                                                                                                                                    |
+| **System: refresh connectivity details** | Fetches `/system/connectivity/details` once and updates the `connectivity_*` variables (independent of the polling option). _v2.0 only._                                                                 |
+| **System: run speed test**               | Runs the built-in speed test (direction Uplink / Downlink, protocol TCP / UDP) for the given duration in seconds (1..300, default 10) and stores the result in the `speedtest_*` variables. _v2.0 only._ |
+| **System: refresh state now**            | Polls the Pearl immediately instead of waiting for the next polling interval.                                                                                                                            |
 
 ### Feedbacks
 
@@ -197,14 +201,14 @@ All feedbacks except the previews are boolean and change the button style when t
 | Feedback                                  | True when                                                 |
 | ----------------------------------------- | --------------------------------------------------------- |
 | **Change style on channel layout change** | The selected layout is the active layout of a channel.    |
-| **Channel preview**                       | Draws the live preview image of the channel. _v2.0 only._ |
+| **Channel preview image**                 | Draws the live preview image of the channel. _v2.0 only._ |
 
 #### Streams / publishers
 
 | Feedback                      | True when                                                                                                   |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| **Change style if streaming** | The selected publisher is streaming (or, for _all_, every publisher of the channel is streaming).           |
-| **Publisher state**           | The selected publisher is in the chosen state: started, stopped, starting, listening or error. _v2.0 only._ |
+| **Change style if streaming** | The selected publisher is streaming (or, for _All Streams_, every publisher of the channel is streaming).   |
+| **Publisher state**           | The selected publisher is in the chosen state: Started, Stopped, Starting, Listening or Error. _v2.0 only._ |
 | **Any publisher streaming**   | At least one publisher on the device is streaming. _v2.0 only._                                             |
 
 #### Recorders
@@ -212,43 +216,43 @@ All feedbacks except the previews are boolean and change the button style when t
 | Feedback                      | True when                                                                                                         |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | **Change style if recording** | The selected recorder is recording.                                                                               |
-| **Recorder state**            | The selected recorder is in the chosen state: started, stopped, paused, starting, error or disabled. _v2.0 only._ |
+| **Recorder state**            | The selected recorder is in the chosen state: Started, Stopped, Paused, Starting, Error or Disabled. _v2.0 only._ |
 | **Any recorder recording**    | At least one recorder on the device is recording. _v2.0 only._                                                    |
 
 #### Inputs and outputs
 
-| Feedback           | True when                                                |
-| ------------------ | -------------------------------------------------------- |
-| **Input preview**  | Draws the live preview image of the input. _v2.0 only._  |
-| **Output preview** | Draws the live preview image of the output. _v2.0 only._ |
+| Feedback                 | True when                                                |
+| ------------------------ | -------------------------------------------------------- |
+| **Input preview image**  | Draws the live preview image of the input. _v2.0 only._  |
+| **Output preview image** | Draws the live preview image of the output. _v2.0 only._ |
 
 #### Single touch
 
-| Feedback                 | True when                                                                                      |
-| ------------------------ | ---------------------------------------------------------------------------------------------- |
-| **Single touch pressed** | The single touch control is active (its recorders/publishers were started by it). _v2.0 only._ |
-| **Single touch OK**      | All recorders and publishers included in single touch report a healthy state. _v2.0 only._     |
+| Feedback                        | True when                                                                                      |
+| ------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **Single touch control active** | The single touch control is active (its recorders/publishers were started by it). _v2.0 only._ |
+| **Single touch control OK**     | All recorders and publishers included in single touch started successfully. _v2.0 only._       |
 
 #### Storage
 
-| Feedback               | True when                                                                                                          |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **Storage state**      | The storage is in the chosen state: ready, no device, device present, read-only device or formatting. _v2.0 only._ |
-| **Storage free below** | Free space of the storage is below the given percentage (default 10 %). _v2.0 only._                               |
+| Feedback                     | True when                                                                                                                                  |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Storage state**            | The storage is in the chosen state: _Ready_, _No device_, _Device present (not mounted)_, _Device read-only_ or _Formatting_. _v2.0 only._ |
+| **Storage free space below** | Free space of the storage is below the given percentage (default 10 %). _v2.0 only._                                                       |
 
 #### CMS events
 
-| Feedback         | True when                                                                                                                          |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| **Event status** | There is an upcoming event / the ongoing event is running / the ongoing event is paused / there is any ongoing event. _v2.0 only._ |
+| Feedback         | True when                                                                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Event status** | The chosen condition holds: _An upcoming event is scheduled_, _Ongoing event is running_, _Ongoing event is paused_ or _An event is ongoing (running or paused)_. _v2.0 only._ |
 
 #### System
 
-| Feedback          | True when                                                                                              |
-| ----------------- | ------------------------------------------------------------------------------------------------------ |
-| **AFU state**     | Automatic file upload is in the chosen state: idle, paused, uploading, error or disabled. _v2.0 only._ |
-| **CPU load high** | The Pearl reports its CPU load as too high. _v2.0 only._                                               |
-| **CPU temp high** | The CPU temperature has reached the device's threshold. _v2.0 only._                                   |
+| Feedback                        | True when                                                                                                              |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Automatic file upload state** | Any automatic file upload destination is in the chosen state: Idle, Paused, Uploading, Error or Disabled. _v2.0 only._ |
+| **CPU load high**               | The Pearl reports its CPU load as too high. _v2.0 only._                                                               |
+| **CPU temperature high**        | The CPU temperature has reached the device's threshold. _v2.0 only._                                                   |
 
 ### Variables
 
@@ -256,15 +260,15 @@ Use variables as `$(pearl:variable_id)` where `pearl` is the label you gave the 
 
 #### Channels & layouts
 
-| Variable                                             | Content                                                       |
-| ---------------------------------------------------- | ------------------------------------------------------------- |
-| `channel_N_name`                                     | Channel name                                                  |
-| `channel_N_active_layout`                            | Name of the active layout                                     |
-| `channel_N_active_layout_id`                         | Id of the active layout                                       |
-| `channel_N_resolution`, `_fps`, `_bitrate`           | Video encoder resolution, frame rate and bitrate (kbit/s)     |
-| `channel_N_publishers_count`                         | Number of publishers on the channel                           |
-| `channel_N_streaming_count`                          | Number of publishers currently streaming                      |
-| `channel_N_metadata_title`, `_author`, `_rec_prefix` | Content metadata (after _Get Content Metadata_ or first poll) |
+| Variable                                             | Content                                                                |
+| ---------------------------------------------------- | ---------------------------------------------------------------------- |
+| `channel_N_name`                                     | Channel name                                                           |
+| `channel_N_active_layout`                            | Name of the active layout                                              |
+| `channel_N_active_layout_id`                         | Id of the active layout                                                |
+| `channel_N_resolution`, `_fps`, `_bitrate`           | Video encoder resolution, frame rate and bitrate (kbit/s)              |
+| `channel_N_publishers_count`                         | Number of publishers on the channel                                    |
+| `channel_N_streaming_count`                          | Number of publishers currently streaming                               |
+| `channel_N_metadata_title`, `_author`, `_rec_prefix` | Content metadata (after _Channel: get content metadata_ or first poll) |
 
 #### Streams / publishers
 
@@ -280,15 +284,15 @@ Use variables as `$(pearl:variable_id)` where `pearl` is the label you gave the 
 
 #### Recorders
 
-| Variable                                                                | Content                                                  |
-| ----------------------------------------------------------------------- | -------------------------------------------------------- |
-| `recorder_N_name`                                                       | Recorder name                                            |
-| `recorder_N_state`                                                      | started / stopped / paused / starting / error / disabled |
-| `recorder_N_active`                                                     | Whether the recorder is active                           |
-| `recorder_N_duration`, `_duration_hms`                                  | Seconds of the current recording and as `HH:MM:SS`       |
-| `recorder_N_total`                                                      | Bytes written in the current recording                   |
-| `recorder_N_last_file_name`, `_last_file_size_mb`, `_last_file_created` | Newest archive file (needs _Poll last archive file_)     |
-| `recorders_active_count`                                                | Recorders recording on the whole device                  |
+| Variable                                                                | Content                                                           |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `recorder_N_name`                                                       | Recorder name                                                     |
+| `recorder_N_state`                                                      | started / stopped / paused / starting / error / disabled          |
+| `recorder_N_active`                                                     | Whether the recorder is active                                    |
+| `recorder_N_duration`, `_duration_hms`                                  | Seconds of the current recording and as `HH:MM:SS`                |
+| `recorder_N_total`                                                      | Bytes written in the current recording                            |
+| `recorder_N_last_file_name`, `_last_file_size_mb`, `_last_file_created` | Newest archive file (needs _Poll last archive file per recorder_) |
+| `recorders_active_count`                                                | Recorders recording on the whole device                           |
 
 #### Inputs and outputs
 
@@ -341,6 +345,8 @@ Use variables as `$(pearl:variable_id)` where `pearl` is the label you gave the 
 
 #### System
 
+Firmware, product, identity and configuration preset variables are refreshed on the first poll and then every 30th poll.
+
 | Variable                                                                                                                                                                                                             | Content                                               |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
 | `system_status_date`                                                                                                                                                                                                 | Device date/time                                      |
@@ -352,40 +358,40 @@ Use variables as `$(pearl:variable_id)` where `pearl` is the label you gave the 
 | `identity_name`, `identity_location`, `identity_description`                                                                                                                                                         | Device identity fields                                |
 | `config_presets`                                                                                                                                                                                                     | Comma separated names of stored configuration presets |
 | `connectivity_external_ip`, `connectivity_mdns`, `connectivity_dns`, `connectivity_http`, `connectivity_https`, `connectivity_captive_portal`, `connectivity_icmp`, `connectivity_epiphan_edge`, `connectivity_vtun` | Network connectivity check results                    |
-| `speedtest_bandwidth_mbps`, `speedtest_protocol`, `speedtest_mode`, `speedtest_duration`, `speedtest_udp_loss`                                                                                                       | Result of the last _Run speed test_                   |
+| `speedtest_bandwidth_mbps`, `speedtest_protocol`, `speedtest_mode`, `speedtest_duration`, `speedtest_udp_loss`                                                                                                       | Result of the last _System: run speed test_           |
 
 ### Presets
 
 Presets are generated from what the Pearl reports, so they appear after the first successful poll.
 
-| Category           | Buttons                                                                                                        |
-| ------------------ | -------------------------------------------------------------------------------------------------------------- |
-| **Channels**       | One button per layout of every channel; red while that layout is active.                                       |
-| **Publishers**     | One toggle button per publisher and per "all publishers" of a channel; green while streaming.                  |
-| **Recorders**      | Toggle and reset button per recorder (red while recording), plus _All recorders start_ / _All recorders stop_. |
-| **Outputs**        | One button per output and source (multi-viewer, device info, console, each channel, each input).               |
-| **Inputs**         | Mute / unmute pair per audio input.                                                                            |
-| **Previews**       | Live thumbnail button per channel, input and output.                                                           |
-| **Single touch**   | Toggle button per single touch control; green while pressed, red text when something it controls is unhealthy. |
-| **Storage**        | Status button per storage showing `... GB free`; red when below 10 % free.                                     |
-| **System**         | CPU load, CPU temperature, uptime, reboot and refresh buttons.                                                 |
-| **Events**         | Start upcoming, stop / pause / resume ongoing, extend +5 min, and a status display button.                     |
-| **AFU**            | Upload status display (blue while uploading, red on error).                                                    |
-| **Config presets** | One button per configuration preset stored on the Pearl (applies all sections).                                |
+| Category           | Buttons                                                                                                                                                                                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Channels**       | One button per layout of every channel; red while that layout is active.                                                                                                                                                                                  |
+| **Publishers**     | One toggle button per publisher and per "all publishers" of a channel; green while streaming.                                                                                                                                                             |
+| **Recorders**      | Toggle and reset button per recorder (red while recording), plus _All recorders start_ / _All recorders stop_.                                                                                                                                            |
+| **Outputs**        | One button per output and source (multi-viewer, device information, console, each channel, each input).                                                                                                                                                   |
+| **Inputs**         | Mute / unmute pair per audio input.                                                                                                                                                                                                                       |
+| **Previews**       | Live thumbnail button per channel, input and output.                                                                                                                                                                                                      |
+| **Single touch**   | Toggle button per single touch control; green while pressed, red text when something it controls is unhealthy.                                                                                                                                            |
+| **Storage**        | Status button per storage showing `... GB free`; red when below 10 % free.                                                                                                                                                                                |
+| **System**         | CPU load, CPU temperature, uptime, reboot and refresh buttons.                                                                                                                                                                                            |
+| **Events**         | _Start upcoming event_, _Stop ongoing event_, _Pause event_, _Resume event_, _Extend event +5 min_, and two status display buttons: _Ongoing event status_ (title, running/paused, time left) and _Upcoming event status_ (title, start time, countdown). |
+| **AFU**            | Upload status display (blue while uploading, red on error).                                                                                                                                                                                               |
+| **Config presets** | One button per configuration preset stored on the Pearl (applies all sections).                                                                                                                                                                           |
 
 ### Tips
 
-- **Toggle streams and recorders from presets.** The Publisher and Recorder presets use the _Toggle_ action with a state feedback, so one button both shows and switches the state. Drag them onto a page and rename as needed.
+- **Toggle streams and recorders from presets.** The Publisher and Recorder presets use the _Toggle Start/Stop_ option of _Stream: start/stop_ / _Recorder: start/stop/reset_ together with a state feedback, so one button both shows and switches the state. Drag them onto a page and rename as needed.
 - **Put live numbers on buttons.** Button text like `REC\n$(pearl:recorder_1_duration_hms)` or `$(pearl:storage_sd_free_gb) GB` updates every poll. Countdown variables such as `$(pearl:event_upcoming_starts_in_hms)` are recomputed every poll too.
-- **Preview thumbnails on a Stream Deck.** Add the _Channel preview_ / _Input preview_ / _Output preview_ feedback (or the Previews presets) and set _Preview width_ to roughly the button size (72 for a classic Stream Deck key, 144 for XL/+ keys, larger for Stream Deck displays). Keep the refresh interval at 1..2 s and only place the previews you need, every one costs a request per interval.
-- **Confirm dangerous buttons.** Reboot, shutdown, eject storage and apply configuration preset act immediately. Consider putting them on a second step or a separate page.
-- **Many channels or presets?** Lower polling frequency (for example 15..30 s) reduces load on the Pearl; use _Refresh state now_ on a button when you need an immediate update.
+- **Preview thumbnails on a Stream Deck.** Add the _Channel preview image_ / _Input preview image_ / _Output preview image_ feedback (or the Previews presets) and set _Preview image width in pixels_ to roughly the button size (72 for a classic Stream Deck key, 144 for XL/+ keys, larger for Stream Deck displays). Keep _Preview image refresh interval in seconds_ at 1..2 s and only place the previews you need, every one costs a request per interval.
+- **Confirm dangerous buttons.** _System: reboot_, _System: shutdown_, _Storage: eject_ and _Config preset: apply_ act immediately. Consider putting them on a second step or a separate page.
+- **Many channels or presets?** A higher _Feedback polling frequency in seconds_ (for example 15..30 s) reduces load on the Pearl; use _System: refresh state now_ on a button when you need an immediate update.
 - **Something does not react?** Turn on _Enable verbose logging_, retry, and read the connection log: the Pearl's own error message (for example "Input settings are not supported") is logged for every rejected request.
 
 ### Known limitations
 
-- **Layouts come from the legacy API.** REST API v2.0 has no endpoint to list layouts or to read/write layout settings, so the layout dropdowns, the active layout feedback and _Get/Set layout data_ still use the legacy `/api/channels/{id}/layouts` endpoints. They work on all supported firmware versions.
+- **Layouts come from the legacy API.** REST API v2.0 has no endpoint to list layouts or to read/write layout settings, so the layout dropdowns, the active layout feedback and _Channel: get layout data_ / _Channel: set layout data_ still use the legacy `/api/channels/{id}/layouts` endpoints. They work on all supported firmware versions.
 - **No output source feedback.** The API can set an output's source but has no endpoint to read it back. `output_ID_source` therefore only reflects the last value set through Companion and is empty after a restart.
-- **Not exposed on purpose.** Factory reset, deleting publishers and the ad-hoc CMS login (which would require CMS user credentials in a button) are deliberately not offered. _Create ad-hoc event_ on Kaltura/Panopto therefore only works when a login session already exists on the Pearl (created from its web UI) or when the CMS configuration does not require one.
-- **Content metadata uses the admin CGI.** Title/author/prefix are read and written through `/admin/channelN/get_params.cgi` and `set_params.cgi` because they are not part of the REST API.
-- **Legacy firmware** (before 4.24.1, or with _Use API v2.0_ unticked) only offers the original actions, feedbacks and variables; everything marked _v2.0 only_ is unavailable and logs a warning if triggered.
+- **Not exposed on purpose.** Factory reset, deleting publishers and the ad-hoc CMS login (which would require CMS user credentials in a button) are deliberately not offered. _Event: create ad-hoc event_ on Kaltura/Panopto therefore only works when a login session already exists on the Pearl (created from its web UI) or when the CMS configuration does not require one.
+- **Content metadata uses the admin CGI.** Title/author/prefix are read and written through `/admin/channelN/get_params.cgi` and `set_params.cgi` because they are not part of the REST API. When the Pearl does not answer, the fetch is retried with an increasing back-off (1 minute after the first failure, up to 10 minutes) and only the first failure is logged as an error.
+- **Legacy firmware** (before 4.24.1, or with _Use API v2.0 (if available)_ unticked) only offers the original actions, feedbacks and variables. Everything marked _v2.0 only_ is still listed but not functional: such an action logs a warning and does nothing when triggered, such a feedback is always false, and its variables stay empty.
