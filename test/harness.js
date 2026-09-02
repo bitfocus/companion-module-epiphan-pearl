@@ -276,6 +276,8 @@ async function createInstance({ config = {}, mock } = {}) {
 	const instance = new EpiphanPearl({ id: 'test', upgradeScripts: [], _isInstanceBaseProps: true })
 	instance.mock = mock
 	await instance.init(fullConfig)
+	// init returns before the device is contacted (Companion limits its duration); wait for the first poll
+	await instance.startupPromise
 	return instance
 }
 

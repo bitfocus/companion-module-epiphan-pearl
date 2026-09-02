@@ -80,9 +80,10 @@ Other instance fields:
   regardless of `preview_interval` (Companion calls `subscribe` only once per feedback); `configUpdated()` keeps them and
   calls `subscribeFeedbacks('channelPreview','inputPreview','outputPreview')` so Companion re-sends subscribe for placed feedbacks.
 - `this.pollCounter` integer incremented every poll (used for "every Nth poll" work)
-- `this.pollPromise` promise of the running poll (`pollAll()` returns it to overlapping callers; `configUpdated()` awaits it)
+- `this.pollPromise` promise of the running poll (`pollAll()` returns it to overlapping callers; `connect()` waits for a stale one before the first poll of a new configuration)
 - `this.configGeneration` incremented by every `configUpdated()`; a poll started under an older generation discards its result
-- `this.systemUpdateCount` number of `updateSystem()` calls (lets `configUpdated()` skip a redundant definitions update)
+- `this.systemUpdateCount` number of `updateSystem()` calls (used by tests)
+- `this.startupPromise` promise of the background `connect()` started by the last `configUpdated()`
 - `this.timer`, `this.previewTimer` interval handles
 - `this.lastVariableIds` string (sorted variable ids joined) to avoid redundant `setVariableDefinitions`
 
@@ -115,9 +116,13 @@ so an existing script is never extended: `setDefaultConfig` (v2.2.0) only sets `
 The exported order is fixed: `setDefaultConfig`, `renameStreaming`, `setDefaultConfigV230`; a future version appends
 a new script (values from `CONFIG_DEFAULTS`, which must match the field defaults above).
 
-`configUpdated(config)`: stops the timers, bumps `configGeneration`, awaits a running `pollPromise`, normalises and validates the
-config (BadConfig -> still `updateSystem()` so definitions exist, then return), resets state/metadata/previews,
-`determineApiBase()`, `pollAll()`, `updateSystem()` only if that poll did not already do it, re-subscribes previews, restarts timers.
+`configUpdated(config)`: stops the timers, bumps `configGeneration`, normalises and validates the config (BadConfig -> still
+`updateSystem()` so definitions exist, then return), resets state/metadata/previews, publishes the definitions for the empty
+state and returns immediately, storing `this.startupPromise = this.connect(generation)`. Companion restarts a module whose
+`init`/`configUpdated` takes more than a few seconds, and an unreachable device costs two request timeouts, so the first
+contact must not be awaited. `connect(generation)` runs `determineApiBase()`, waits for a stale `pollPromise`, runs the first
+`pollAll()` (which rebuilds the definitions when the structure changed), re-subscribes previews and starts the timers; it stops
+silently when `configGeneration` moved on. Tests await `instance.startupPromise` after `init`/`configUpdated`.
 
 ## Request layer (`src/api.js`)
 

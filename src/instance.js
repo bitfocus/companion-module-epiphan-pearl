@@ -149,15 +149,9 @@ class EpiphanPearl extends InstanceBase {
 	 */
 	async configUpdated(config) {
 		this.stopTimers()
-		// a poll that is still running belongs to the old configuration: it must not swap in its state
+		// a poll that is still running belongs to the old configuration; the generation guard in
+		// pollAllInner makes it discard its result, so there is no need to wait for it here
 		this.configGeneration++
-		if (this.pollPromise) {
-			try {
-				await this.pollPromise
-			} catch {
-				// pollAll never rejects, but be safe
-			}
-		}
 		this.config = normaliseConfig(config)
 
 		const problem = validateConfig(this.config)
@@ -176,17 +170,35 @@ class EpiphanPearl extends InstanceBase {
 		this.pollCounter = 0
 		this.pollErrorLogged = false
 
-		const updatesBefore = this.systemUpdateCount
+		// publish definitions for the (still empty) state right away; the first poll refreshes them
+		this.updateSystem()
+
+		// Companion allows init()/configUpdated() only a few seconds before it restarts the module,
+		// and an unreachable device costs two request timeouts, so the first contact runs in the background.
+		this.startupPromise = this.connect(this.configGeneration)
+	}
+
+	/**
+	 * INTERNAL: first contact with the device for one configuration generation.
+	 * Determines the API base, runs the first poll, re-subscribes previews and starts the timers.
+	 * Never throws. Stops silently when the configuration changed underneath it.
+	 *
+	 * @param {number} generation - value of this.configGeneration this connection belongs to
+	 */
+	async connect(generation) {
 		try {
 			await this.determineApiBase()
+			if (generation !== this.configGeneration) return
+			// a poll from the previous configuration may still be running; pollAll() would join it and its
+			// result is discarded by the generation guard, so let it finish before polling for real
+			if (this.pollPromise) await this.pollPromise.catch(() => {})
+			if (generation !== this.configGeneration) return
 			await this.pollAll()
 		} catch (error) {
 			this.log('error', `Initialisation failed: ${error?.message || error}`)
 		}
-		// the first poll already rebuilt the definitions when the structure changed; do not do it twice
-		if (this.systemUpdateCount === updatesBefore) this.updateSystem()
+		if (generation !== this.configGeneration) return
 		this.resubscribePreviews()
-
 		this.initInterval()
 		this.initPreviewInterval()
 	}

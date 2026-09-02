@@ -388,6 +388,7 @@ describe('configUpdated', () => {
 
 			mock.requests.length = 0
 			await instance.configUpdated({ ...DEFAULT_CONFIG, host_port: mock.port, preview_interval: 1 })
+			await instance.startupPromise
 
 			assert.ok(instance.previewTimer, 'preview timer started')
 			assert.equal(instance.previewSubscriptions.get('channel:1'), 1, 'subscription preserved')
@@ -407,22 +408,28 @@ describe('configUpdated', () => {
 		}
 	})
 
-	it('waits for a running poll, discards its result and rebuilds the definitions once', async () => {
+	it('returns before the device is contacted, discards a stale poll and rebuilds the definitions', async () => {
 		const mock = await startMockPearl()
 		const instance = await createInstance({ mock })
 		try {
-			assert.equal(instance.systemUpdateCount, 1, 'init rebuilt the definitions exactly once')
+			assert.equal(
+				instance.systemUpdateCount,
+				2,
+				'init published empty definitions, then the first poll rebuilt them',
+			)
 			assert.equal(instance.pollCounter, 1)
 
 			const running = instance.pollAll()
 			assert.ok(instance.pollPromise)
 			const update = instance.configUpdated({ ...DEFAULT_CONFIG, host_port: mock.port, pollfreq: 200 })
-			await Promise.all([running, update])
+			await update
+			assert.equal(instance.timer, undefined, 'configUpdated returned before the device was contacted')
+			await Promise.all([running, instance.startupPromise])
 
 			assert.equal(instance.config.pollfreq, 200)
 			assert.equal(instance.pollCounter, 1, 'the poll that was running during the change does not count')
 			assert.equal(Object.keys(instance.state.channels).length, 2)
-			assert.equal(instance.systemUpdateCount, 2, 'the first poll of the new config rebuilt the definitions')
+			assert.equal(instance.systemUpdateCount, 4, 'empty definitions plus the first poll of the new config')
 			assert.equal(instance.currentStatus, InstanceStatus.Ok)
 			assert.deepEqual(
 				instance.calls.log.filter((l) => l.level === 'error'),
@@ -443,6 +450,7 @@ describe('configUpdated', () => {
 			assert.equal(instance.apiBasePath, '/api/v2.0')
 			legacy.requests.length = 0
 			await instance.configUpdated({ ...DEFAULT_CONFIG, host_port: legacy.port })
+			await instance.startupPromise
 			assert.equal(instance.apiBasePath, '/api')
 			assert.equal(Object.keys(instance.state.inputs).length, 0, 'no v2 state left over')
 			assert.ok(legacy.requests.some((r) => r.path === '/api/channels'))

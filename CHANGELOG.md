@@ -63,8 +63,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Variable definitions are only re-registered when the set of variables changes, removing redundant churn on every poll
 - Input audio mute and delay send the nested `hdmi.audio` / `sdi.audio` settings for HDMI and SDI inputs, as required by
   the InputSettings schema; other inputs keep using `local_audio` / `audio.delay`
-- A config change no longer races with a running poll: `configUpdated` awaits the poll in flight and results from the
-  previous configuration are discarded
+- Initialisation no longer blocks on the device: `init`/`configUpdated` publish the definitions and return at once while
+  the API probe and first poll run in the background. Previously an unreachable device made Companion time out the
+  init call and restart the module in a loop
+- A config change no longer races with a running poll: results from the previous configuration are discarded
 - Preview feedbacks already placed on buttons are re-subscribed after a config change, so thumbnails resume without
   re-adding the feedback
 - Content metadata fetch failures are retried with an increasing back-off (1..10 minutes) and only the first failure
