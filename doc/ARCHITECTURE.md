@@ -389,9 +389,11 @@ Countdown variables (`starts_in`, `remaining`) are recomputed each poll from `Da
 
 ## Presets (`src/presets.js`) — `getPresets()`
 
-Keep existing (Channels layouts, Publishers toggle, Recorders toggle + reset), with one addition: each layout button
-also carries the `channelLayoutPreview` feedback (`styleExtra: previewStyle`, same alignment as the Previews category),
-so the currently active layout's button shows a live channel image and the others stay plain-colored. Add categories:
+Keep existing (Channels layouts, Publishers toggle, Recorders toggle + reset) unchanged. The `channelLayoutPreview`
+feedback is deliberately NOT attached to these auto-generated layout buttons: a channel can have many layouts, and
+since it only ever shows an image on whichever one is currently active (see Feedbacks), attaching it to every layout
+button reads as broken (a grid of mostly-blank "preview" tiles) once there are more than a couple of layouts. It
+remains available for anyone who wants a live thumbnail on one specific button. Add categories:
 
 - `Recorders`: "All recorders start", "All recorders stop" (recorderControlAll) with `anyRecording` feedback
 - `Outputs`: per output x choicesOutputSources entry (skip 'custom') -> setOutputSource, with `outputSourceOptimistic`

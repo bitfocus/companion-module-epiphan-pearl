@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.4.2] (2026-09-02)
+
+### Changes
+
+- The auto-generated _Channels_ layout-switch buttons no longer attach the layout preview feedback by default. A
+  channel can have many layouts (dozens, on some setups) and the Pearl API only ever exposes a live image for
+  whichever one is currently active, so attaching a "preview" to every layout button meant one showed a picture and
+  the rest stayed blank — indistinguishable from broken. The `channelLayoutPreview` feedback itself is unchanged and
+  still available to add to a specific button by hand. The _Previews_ category's per-channel button already shows a
+  live image of whatever is on air, independent of which layout that is, without this problem.
+
+---
+
 ## [2.4.1] (2026-09-02)
 
 ### Bug Fixes

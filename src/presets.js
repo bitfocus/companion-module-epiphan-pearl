@@ -128,9 +128,12 @@ module.exports = {
 		const previewStyle = { alignment: 'center:bottom', pngalignment: 'center:center' }
 
 		// ---------------------------------------------------------------------
-		// Channels: one button per layout. The currently active layout also shows a live preview image
-		// of the channel (the Pearl API only exposes a live image of the current output, not a stored
-		// thumbnail per layout, so a button for a layout you are not on stays plain-colored).
+		// Channels: one button per layout (existing). A channel can have many layouts, and the Pearl API
+		// only exposes a live image of the channel's current output, not a stored thumbnail per layout —
+		// so a "live preview" attached to every layout button would show a picture on just one of them
+		// and stay blank on the rest. That reads as broken with more than a couple of layouts, so it is
+		// not attached here; the channelLayoutPreview feedback still exists (see Feedbacks) for anyone who
+		// wants a live thumbnail on one specific "whatever is live now" button instead.
 		// ---------------------------------------------------------------------
 
 		for (const layout of this.choicesChannelLayout()) {
@@ -141,7 +144,6 @@ module.exports = {
 					name: layout.label,
 					text: twoLines(layout.label),
 					size: 7,
-					styleExtra: previewStyle,
 					actions: [{ actionId: 'channelChangeLayout', options: { channelIdlayoutId: layout.id } }],
 					feedbacks: [
 						{
@@ -149,7 +151,6 @@ module.exports = {
 							options: { channelIdlayoutId: layout.id },
 							style: { color: BLACK, bgcolor: RED },
 						},
-						{ feedbackId: 'channelLayoutPreview', options: { channelIdlayoutId: layout.id } },
 					],
 				}),
 			)
