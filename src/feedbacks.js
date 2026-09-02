@@ -210,11 +210,12 @@ module.exports = {
 
 		feedbacks['channelLayoutPreview'] = {
 			type: 'advanced',
-			name: 'Channel: layout preview (active layout only)',
+			name: 'Channel: layout preview',
 			description:
-				"Show a live preview image on a layout-switch button, but only while that layout is the channel's " +
-				'active one — the Pearl API only exposes a live image of what a channel is currently outputting, ' +
-				'not a stored thumbnail for every layout, so a button for a layout you are not on stays plain. ' +
+				'Show a live preview image of this specific layout on its switch button, whether or not it is ' +
+				"currently active. Uses an undocumented endpoint (not in Epiphan's published REST API v2.0 " +
+				'specification, confirmed working by Epiphan) that renders a given layout directly; if a future ' +
+				'firmware removes it, this simply stops producing an image rather than erroring. ' +
 				'Requires preview interval > 0 in the connection settings.',
 			options: [
 				{
@@ -227,12 +228,10 @@ module.exports = {
 			],
 			callback: (feedback) => {
 				try {
+					if (!previewsEnabled(this)) return {}
 					const pair = splitPair(feedback.options.channelIdlayoutId)
 					if (!pair) return {}
-					const [channelId, layoutId] = pair
-					if (this.state.channels?.[channelId]?.layouts?.[layoutId]?.active !== true) return {}
-					if (!previewsEnabled(this)) return {}
-					const png64 = this.previews?.[previewKey('channel', channelId)]?.png64
+					const png64 = this.previews?.[previewKey('layout', feedback.options.channelIdlayoutId)]?.png64
 					return typeof png64 === 'string' && png64.length > 0 ? { png64 } : {}
 				} catch (error) {
 					this.log('error', `layout preview feedback failed: ${error?.message ?? error}`)
@@ -241,11 +240,11 @@ module.exports = {
 			},
 			subscribe: (feedback) => {
 				const pair = splitPair(feedback.options.channelIdlayoutId)
-				if (pair) subscribePreview(this, previewKey('channel', pair[0]))
+				if (pair) subscribePreview(this, previewKey('layout', feedback.options.channelIdlayoutId))
 			},
 			unsubscribe: (feedback) => {
 				const pair = splitPair(feedback.options.channelIdlayoutId)
-				if (pair) unsubscribePreview(this, previewKey('channel', pair[0]))
+				if (pair) unsubscribePreview(this, previewKey('layout', feedback.options.channelIdlayoutId))
 			},
 		}
 

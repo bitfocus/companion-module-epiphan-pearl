@@ -285,15 +285,25 @@ describe('preview feedbacks with preview_interval > 0', () => {
 		assert.ok(mock.requests.some((r) => r.path === '/api/v2.0/inputs/hdmi-a/preview'))
 	})
 
-	it('pollPreviews is a no-op on legacy devices', async () => {
+	it('channel/input/output previews are skipped on legacy devices, but layout previews still work', async () => {
 		const legacyMock = await startMockPearl({ firmware: '4.20.0', legacyOnly: true })
 		const legacy = await createInstance({ mock: legacyMock, config: { preview_interval: 1 } })
 		try {
 			legacyMock.requests.length = 0
 			await subscribeFeedback(legacy, 'channelPreview', { channel: '1' })
+			await subscribeFeedback(legacy, 'channelLayoutPreview', { channelIdlayoutId: '1-1' })
 			await legacy.pollPreviews()
-			assert.equal(legacyMock.requests.length, 0)
+			assert.ok(
+				!legacyMock.requests.some((r) => r.path.includes('/channels/1/preview')),
+				'the v2.0-only channel preview endpoint is not attempted',
+			)
 			assert.deepEqual(await runFeedback(legacy, 'channelPreview', { channel: '1' }), {})
+			// the layout preview endpoint is on the legacy base, so it works even here
+			assert.ok(legacyMock.requests.some((r) => r.path === '/api/channels/1/layouts/1/preview'))
+			assert.equal(
+				(await runFeedback(legacy, 'channelLayoutPreview', { channelIdlayoutId: '1-1' })).png64,
+				PNG_1X1.toString('base64'),
+			)
 		} finally {
 			await legacy.destroy()
 			await legacyMock.close()
@@ -301,7 +311,7 @@ describe('preview feedbacks with preview_interval > 0', () => {
 	})
 })
 
-describe('channelLayoutPreview: image only on the currently active layout', () => {
+describe('channelLayoutPreview: a real image per layout, active or not', () => {
 	let mock
 	let instance
 
@@ -316,59 +326,58 @@ describe('channelLayoutPreview: image only on the currently active layout', () =
 		await mock.close()
 	})
 
-	it('returns {} for a layout that is not active, even once an image is cached for its channel', async () => {
+	it('fetches the undocumented per-layout endpoint on the legacy base, independent of active state', async () => {
 		await subscribeFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-2' })
-		// subscribing an inactive layout still registers interest in its channel's image, so the
-		// button is ready to show one the moment you switch to it
-		assert.equal(instance.previewSubscriptions.get('channel:1'), 1)
+		assert.equal(instance.previewSubscriptions.get('layout:1-2'), 1, 'each layout gets its own key')
+		mock.requests.length = 0
 		await instance.pollPreviews()
-		assert.ok(instance.previews['channel:1'], 'the channel image was fetched')
-		assert.deepEqual(await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-2' }), {})
-	})
+		const req = mock.requests.find((r) => r.path === '/api/channels/1/layouts/2/preview')
+		assert.ok(req, 'requested on the legacy base, not /api/v2.0')
+		assert.deepEqual(req.query, { resolution: '144x81' })
 
-	it('returns the cached image for the layout that is active', async () => {
-		const result = await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-1' })
-		assert.equal(typeof result.png64, 'string')
+		const result = await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-2' })
 		assert.equal(result.png64, PNG_1X1.toString('base64'))
 	})
 
-	it('shares its subscription key with channelPreview for the same channel', async () => {
-		await subscribeFeedback(instance, 'channelPreview', { channel: '1' })
-		assert.equal(instance.previewSubscriptions.get('channel:1'), 2)
-		await unsubscribeFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-2' })
-		// channelPreview's own subscription keeps the image alive
-		assert.equal(instance.previewSubscriptions.get('channel:1'), 1)
-		assert.ok(instance.previews['channel:1'])
-		await unsubscribeFeedback(instance, 'channelPreview', { channel: '1' })
-		assert.equal(instance.previewSubscriptions.has('channel:1'), false)
+	it('the active layout also gets its own image, independently of the inactive one', async () => {
+		await subscribeFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-1' })
+		assert.equal(instance.previewSubscriptions.get('layout:1-1'), 1)
+		await instance.pollPreviews()
+		const result = await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-1' })
+		assert.equal(result.png64, PNG_1X1.toString('base64'))
+		// unrelated to channelPreview's own cache (a different key namespace)
+		assert.equal(instance.previews['channel:1'], undefined)
 	})
 
-	it('swaps which layout shows the image when the active layout changes', async () => {
-		await subscribeFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-1' })
-		await instance.pollPreviews()
-		assert.equal(
-			typeof (await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-1' })).png64,
-			'string',
-		)
-
+	it('is unaffected by which layout becomes active', async () => {
 		instance.checkedFeedbacks.length = 0
 		for (const l of mock.state.channels['1'].layouts) l.active = l.id === '2'
 		await instance.pollAll()
-
-		assert.ok(instance.checkedFeedbacks.flat().includes('channelLayoutPreview'))
-		assert.deepEqual(await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-1' }), {})
+		// no longer tied to the layouts domain: an active-layout change does not need to re-check it
+		assert.ok(!instance.checkedFeedbacks.flat().includes('channelLayoutPreview'))
 		assert.equal(
-			typeof (await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-2' })).png64,
-			'string',
+			(await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-1' })).png64,
+			PNG_1X1.toString('base64'),
+		)
+		assert.equal(
+			(await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-2' })).png64,
+			PNG_1X1.toString('base64'),
 		)
 
 		mock.reset()
 		await instance.pollAll()
 		await unsubscribeFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-1' })
+		await unsubscribeFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '1-2' })
 	})
 
-	it('an unknown channel/layout pair is not active and never errors', async () => {
+	it('an unknown channel/layout pair never errors', async () => {
+		instance.calls.log.length = 0
+		await subscribeFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '9-9' })
+		await instance.pollPreviews()
 		assert.deepEqual(await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '9-9' }), {})
+		assert.ok(!instance.calls.log.some((l) => l.level === 'error'))
+		await unsubscribeFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: '9-9' })
+
 		assert.deepEqual(await runFeedback(instance, 'channelLayoutPreview', { channelIdlayoutId: 'garbage' }), {})
 		assert.deepEqual(await runFeedback(instance, 'channelLayoutPreview', {}), {})
 	})

@@ -750,6 +750,13 @@ async function startMockPearl({ firmware = '4.24.1', legacyOnly = false, port = 
 		if (typeof body.name === 'string' && body.name) layout.name = body.name
 		return { ok: true }
 	})
+	// undocumented (not part of the published OpenAPI spec), confirmed by Epiphan: renders the given
+	// layout's own composition, whether or not it is the channel's active one
+	route('GET', '/channels/:cid/layouts/:lid/preview', ({ params }) => {
+		const ch = getChannel(params.cid)
+		getLayout(ch, params.lid)
+		return { png: true }
+	})
 
 	// -- Publishers
 	route('GET', '/channels/:cid/publishers', ({ params }) => ({

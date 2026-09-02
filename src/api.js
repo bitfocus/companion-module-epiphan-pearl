@@ -1,5 +1,5 @@
 const { InstanceStatus } = require('@companion-module/base')
-const { toQueryString } = require('./utils')
+const { toQueryString, splitPair } = require('./utils')
 
 const DEFAULT_TIMEOUT = 5000
 
@@ -222,12 +222,44 @@ module.exports = {
 	/**
 	 * Fetch a preview image from the device.
 	 *
-	 * @param {'channel'|'input'|'output'} kind
-	 * @param {string} id
-	 * @returns {Promise<string|null>} base64 encoded PNG or null when unavailable
+	 * @param {'channel'|'input'|'output'|'layout'} kind
+	 * @param {string} id - for kind 'layout', `${cid}-${lid}` (matches the channelIdlayoutId option format)
+	 * @returns {Promise<string|null>} base64 encoded image or null when unavailable
 	 */
 	async fetchPreviewImage(kind, id) {
 		const width = Number(this.config?.preview_width) >= 72 ? Math.round(Number(this.config.preview_width)) : 144
+		if (id === undefined || id === null || id === '') return null
+
+		if (kind === 'layout') {
+			// Undocumented: not in the published Pearl REST API v2.0 spec. Confirmed by Epiphan:
+			// GET /api/channels/{cid}/layouts/{lid}/preview?resolution=WxH -> JPEG, on the legacy base,
+			// and it renders the given layout's own composition regardless of whether it is the channel's
+			// active one. Since it is undocumented, only the parameters known to work are sent (no
+			// `format` or `keep_aspect_ratio` — those are not confirmed for this endpoint), and, like every
+			// other preview, a failure (wrong firmware, endpoint removed, ...) just yields null.
+			const pair = splitPair(String(id))
+			if (!pair) return null
+			const [cid, lid] = pair
+			try {
+				const buffer = await this.request(
+					'GET',
+					`/channels/${encodeURIComponent(cid)}/layouts/${encodeURIComponent(lid)}/preview`,
+					{
+						base: 'v1',
+						query: { resolution: `${width}x${Math.round((width * 9) / 16)}` },
+						raw: true,
+						optional: true,
+						silent: true,
+					},
+				)
+				if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) return null
+				return buffer.toString('base64')
+			} catch (error) {
+				if (this.config?.verbose) this.log('debug', `Layout preview ${id} failed: ${error.message}`)
+				return null
+			}
+		}
+
 		let collection
 		const query = { format: 'png' }
 		switch (kind) {
@@ -253,7 +285,6 @@ module.exports = {
 				this.log('warn', `fetchPreviewImage: unknown kind '${kind}'`)
 				return null
 		}
-		if (id === undefined || id === null || id === '') return null
 
 		try {
 			const buffer = await this.request('GET', `/${collection}/${encodeURIComponent(String(id))}/preview`, {

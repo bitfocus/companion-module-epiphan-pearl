@@ -79,7 +79,7 @@ describe('poller diffing', () => {
 		}
 		await check(() => {
 			for (const l of mock.state.channels['1'].layouts) l.active = l.id === '2'
-		}, ['channelLayout', 'channelLayoutPreview'])
+		}, ['channelLayout'])
 		await check(() => {
 			mock.state.storages.main.free = 5e8
 		}, ['storageState', 'storageFreeBelow'])

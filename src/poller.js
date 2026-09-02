@@ -23,8 +23,7 @@ function settled(entry, fallback = undefined) {
  * Feedback ids to re-check per state domain when that domain changed
  */
 const DOMAIN_FEEDBACKS = {
-	// channelLayoutPreview shows/hides its image based on which layout is active, same trigger as channelLayout
-	layouts: ['channelLayout', 'channelLayoutPreview'],
+	layouts: ['channelLayout'],
 	publishers: ['streamingState', 'publisherState', 'anyStreaming'],
 	recorders: ['recorderRecording', 'recorderState', 'anyRecording'],
 	storages: ['storageState', 'storageFreeBelow'],
@@ -517,6 +516,8 @@ module.exports = {
 	 * Refresh preview images for every subscribed key. Never throws.
 	 * A call while a refresh is already running queues exactly one follow-up refresh (so a key
 	 * subscribed meanwhile still gets its first image promptly) and resolves when that one is done.
+	 * Channel/input/output previews are skipped on the legacy API (v2.0 only); layout previews are
+	 * attempted regardless, since they use the legacy base.
 	 */
 	async pollPreviews() {
 		if (this.previewsInProgress) {
@@ -529,7 +530,6 @@ module.exports = {
 			return this.previewsRerun
 		}
 		if (!this.previewSubscriptions || this.previewSubscriptions.size === 0) return
-		if (!this.isV2) return
 		// previews disabled in the configuration: subscriptions are kept, images are not fetched
 		if (!(Number(this.config?.preview_interval) > 0)) return
 		this.previewsInProgress = true
@@ -558,6 +558,9 @@ module.exports = {
 						if (idx <= 0) return
 						const kind = key.slice(0, idx)
 						const id = key.slice(idx + 1)
+						// channel/input/output previews are v2.0-only; layout previews use the legacy base
+						// (see fetchPreviewImage) and are attempted regardless of the detected API version
+						if (kind !== 'layout' && !this.isV2) return
 						const png64 = await this.fetchPreviewImage(kind, id)
 						if (png64 === null) {
 							// log once per key on failure (not every poll) so a persistently broken preview is

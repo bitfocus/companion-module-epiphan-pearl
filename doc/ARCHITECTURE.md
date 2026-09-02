@@ -170,13 +170,14 @@ Behaviour:
 
 ### Legacy-only endpoints (always `base: 'v1'`)
 
-| purpose          | request                                                                                   |
-| ---------------- | ----------------------------------------------------------------------------------------- |
-| list layouts     | `GET /channels/{cid}/layouts` -> `[ {id, name, active} ]`                                 |
-| layout settings  | `GET/PUT /channels/{cid}/layouts/{lid}/settings`                                          |
-| recorder reset   | `POST /recorders/{rid}/control/reset`                                                     |
-| content metadata | `GET /admin/channel{cid}/get_params.cgi?title&author&rec_prefix` (base 'raw', text/plain) |
-| set metadata     | `GET /admin/channel{cid}/set_params.cgi?title=..&author=..&rec_prefix=..` (base 'raw')    |
+| purpose          | request                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| list layouts     | `GET /channels/{cid}/layouts` -> `[ {id, name, active} ]`                                                                                                                                                                                                                                                                                                        |
+| layout settings  | `GET/PUT /channels/{cid}/layouts/{lid}/settings`                                                                                                                                                                                                                                                                                                                 |
+| layout preview   | `GET /channels/{cid}/layouts/{lid}/preview?resolution=WxH` -> JPEG. **Undocumented** — not in `doc/pearl-api-v2.0.yaml`; confirmed by Epiphan. Renders that layout's own composition regardless of whether it is active. Do not send `format`/`keep_aspect_ratio` — unconfirmed for this endpoint. `fetchPreviewImage('layout', '<cid>-<lid>')` in `src/api.js`. |
+| recorder reset   | `POST /recorders/{rid}/control/reset`                                                                                                                                                                                                                                                                                                                            |
+| content metadata | `GET /admin/channel{cid}/get_params.cgi?title&author&rec_prefix` (base 'raw', text/plain)                                                                                                                                                                                                                                                                        |
+| set metadata     | `GET /admin/channel{cid}/set_params.cgi?title=..&author=..&rec_prefix=..` (base 'raw')                                                                                                                                                                                                                                                                           |
 
 ### v2 parameter conventions that differ from v1
 
@@ -337,20 +338,20 @@ only what this connection itself last set, not a value confirmed by the device.
 
 Advanced feedbacks returning `{ png64 }` (or `{}` when no image yet):
 
-| id                   | option            | preview key     | image shown when                         |
-| -------------------- | ----------------- | --------------- | ---------------------------------------- |
-| channelPreview       | channel           | `channel:<cid>` | always (once fetched)                    |
-| inputPreview         | input             | `input:<sid>`   | always (once fetched)                    |
-| outputPreview        | output            | `output:<did>`  | always (once fetched)                    |
-| channelLayoutPreview | channelIdlayoutId | `channel:<cid>` | only while that layout is the active one |
+| id                   | option            | preview key          | image shown when                     |
+| -------------------- | ----------------- | -------------------- | ------------------------------------ |
+| channelPreview       | channel           | `channel:<cid>`      | always (once fetched)                |
+| inputPreview         | input             | `input:<sid>`        | always (once fetched)                |
+| outputPreview        | output            | `output:<did>`       | always (once fetched)                |
+| channelLayoutPreview | channelIdlayoutId | `layout:<cid>-<lid>` | always (once fetched), active or not |
 
-`channelLayoutPreview` reuses the `channelPreview` cache and key (the Pearl API only exposes a live image of a
-channel's _current_ output, not a stored thumbnail per layout) so it shares the same subscription counter — a channel
-image fetched for one is available to the other without a second request. Its callback returns `{}` for any layout
-that is not the channel's active one, regardless of whether an image is cached, so a button for a layout you are not
-on stays plain-colored; switching layouts moves the image to the new active layout's button on the next diff/refresh.
-It is included in the `layouts` domain of `DOMAIN_FEEDBACKS` and in `pollPreviews()`'s `checkFeedbacks` call, alongside
-the other three preview feedbacks.
+`channelLayoutPreview` fetches the undocumented per-layout endpoint (see "Legacy-only endpoints") via
+`fetchPreviewImage('layout', id)`, keyed `layout:<cid>-<lid>` — a namespace of its own, independent of
+`channelPreview`'s `channel:<cid>` key, since it is a genuinely different image (that specific layout's own
+composition, not the channel's current output). It is fetched regardless of `isV2` (see `pollPreviewsInner`) because
+the endpoint is on the legacy base, and is NOT in the `layouts` domain of `DOMAIN_FEEDBACKS` — its image does not
+depend on which layout is active, so an active-layout change has no reason to re-check it; only `pollPreviews()`'s own
+refresh (like the other three preview feedbacks) updates it.
 
 Each preview feedback has `subscribe(feedback)` incrementing `previewSubscriptions` for its key (also while previews
 are disabled) and `unsubscribe` decrementing (delete at 0 and drop the cached image). Subscribe triggers
@@ -389,11 +390,10 @@ Countdown variables (`starts_in`, `remaining`) are recomputed each poll from `Da
 
 ## Presets (`src/presets.js`) — `getPresets()`
 
-Keep existing (Channels layouts, Publishers toggle, Recorders toggle + reset) unchanged. The `channelLayoutPreview`
-feedback is deliberately NOT attached to these auto-generated layout buttons: a channel can have many layouts, and
-since it only ever shows an image on whichever one is currently active (see Feedbacks), attaching it to every layout
-button reads as broken (a grid of mostly-blank "preview" tiles) once there are more than a couple of layouts. It
-remains available for anyone who wants a live thumbnail on one specific button. Add categories:
+Keep existing (Channels layouts, Publishers toggle, Recorders toggle + reset), with one addition: each layout button
+also carries the `channelLayoutPreview` feedback (`styleExtra: previewStyle`, same alignment as the Previews category),
+showing a live preview of that specific layout's own composition, alongside the existing red highlight while it is
+the active one. Add categories:
 
 - `Recorders`: "All recorders start", "All recorders stop" (recorderControlAll) with `anyRecording` feedback
 - `Outputs`: per output x choicesOutputSources entry (skip 'custom') -> setOutputSource, with `outputSourceOptimistic`

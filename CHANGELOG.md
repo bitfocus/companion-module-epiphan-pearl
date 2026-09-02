@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.0] (2026-09-02)
+
+### New Features
+
+- Layout-switch buttons now show a real live preview image of that specific layout's own composition, whether or not
+  it is currently active — not just the active one. This uses `GET /channels/{cid}/layouts/{lid}/preview`, an
+  endpoint that is not part of Epiphan's published REST API v2.0 specification but was confirmed working by Epiphan.
+  It runs on the legacy API base, so it works on every supported firmware version, not only 4.24.1+
+- The `Channel: layout preview` feedback (and the Channels presets, which carry it again by default) is no longer
+  restricted to the active layout
+
+### Changes
+
+- `pollPreviews()` no longer skips fetching entirely on legacy (v1-only) firmware: channel/input/output previews
+  remain v2.0-only, but layout previews are attempted regardless, since their endpoint does not require it
+
+---
+
 ## [2.4.2] (2026-09-02)
 
 ### Changes
