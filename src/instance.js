@@ -47,6 +47,7 @@ function normaliseConfig(config) {
 	c.poll_archive = c.poll_archive === true
 	c.poll_connectivity = c.poll_connectivity === true
 	c.verbose = c.verbose === true
+	c.preset_categories = presets.normalisePresetCategories(c.preset_categories)
 	return c
 }
 

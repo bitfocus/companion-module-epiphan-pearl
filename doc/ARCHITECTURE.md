@@ -93,32 +93,36 @@ Other instance fields:
 
 ## Config fields (`src/config.js`)
 
-| id                | type      | default         | notes                                                                 |
-| ----------------- | --------- | --------------- | --------------------------------------------------------------------- |
-| host              | textinput | 192.168.255.250 | IP or hostname, validated with `REGEX_IP_OR_HOSTNAME` (see below)     |
-| host_port         | textinput | 80              | Regex.PORT                                                            |
-| username          | textinput | admin           |                                                                       |
-| password          | textinput | ''              |                                                                       |
-| pollfreq          | number    | 10              | 1..300 seconds                                                        |
-| timeout           | number    | 5000            | request timeout ms, 1000..60000                                       |
-| use_api_v2        | checkbox  | true            |                                                                       |
-| preview_interval  | number    | 2               | seconds between preview image refreshes; 0 disables preview feedbacks |
-| preview_width     | number    | 144             | width in px requested from the device for preview images (72..720)    |
-| poll_events       | checkbox  | true            | poll CMS schedule (upcoming/ongoing)                                  |
-| poll_archive      | checkbox  | false           | poll last archive file per recorder                                   |
-| poll_connectivity | checkbox  | false           | poll /system/connectivity/details every 6th poll                      |
-| verbose           | checkbox  | false           |                                                                       |
+| id                | type          | default         | notes                                                                                                                                                                                                                                           |
+| ----------------- | ------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| host              | textinput     | 192.168.255.250 | IP or hostname, validated with `REGEX_IP_OR_HOSTNAME` (see below)                                                                                                                                                                               |
+| host_port         | textinput     | 80              | Regex.PORT                                                                                                                                                                                                                                      |
+| username          | textinput     | admin           |                                                                                                                                                                                                                                                 |
+| password          | textinput     | ''              |                                                                                                                                                                                                                                                 |
+| pollfreq          | number        | 10              | 1..300 seconds                                                                                                                                                                                                                                  |
+| timeout           | number        | 5000            | request timeout ms, 1000..60000                                                                                                                                                                                                                 |
+| use_api_v2        | checkbox      | true            |                                                                                                                                                                                                                                                 |
+| preview_interval  | number        | 2               | seconds between preview image refreshes; 0 disables preview feedbacks                                                                                                                                                                           |
+| preview_width     | number        | 144             | width in px requested from the device for preview images (72..720)                                                                                                                                                                              |
+| poll_events       | checkbox      | true            | poll CMS schedule (upcoming/ongoing)                                                                                                                                                                                                            |
+| poll_archive      | checkbox      | false           | poll last archive file per recorder                                                                                                                                                                                                             |
+| poll_connectivity | checkbox      | false           | poll /system/connectivity/details every 6th poll                                                                                                                                                                                                |
+| verbose           | checkbox      | false           |                                                                                                                                                                                                                                                 |
+| preset_categories | multidropdown | every category  | which categories `getPresets()` generates (see "Presets" and `PRESET_CATEGORY_IDS` in `src/presets.js`); an id outside that list is dropped, an absent/non-array value defaults to all, but an explicit `[]` is respected as "generate nothing" |
 
 Companion's `Regex.IP` and `Regex.HOSTNAME` are single anchored patterns, so `config.js` builds its own
 `REGEX_IP_OR_HOSTNAME` constant (`/^(?:<IP>|<HOSTNAME>)$/`, both patterns with their slashes and anchors stripped and
 combined as alternatives) and exports it alongside `getConfigFields` (`module.exports = { getConfigFields, get_config_fields, REGEX_IP_OR_HOSTNAME }`).
-The field labels are the user-facing names used in `companion/HELP.md`; keep both in sync.
+The field labels are the user-facing names used in `companion/HELP.md`; keep both in sync. `preset_categories`'
+choices/default come from `presets.js`'s `PRESET_CATEGORY_IDS` (imported by `config.js`), not hand-copied here.
 
 `upgrades.js` adds defaults for new fields when undefined. Companion runs each upgrade script only once per connection,
-so an existing script is never extended: `setDefaultConfig` (v2.2.0) only sets `use_api_v2` / `verbose`, and the appended
-`setDefaultConfigV230` fills `timeout`, `preview_interval`, `preview_width`, `poll_events`, `poll_archive`, `poll_connectivity`.
-The exported order is fixed: `setDefaultConfig`, `renameStreaming`, `setDefaultConfigV230`; a future version appends
-a new script (values from `CONFIG_DEFAULTS`, which must match the field defaults above).
+so an existing script is never extended: `setDefaultConfig` (v2.2.0) only sets `use_api_v2` / `verbose`, the appended
+`setDefaultConfigV230` fills `timeout`, `preview_interval`, `preview_width`, `poll_events`, `poll_archive`, `poll_connectivity`,
+and `setDefaultConfigV260` fills `preset_categories` (every category, so an upgraded connection keeps generating exactly
+what it already had). The exported order is fixed: `setDefaultConfig`, `renameStreaming`, `setDefaultConfigV230`,
+`setDefaultConfigV260`; a future version appends a new script (values from `CONFIG_DEFAULTS`, which must match the
+field defaults above — compared with `assert.deepEqual` in tests since some defaults, like this one, are arrays).
 
 `configUpdated(config)`: stops the timers, bumps `configGeneration`, normalises and validates the config (BadConfig -> still
 `updateSystem()` so definitions exist, then return), resets state/metadata/previews, publishes the definitions for the empty
@@ -163,9 +167,10 @@ Behaviour:
 - On success, set `InstanceStatus.Ok` only if the current status is not already Ok (track `this.currentStatus`).
 - `this.config.verbose` logs request line and response body at 'debug'.
 - `sendRequest(type, url, body)` is kept as a compatibility wrapper: `request(type.toUpperCase(), url, { body })`.
-- `fetchPreviewImage(kind, id)` -> `request('GET', '/<channels|inputs|outputs>/<id>/preview', { query: { resolution: String(this.config.preview_width), format: 'png', keep_aspect_ratio: true }, raw: true, optional: true })`
+- `fetchPreviewImage(kind, id)` for kind `channel`/`input`/`output` -> `request('GET', '/<channels|inputs|outputs>/<id>/preview', { query: { resolution: String(this.config.preview_width), format: 'png', keep_aspect_ratio: true }, raw: true, optional: true })`
   returns base64 string or null. Outputs use `resolution: '<w>x<h>'` where h = round(w*9/16) because the
-  output preview endpoint has no `auto`.
+  output preview endpoint has no `auto`. For kind `layout`, `id` is `'<cid>-<lid>'`; see the undocumented
+  endpoint in "Legacy-only endpoints" below (`base: 'v1'`, no `format`/`keep_aspect_ratio`).
 - `PearlApiError` class exported from `api.js`.
 
 ### Legacy-only endpoints (always `base: 'v1'`)
@@ -396,8 +401,6 @@ showing a live preview of that specific layout's own composition, alongside the 
 the active one. Add categories:
 
 - `Recorders`: "All recorders start", "All recorders stop" (recorderControlAll) with `anyRecording` feedback
-- `Outputs`: per output x choicesOutputSources entry (skip 'custom') -> setOutputSource, with `outputSourceOptimistic`
-  (blue) so the button matching the last-set source is highlighted
 - `Inputs`: per audio input mute/unmute pair (inputAudioMute)
 - `Previews`: per channel (channelPreview advanced feedback, text = channel name, size 7, `pngalignment` center),
   per video-capable input via `choicesInputsWithVideo()` (inputPreview; audio-only inputs have nothing to show and are
@@ -411,6 +414,17 @@ the active one. Add categories:
 - `AFU`: status display with afuState uploading (blue) / error (red)
 - `Config presets`: one button per device configuration preset (applyConfigPreset, empty sections = all), with
   `configPresetApplied` (blue) so the last-applied preset is highlighted
+
+There is no `Outputs` category (one button per output x source produced far too many buttons once a device has more
+than a few inputs); it was removed rather than made toggle-able. `setOutputSource` and `outputSourceOptimistic` are
+unaffected for anyone building their own output-routing button.
+
+Every category is gated by the `preset_categories` connection setting: `getPresets()` computes
+`enabledCategories = new Set(normalisePresetCategories(this.config?.preset_categories))` once, and its `add(id, preset)`
+helper returns immediately when `!enabledCategories.has(preset.category)` — one check, shared by every category below,
+rather than wrapping each generation loop individually. The generation loop itself still runs either way (the entity
+list is still walked, the button object still built) since skipping that too would not be worth the added complexity;
+only the `add()` call is skipped.
 
 Preset ids must be unique and stable: `${category}_${safeId(...)}`; when two ids collide after `safeId` (e.g. config presets
 "Show A" and "Show_A") the later ones get a `_2`, `_3`, ... suffix instead of being dropped. Every variable reference built

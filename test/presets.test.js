@@ -82,19 +82,18 @@ describe('presets', () => {
 		assert.ok(instance.calls.log.some((l) => l.level === 'debug' && /duplicate preset id/.test(l.message)))
 	})
 
-	it('audio-only inputs get no preview button and are not offered as an output source', () => {
+	it('audio-only inputs get no preview button; output routing has no presets at all (removed)', () => {
 		const presets = instance.definitions.presets
-		// analog-a is audio-only (video: false) in the mock; it has no picture to preview and
-		// cannot sensibly be routed to a video output
+		// analog-a is audio-only (video: false) in the mock; it has no picture to preview
 		assert.equal(presets['previews_input_analog-a'], undefined)
-		assert.equal(presets['outputs_D1_source_analog-a'], undefined)
-		// video-capable inputs (video-only or video+audio) keep both
+		// video-capable inputs (video-only or video+audio) keep their preview
 		assert.ok(presets['previews_input_hdmi-a'])
 		assert.ok(presets['previews_input_USBA'])
-		assert.ok(presets['outputs_D1_source_hdmi-a'])
-		assert.ok(presets['outputs_D1_source_USBA'])
+		// the Outputs category was removed outright: no output-routing presets exist for any input
+		assert.equal(Object.keys(presets).filter((id) => id.startsWith('outputs_')).length, 0)
 
-		// the same filtering applies to the underlying feedback/action option lists, not just the presets
+		// the underlying feedback/action option lists are unaffected: setOutputSource and
+		// outputSourceOptimistic still exist and still exclude audio-only inputs, for a hand-built button
 		const inputPreviewChoices = instance.definitions.feedbacks.inputPreview.options
 			.find((o) => o.id === 'input')
 			.choices.map((c) => c.id)
@@ -105,5 +104,90 @@ describe('presets', () => {
 			.choices.map((c) => c.id)
 		assert.ok(!outputSourceChoices.includes('analog-a'))
 		assert.ok(outputSourceChoices.includes('hdmi-a'))
+		assert.ok(instance.definitions.feedbacks.outputSourceOptimistic)
+	})
+})
+
+describe('preset_categories connection setting', () => {
+	let mock
+
+	before(async () => {
+		mock = await startMockPearl()
+	})
+
+	after(async () => {
+		await mock.close()
+	})
+
+	it('defaults to every category when the setting is absent (new/legacy connections)', async () => {
+		const instance = await createInstance({ mock })
+		try {
+			assert.deepEqual(instance.config.preset_categories.sort(), [
+				'AFU',
+				'Channels',
+				'Config presets',
+				'Events',
+				'Inputs',
+				'Previews',
+				'Publishers',
+				'Recorders',
+				'Single touch',
+				'Storage',
+				'System',
+			])
+			const categoriesPresent = new Set(Object.values(instance.definitions.presets).map((p) => p.category))
+			assert.ok(categoriesPresent.has('Events'))
+			assert.ok(categoriesPresent.has('Channels'))
+		} finally {
+			await instance.destroy()
+		}
+	})
+
+	it('unchecking a category removes every one of its presets and nothing else', async () => {
+		const instance = await createInstance({ mock, config: { preset_categories: ['Channels', 'Events'] } })
+		try {
+			const byCategory = {}
+			for (const preset of Object.values(instance.definitions.presets)) {
+				byCategory[preset.category] = (byCategory[preset.category] || 0) + 1
+			}
+			assert.deepEqual(Object.keys(byCategory).sort(), ['Channels', 'Events'])
+			assert.ok(byCategory.Channels > 0)
+			assert.ok(byCategory.Events > 0)
+			// the actions/feedbacks themselves are untouched by this setting - only preset generation
+			assert.ok(instance.definitions.actions.recorderControlAll)
+			assert.ok(instance.definitions.feedbacks.storageState)
+		} finally {
+			await instance.destroy()
+		}
+	})
+
+	it('an empty selection is respected as "generate no presets", not treated as unset', async () => {
+		const instance = await createInstance({ mock, config: { preset_categories: [] } })
+		try {
+			assert.deepEqual(instance.config.preset_categories, [])
+			assert.deepEqual(instance.definitions.presets, {})
+		} finally {
+			await instance.destroy()
+		}
+	})
+
+	it('a stale/unknown category id is dropped rather than crashing', async () => {
+		const instance = await createInstance({ mock, config: { preset_categories: ['Channels', 'Nope'] } })
+		try {
+			assert.deepEqual(instance.config.preset_categories, ['Channels'])
+		} finally {
+			await instance.destroy()
+		}
+	})
+
+	it('there is no "Outputs" category to select even if requested', async () => {
+		const instance = await createInstance({ mock, config: { preset_categories: ['Outputs', 'Channels'] } })
+		try {
+			assert.deepEqual(instance.config.preset_categories, ['Channels'])
+			const { PRESET_CATEGORY_IDS } = require('../src/presets')
+			assert.ok(!PRESET_CATEGORY_IDS.includes('Outputs'))
+		} finally {
+			await instance.destroy()
+		}
 	})
 })

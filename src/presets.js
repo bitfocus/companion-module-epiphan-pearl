@@ -17,7 +17,6 @@ const GREY = combineRgb(64, 64, 64)
 const CAT_CHANNELS = 'Channels'
 const CAT_PUBLISHERS = 'Publishers'
 const CAT_RECORDERS = 'Recorders'
-const CAT_OUTPUTS = 'Outputs'
 const CAT_INPUTS = 'Inputs'
 const CAT_PREVIEWS = 'Previews'
 const CAT_SINGLE_TOUCH = 'Single touch'
@@ -26,6 +25,42 @@ const CAT_SYSTEM = 'System'
 const CAT_EVENTS = 'Events'
 const CAT_AFU = 'AFU'
 const CAT_CONFIG_PRESETS = 'Config presets'
+
+/**
+ * Every preset category that can be generated, in the order they are built. Used to build the
+ * "Preset categories to generate" connection setting (src/config.js) and to validate/default its
+ * stored value (see normalisePresetCategories). There used to be an `Outputs` category (one button
+ * per output x source) but with more than a handful of inputs it produced dozens of buttons for very
+ * little practical use, so it was removed outright rather than made toggle-able; `setOutputSource` and
+ * the `outputSourceOptimistic` feedback are unaffected and still available for a hand-built button.
+ */
+const PRESET_CATEGORY_IDS = [
+	CAT_CHANNELS,
+	CAT_PUBLISHERS,
+	CAT_RECORDERS,
+	CAT_INPUTS,
+	CAT_PREVIEWS,
+	CAT_SINGLE_TOUCH,
+	CAT_STORAGE,
+	CAT_SYSTEM,
+	CAT_EVENTS,
+	CAT_AFU,
+	CAT_CONFIG_PRESETS,
+]
+
+/**
+ * Validate a stored `preset_categories` config value against the known category list.
+ * A missing/non-array value (new connection, or one that predates this setting) defaults to every
+ * category; an array that is present (even empty) is respected as-is, just filtered to known ids so a
+ * stale id from a removed category cannot linger.
+ *
+ * @param {unknown} value
+ * @returns {string[]}
+ */
+function normalisePresetCategories(value) {
+	if (!Array.isArray(value)) return PRESET_CATEGORY_IDS.slice()
+	return value.filter((id) => PRESET_CATEGORY_IDS.includes(id))
+}
 
 /**
  * Build a unique, stable preset id: `${category}_${parts...}` sanitised with safeId.
@@ -115,9 +150,13 @@ module.exports = {
 	 */
 	getPresets() {
 		const presets = {}
+		const enabledCategories = new Set(normalisePresetCategories(this.config?.preset_categories))
 
 		// ids that collide after safeId() (e.g. config presets "Show A" and "Show_A") get a _2, _3, ... suffix
 		const add = (id, preset) => {
+			// the "Preset categories to generate" connection setting; a category left unchecked there
+			// simply never gets any buttons added, one gate for every category below
+			if (!enabledCategories.has(preset.category)) return
 			let unique = id
 			for (let n = 2; presets[unique] !== undefined; n++) unique = `${id}_${n}`
 			if (unique !== id) this.log('debug', `duplicate preset id ${id}, using ${unique}`)
@@ -260,39 +299,6 @@ module.exports = {
 				feedbacks: [{ feedbackId: 'anyRecording', options: {}, style: { color: WHITE, bgcolor: RED } }],
 			}),
 		)
-
-		// ---------------------------------------------------------------------
-		// Outputs: one button per output x source
-		// ---------------------------------------------------------------------
-
-		const outputSources = this.choicesOutputSources().filter((source) => source.id !== 'custom')
-		for (const output of this.choicesOutputs()) {
-			for (const source of outputSources) {
-				add(
-					presetId(CAT_OUTPUTS, output.id, 'source', source.id),
-					button({
-						category: CAT_OUTPUTS,
-						name: `${output.label}: ${source.label}`,
-						text: `${output.label}\n${source.label}`,
-						size: 7,
-						bgcolor: NAVY,
-						actions: [
-							{
-								actionId: 'setOutputSource',
-								options: { output: output.id, source: source.id, customSource: '' },
-							},
-						],
-						feedbacks: [
-							{
-								feedbackId: 'outputSourceOptimistic',
-								options: { output: output.id, source: source.id },
-								style: { color: WHITE, bgcolor: BLUE },
-							},
-						],
-					}),
-				)
-			}
-		}
 
 		// ---------------------------------------------------------------------
 		// Inputs: mute / unmute per audio input
@@ -675,3 +681,6 @@ module.exports = {
 		return presets
 	},
 }
+
+module.exports.PRESET_CATEGORY_IDS = PRESET_CATEGORY_IDS
+module.exports.normalisePresetCategories = normalisePresetCategories

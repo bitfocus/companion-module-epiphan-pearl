@@ -1,4 +1,5 @@
 const { Regex } = require('@companion-module/base')
+const { PRESET_CATEGORY_IDS } = require('./presets')
 
 /**
  * Regex (as Companion regex string '/.../') accepting either an IPv4 address or a hostname
@@ -124,6 +125,20 @@ function getConfigFields() {
 			label: 'Enable verbose logging',
 			width: 6,
 			default: false,
+		},
+		{
+			type: 'multidropdown',
+			id: 'preset_categories',
+			label: 'Preset categories to generate',
+			width: 12,
+			default: PRESET_CATEGORY_IDS.slice(),
+			choices: PRESET_CATEGORY_IDS.map((id) => ({ id, label: id })),
+			tooltip:
+				'Which groups of ready-made buttons appear in the drag-and-drop preset list. Unchecking a group ' +
+				'only hides its auto-generated buttons here; the underlying actions and feedbacks stay available ' +
+				"if you want to build your own button by hand, and anything you've already placed on a page keeps " +
+				'working. Some Pearls have enough channels, layouts or inputs that a few of these groups produce a ' +
+				'lot of buttons (dozens of layout or input buttons is normal); trim what you do not use.',
 		},
 	]
 }

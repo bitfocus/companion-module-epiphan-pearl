@@ -3,6 +3,7 @@ const assert = require('node:assert/strict')
 
 const { installStub } = require('./harness')
 const upgrades = require('../src/upgrades')
+const { PRESET_CATEGORY_IDS: presetCategoryIds } = require('../src/presets')
 
 const props = (config, extra = {}) => ({ config, actions: [], feedbacks: [], ...extra })
 
@@ -10,7 +11,7 @@ describe('upgrade scripts', () => {
 	it('are exported in the historical order (scripts are only ever appended)', () => {
 		assert.deepEqual(
 			upgrades.map((fn) => fn.name),
-			['setDefaultConfig', 'renameStreaming', 'setDefaultConfigV230'],
+			['setDefaultConfig', 'renameStreaming', 'setDefaultConfigV230', 'setDefaultConfigV260'],
 		)
 		for (const fn of upgrades) assert.equal(typeof fn, 'function')
 	})
@@ -54,8 +55,24 @@ describe('upgrade scripts', () => {
 		assert.equal('verbose' in onlyNew, false)
 	})
 
-	it('the two default scripts together cover CONFIG_DEFAULTS exactly once', () => {
-		const covered = [...upgrades.CONFIG_DEFAULT_KEYS_V220, ...upgrades.CONFIG_DEFAULT_KEYS_V230].sort()
+	it('setDefaultConfigV260 fills preset_categories when undefined', () => {
+		const result = upgrades[3](null, props({ host: 'x' }))
+		assert.deepEqual(result.updatedConfig.preset_categories, presetCategoryIds)
+		assert.deepEqual(result.updatedActions, [])
+		assert.deepEqual(result.updatedFeedbacks, [])
+
+		// a config that already has the field (even a subset, e.g. after the user unchecked some) is left alone
+		assert.equal(upgrades[3](null, props({ host: 'x', preset_categories: ['Channels'] })).updatedConfig, null)
+		assert.equal(upgrades[3](null, props({ host: 'x', preset_categories: [] })).updatedConfig, null)
+		assert.equal(upgrades[3](null, props(null)).updatedConfig, null)
+	})
+
+	it('the three default scripts together cover CONFIG_DEFAULTS exactly once', () => {
+		const covered = [
+			...upgrades.CONFIG_DEFAULT_KEYS_V220,
+			...upgrades.CONFIG_DEFAULT_KEYS_V230,
+			...upgrades.CONFIG_DEFAULT_KEYS_V260,
+		].sort()
 		assert.deepEqual(covered, Object.keys(upgrades.CONFIG_DEFAULTS).sort())
 	})
 
@@ -64,7 +81,8 @@ describe('upgrade scripts', () => {
 		const { getConfigFields } = require('../src/config')
 		for (const field of getConfigFields()) {
 			if (field.id in upgrades.CONFIG_DEFAULTS) {
-				assert.equal(field.default, upgrades.CONFIG_DEFAULTS[field.id], `default of ${field.id}`)
+				// deepEqual: preset_categories defaults to an array, compared by value not by reference
+				assert.deepEqual(field.default, upgrades.CONFIG_DEFAULTS[field.id], `default of ${field.id}`)
 			}
 		}
 	})

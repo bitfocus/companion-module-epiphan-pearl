@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.0] (2026-09-02)
+
+### New Features
+
+- New connection setting **Preset categories to generate** (multi-select, default: every category) controls which
+  groups of auto-generated buttons appear in Companion's drag-and-drop preset list. Unchecking a category only stops
+  it from being generated there; the underlying actions and feedbacks stay available for a hand-built button, and
+  anything already placed on a page keeps working. Upgrade script `setDefaultConfigV260` sets existing connections to
+  every category, so nothing changes until you deliberately narrow the selection
+- With several channels, layouts or inputs, some categories (Inputs, Previews, and previously Outputs) can produce a
+  large number of buttons; this setting is the way to trim the ones you do not use
+
+### Changes
+
+- Removed the **Outputs** preset category outright (one button per output x source produced dozens of buttons with a
+  double-digit input count, for routing that is usually only a few buttons in practice). `Output: set source` and the
+  `outputSourceOptimistic` feedback are unaffected and still available to build your own output-routing button by hand
+
+---
+
 ## [2.5.0] (2026-09-02)
 
 ### New Features

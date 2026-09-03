@@ -203,22 +203,12 @@ describe('init against a v2.0 device', () => {
 			}
 		}
 		const categories = new Set(Object.values(presets).map((p) => p.category))
-		for (const cat of [
-			'Channels',
-			'Publishers',
-			'Recorders',
-			'Outputs',
-			'Inputs',
-			'Previews',
-			'Single touch',
-			'Storage',
-			'System',
-			'Events',
-			'AFU',
-			'Config presets',
-		]) {
+		const { PRESET_CATEGORY_IDS } = require('../src/presets')
+		for (const cat of PRESET_CATEGORY_IDS) {
 			assert.ok(categories.has(cat), `missing preset category ${cat}`)
 		}
+		// Outputs was removed outright (see the preset_categories setting) - it is not a selectable category
+		assert.ok(!categories.has('Outputs'))
 	})
 
 	it('sends HTTP basic authentication on every request', () => {
