@@ -64,4 +64,50 @@ describe('startup with an unreachable device', () => {
 			await new Promise((resolve) => dead.close(resolve))
 		}
 	})
+
+	it('destroy() called while connect() is still in flight leaves no timer running', async () => {
+		// accept TCP connections but never answer, so the background connect() is still awaiting its
+		// request timeout when destroy() runs
+		const sockets = new Set()
+		const dead = net.createServer((socket) => {
+			sockets.add(socket)
+			socket.on('error', () => {})
+			socket.on('close', () => sockets.delete(socket))
+		})
+		await new Promise((resolve) => dead.listen(0, '127.0.0.1', resolve))
+		const port = dead.address().port
+
+		const instance = new EpiphanPearl({ id: 'test', upgradeScripts: [], _isInstanceBaseProps: true })
+		try {
+			await instance.init({
+				host: '127.0.0.1',
+				host_port: port,
+				username: 'admin',
+				password: 'x',
+				pollfreq: 1,
+				timeout: 200,
+				use_api_v2: true,
+				preview_interval: 0,
+				preview_width: 144,
+				poll_events: true,
+				poll_archive: false,
+				poll_connectivity: false,
+				verbose: false,
+			})
+			// init() returns before the device answers (see the test above); connect() is still running
+			// its own request timeout in the background at this point
+			assert.ok(instance.startupPromise, 'connect() is in flight')
+			await instance.destroy()
+
+			// let the in-flight connect() actually finish (it will fail against the dead server)
+			await instance.startupPromise
+
+			assert.equal(instance.timer, undefined, 'destroy() must prevent a timer from starting after teardown')
+			assert.equal(instance.previewTimer, undefined)
+		} finally {
+			await instance.destroy()
+			for (const socket of sockets) socket.destroy()
+			await new Promise((resolve) => dead.close(resolve))
+		}
+	})
 })

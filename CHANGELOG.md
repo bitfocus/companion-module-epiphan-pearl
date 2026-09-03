@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.1] (2026-09-03)
+
+### Bug Fixes
+
+- `destroy()` did not increment `configGeneration`, so a `connect()` still in flight from the last
+  `configUpdated()` (waiting on its own request timeout against an unreachable device) could start the
+  polling/preview timers _after_ `destroy()` already ran, leaking a live timer past teardown. `destroy()`
+  now bumps the generation like `configUpdated()` already does, so that guard in `connect()` correctly
+  stops it. Found while building the sibling `companion-module-epiphan-ec20` module, which shares the
+  same background-connect pattern
+
+---
+
 ## [2.6.0] (2026-09-02)
 
 ### New Features

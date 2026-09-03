@@ -233,6 +233,11 @@ class EpiphanPearl extends InstanceBase {
 	 */
 	async destroy() {
 		this.stopTimers()
+		// a connect() from the last configUpdated() may still be in flight (its own request timeouts
+		// haven't elapsed yet); bumping the generation makes its guards see a mismatch so it returns
+		// without calling initInterval()/initPreviewInterval(), instead of starting a new timer after
+		// destroy() already ran
+		this.configGeneration++
 		this.previewSubscriptions.clear()
 		this.previews = {}
 		this.previewFailedKeys.clear()
