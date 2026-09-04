@@ -2,20 +2,12 @@
 # yarn lockfile v1
 
 
-"@companion-module/base@^1.12.1":
-  version "1.12.1"
-  resolved "https://registry.npmjs.org/@companion-module/base/-/base-1.12.1.tgz"
-  integrity sha512-4hKs1g6XE8QCBh/dHYUa1seDl0U84TbpS8QnD8P+mFqMe7TupqgRkfAmLf3Ai9Fw8P7tE2zlFurMG6Y9iyA6YA==
+"@companion-module/base@^2.1.3":
+  version "2.1.3"
+  resolved "https://registry.yarnpkg.com/@companion-module/base/-/base-2.1.3.tgz#794d6b6426c45c75c10e46d313cdf495b0da3bad"
+  integrity sha512-/Sf4qL+e3fSf3abcqIcMUQSTCO4tytdImQ+mUl2c0hJh3V+ne/audMtJX8NIHoJGlHgJOAMv5Xt6QFYiyJ4o3g==
   dependencies:
-    ajv "^8.17.1"
     colord "^2.9.3"
-    ejson "^2.2.3"
-    eventemitter3 "^5.0.1"
-    mimic-fn "^3.1.0"
-    nanoid "^3.3.11"
-    p-queue "^6.6.2"
-    p-timeout "^4.1.0"
-    tslib "^2.8.1"
 
 "@companion-module/tools@^2.8.0":
   version "2.8.0"
@@ -286,7 +278,7 @@ ajv-keywords@^5.1.0:
   dependencies:
     fast-deep-equal "^3.1.3"
 
-ajv@^8.0.0, ajv@^8.17.1, ajv@^8.9.0:
+ajv@^8.0.0, ajv@^8.9.0:
   version "8.20.0"
   resolved "https://registry.yarnpkg.com/ajv/-/ajv-8.20.0.tgz#304b3636add88ba7d936760dd50ece006dea95f9"
   integrity sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==
@@ -375,11 +367,6 @@ cross-spawn@^7.0.3:
     shebang-command "^2.0.0"
     which "^2.0.1"
 
-ejson@^2.2.3:
-  version "2.2.3"
-  resolved "https://registry.npmjs.org/ejson/-/ejson-2.2.3.tgz"
-  integrity sha512-hsFvJp6OpGxFRQfBR3PSxFpaPALdHDY+SB3TRbMpLWNhvu8GzLiZutof5+/DFd2QekZo3KyXau75ngdJqQUSrw==
-
 electron-to-chromium@^1.5.402:
   version "1.5.421"
   resolved "https://registry.yarnpkg.com/electron-to-chromium/-/electron-to-chromium-1.5.421.tgz#4fdc138536e3705d565baf5921e89f36633dcd56"
@@ -456,16 +443,6 @@ eslint-visitor-keys@^3.3.0, eslint-visitor-keys@^3.4.3:
   version "3.4.3"
   resolved "https://registry.npmjs.org/eslint-visitor-keys/-/eslint-visitor-keys-3.4.3.tgz"
   integrity sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag==
-
-eventemitter3@^4.0.4:
-  version "4.0.7"
-  resolved "https://registry.npmjs.org/eventemitter3/-/eventemitter3-4.0.7.tgz"
-  integrity sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==
-
-eventemitter3@^5.0.1:
-  version "5.0.1"
-  resolved "https://registry.npmjs.org/eventemitter3/-/eventemitter3-5.0.1.tgz"
-  integrity sha512-GWkBvjiSZK87ELrYOSESUYeVIc9mvLLf/nXalMOS5dYrgZq9o5OVkbZAVM06CVxYsCwH9BDZFPlQTlPA1j4ahA==
 
 events@^3.2.0:
   version "3.3.0"
@@ -638,11 +615,6 @@ mime-db@^1.54.0:
   resolved "https://registry.yarnpkg.com/mime-db/-/mime-db-1.54.0.tgz#cddb3ee4f9c64530dff640236661d42cb6a314f5"
   integrity sha512-aU5EJuIN2WDemCcAp2vFBfp/m4EAhWJnUNSSw0ixs7/kXbd6Pg64EmwJkNdFhB8aWt1sH2CTXrLxo/iAGV3oPQ==
 
-mimic-fn@^3.1.0:
-  version "3.1.0"
-  resolved "https://registry.npmjs.org/mimic-fn/-/mimic-fn-3.1.0.tgz"
-  integrity sha512-Ysbi9uYW9hFyfrThdDEQuykN4Ey6BuwPD2kpI5ES/nFTDn/98yxYNLZJcgUAKPT/mcrLLKaGzJR9YVxJrIdASQ==
-
 minimizer-webpack-plugin@^5.7.0:
   version "5.8.0"
   resolved "https://registry.yarnpkg.com/minimizer-webpack-plugin/-/minimizer-webpack-plugin-5.8.0.tgz#744f0e28da888aa1708e2be32b4ddcf2eeb09e58"
@@ -665,11 +637,6 @@ minizlib@^3.1.0:
   dependencies:
     minipass "^7.1.2"
 
-nanoid@^3.3.11:
-  version "3.3.18"
-  resolved "https://registry.yarnpkg.com/nanoid/-/nanoid-3.3.18.tgz#f66a2de1199ffde0fcf21c8a5f13106b1c081913"
-  integrity sha512-DTg4MJbGMWkfi6VZFdNt2/caMbQy4Ou+Op/hJQvGEWcnVfoA1QA+xzRKAzw9jD6+GVOOeYr/mIcuDSdug6F6+w==
-
 neo-async@^2.6.2:
   version "2.6.2"
   resolved "https://registry.npmjs.org/neo-async/-/neo-async-2.6.2.tgz"
@@ -679,11 +646,6 @@ node-releases@^2.0.53:
   version "2.0.54"
   resolved "https://registry.yarnpkg.com/node-releases/-/node-releases-2.0.54.tgz#09af17d5647aa9f221ec5cf2becb95b68a981afe"
   integrity sha512-YHs7BmmcsdAI5Ozuf8JZo6PT0mv2GIWC9vMfvUC3dp65M8hn7Ux8CPL+2oBI7juNuj9d0ndhTcznq2ODBps9cQ==
-
-p-finally@^1.0.0:
-  version "1.0.0"
-  resolved "https://registry.npmjs.org/p-finally/-/p-finally-1.0.0.tgz"
-  integrity sha512-LICb2p9CB7FS+0eR1oqWnHhp0FljGLZCWBE9aix0Uye9W8LTQPwMTYVGWQWIw9RdQiDg4+epXQODwIYJtSJaow==
 
 p-limit@^2.2.0:
   version "2.3.0"
@@ -712,26 +674,6 @@ p-locate@^6.0.0:
   integrity sha512-wPrq66Llhl7/4AGC6I+cqxT07LhXvWL08LNXz1fENOw0Ap4sRZZ/gZpTTJ5jpurzzzfS2W/Ge9BY3LgLjCShcw==
   dependencies:
     p-limit "^4.0.0"
-
-p-queue@^6.6.2:
-  version "6.6.2"
-  resolved "https://registry.npmjs.org/p-queue/-/p-queue-6.6.2.tgz"
-  integrity sha512-RwFpb72c/BhQLEXIZ5K2e+AhgNVmIejGlTgiB9MzZ0e93GRvqZ7uSi0dvRF7/XIXDeNkra2fNHBxTyPDGySpjQ==
-  dependencies:
-    eventemitter3 "^4.0.4"
-    p-timeout "^3.2.0"
-
-p-timeout@^3.2.0:
-  version "3.2.0"
-  resolved "https://registry.npmjs.org/p-timeout/-/p-timeout-3.2.0.tgz"
-  integrity sha512-rhIwUycgwwKcP9yTOOFK/AKsAopjjCakVqLHePO3CC6Mir1Z99xT+R63jZxAT5lFZLa2inS5h+ZS2GvR99/FBg==
-  dependencies:
-    p-finally "^1.0.0"
-
-p-timeout@^4.1.0:
-  version "4.1.0"
-  resolved "https://registry.npmjs.org/p-timeout/-/p-timeout-4.1.0.tgz"
-  integrity sha512-+/wmHtzJuWii1sXn3HCuH/FTwGhrp4tmJTxSKJbfS+vkipci6osxXM5mY0jUiRzWKMTgUT8l7HFbeSwZAynqHw==
 
 p-try@^2.0.0:
   version "2.2.0"
@@ -953,11 +895,6 @@ ts-declaration-location@^1.0.6:
   integrity sha512-EDyGAwH1gO0Ausm9gV6T2nUvBgXT5kGoCMJPllOaooZ+4VvJiKBdZE7wK18N1deEowhcUptS+5GXZK8U/fvpwA==
   dependencies:
     picomatch "^4.0.2"
-
-tslib@^2.8.1:
-  version "2.8.1"
-  resolved "https://registry.npmjs.org/tslib/-/tslib-2.8.1.tgz"
-  integrity sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==
 
 undici-types@~7.8.0:
   version "7.8.0"
