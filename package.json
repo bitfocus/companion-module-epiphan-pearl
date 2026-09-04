@@ -12,7 +12,7 @@
 		"@companion-module/base": "^1.12.1"
 	},
 	"devDependencies": {
-		"@companion-module/tools": "^2.8.0"
+		"@companion-module/tools": "^3.1.0"
 	},
 	"repository": {
 		"type": "git",
