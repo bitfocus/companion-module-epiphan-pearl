@@ -732,7 +732,11 @@ module.exports = {
 				}
 				const control = String(action.options.control ?? 'none')
 				if (control === 'none') {
-					// push / "Nothing": re-read the input instead of changing anything
+					// push / "Nothing": re-read the input instead of changing anything — the levels
+					// right away (one legacy /sources/status), the rest with the next poll
+					this.pollMeterLevels().catch((error) =>
+						this.log('debug', `Audio level re-read failed: ${error?.message || error}`),
+					)
 					this.schedulePollSoon()
 					return
 				}

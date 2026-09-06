@@ -523,30 +523,3 @@ describe('preview feedback with preview_interval > 0', () => {
 		}
 	})
 })
-
-describe('audio feedback (advanced stub; Phase 3 draws the meter)', () => {
-	let mock
-	let instance
-
-	before(async () => {
-		mock = await startMockPearl()
-		instance = await createInstance({ mock })
-	})
-
-	after(async () => {
-		await instance.destroy()
-		await mock.close()
-	})
-
-	it('subscribe/unsubscribe ref-count meterSubscriptions; the callback is always {}', async () => {
-		assert.deepEqual(await runFeedback(instance, 'audio', { inputId: 'analog-a' }), {})
-		await subscribeFeedback(instance, 'audio', { inputId: 'analog-a' })
-		assert.equal(instance.meterSubscriptions.get('analog-a'), 1)
-		await subscribeFeedback(instance, 'audio', { inputId: 'analog-a' })
-		assert.equal(instance.meterSubscriptions.get('analog-a'), 2)
-		await unsubscribeFeedback(instance, 'audio', { inputId: 'analog-a' })
-		assert.equal(instance.meterSubscriptions.get('analog-a'), 1)
-		await unsubscribeFeedback(instance, 'audio', { inputId: 'analog-a' })
-		assert.equal(instance.meterSubscriptions.has('analog-a'), false)
-	})
-})

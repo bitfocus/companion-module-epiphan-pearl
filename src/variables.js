@@ -1,4 +1,13 @@
-const { safeId, formatHms, formatClock, compactDuration, bytesToHuman, formatUptime, round1 } = require('./utils')
+const {
+	safeId,
+	formatHms,
+	formatClock,
+	compactDuration,
+	bytesToHuman,
+	formatUptime,
+	round1,
+	storageLevel,
+} = require('./utils')
 const { levelSummary, readGain, readDelay } = require('./audio')
 const { CONFIRM_HINT } = require('./confirm')
 
@@ -226,8 +235,10 @@ function buildVariables(self) {
 		const state_ = status.state
 		const total = num(status.total)
 		const free = num(status.free)
-		const usedPct =
-			total !== undefined && total > 0 && free !== undefined ? ((total - free) / total) * 100 : undefined
+		// the 90 % / 97 % thresholds live in one place (utils.storageLevel), shared with the
+		// storage_level feedback and the Storage presets
+		const severity = storageLevel(status)
+		const usedPct = severity.usedPct
 
 		add(`storage_${stid}_state`, `Storage ${rawStid} State`, state_)
 		add(`storage_${stid}_free`, `Storage ${rawStid} Free`, free === undefined ? '' : bytesToHuman(free))
@@ -239,8 +250,7 @@ function buildVariables(self) {
 		switch (state_) {
 			case 'ready':
 				text = total === undefined ? 'No data' : `free of ${bytesToHuman(total)}`
-				if (usedPct !== undefined && usedPct >= 97) levelWord = 'FULL'
-				else if (usedPct !== undefined && usedPct >= 90) levelWord = 'LOW'
+				levelWord = severity.word
 				break
 			case 'devro':
 				text = total === undefined ? 'No data' : `free of ${bytesToHuman(total)}`

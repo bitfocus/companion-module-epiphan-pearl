@@ -9,7 +9,7 @@ const STRUCTURE_REFRESH_EVERY = 30
  * same instant tends to overwhelm it, so most of them time out instead of a few taking slightly longer.
  */
 const MAX_CONCURRENT_PREVIEWS = 3
-/** poll_interval bounds and fallback (D8); kept in sync with src/config.js's field of the same name */
+/** poll_interval bounds (D8); kept in sync with src/config.js's field of the same name */
 const POLL_INTERVAL_DEFAULT_MS = 2000
 const POLL_INTERVAL_MIN_MS = 500
 const POLL_INTERVAL_MAX_MS = 300000
@@ -109,18 +109,19 @@ module.exports = {
 	},
 
 	/**
-	 * Base interval between polls, in milliseconds (D8): `config.poll_interval` when present (the
-	 * upgrade this module's config stage has not landed yet still ships `pollfreq` in seconds), clamped
-	 * 500..300000, default 2000.
+	 * Base interval between polls, in milliseconds (D8): `config.poll_interval`, clamped 500..300000,
+	 * default 2000. `normaliseConfig()` always fills this field (the upgrade script converts the stored
+	 * pre-3.0.0 seconds-based field before a config ever reaches here), so no fallback is needed.
 	 *
 	 * @returns {number}
 	 */
 	pollIntervalMs() {
-		const configured = this.config?.poll_interval
-		if (configured !== undefined && configured !== null && configured !== '') {
-			return clampNumber(configured, POLL_INTERVAL_DEFAULT_MS, POLL_INTERVAL_MIN_MS, POLL_INTERVAL_MAX_MS)
-		}
-		return Math.round(clampNumber(this.config?.pollfreq, 10, 1, 300) * 1000)
+		return clampNumber(
+			this.config?.poll_interval,
+			POLL_INTERVAL_DEFAULT_MS,
+			POLL_INTERVAL_MIN_MS,
+			POLL_INTERVAL_MAX_MS,
+		)
 	},
 
 	/**
@@ -196,7 +197,6 @@ module.exports = {
 
 		// ---- 2. second round: legacy layouts (+ v1 publishers), and v2-only collections
 		const round2 = []
-		let sourcesStatus = []
 		const cids = Object.keys(state.channels)
 		for (const cid of cids) {
 			round2.push(
@@ -241,8 +241,10 @@ module.exports = {
 							audio: input.audio === true,
 							video: input.video === true,
 							real_device_name: input.real_device_name,
-							levels: undefined,
-							audioState: undefined,
+							// levels come from the 500 ms meter poll (src/meter.js), not from this one:
+							// carried over so a state swap does not blank a subscribed meter for a tick
+							levels: prev.inputs?.[input.id]?.levels,
+							audioState: prev.inputs?.[input.id]?.audioState,
 							settings: undefined,
 						}
 					}
@@ -260,11 +262,6 @@ module.exports = {
 								),
 							),
 					)
-				}),
-			)
-			round2.push(
-				req('GET', '/sources/status', { base: 'v1', optional: true }).then((list) => {
-					sourcesStatus = Array.isArray(list) ? list : []
 				}),
 			)
 			round2.push(
@@ -403,7 +400,6 @@ module.exports = {
 		for (const [did, output] of Object.entries(prev.outputs || {})) {
 			if (state.outputs[did] && state.outputs[did].source === undefined) state.outputs[did].source = output.source
 		}
-		this.applyInputLevels(state, sourcesStatus)
 
 		// ---- 5./6. swap state and diff
 		if (gen !== this.configGeneration) {
@@ -544,6 +540,8 @@ module.exports = {
 	 * INTERNAL: attach the audio state and levels of the legacy /sources/status list to state.inputs.
 	 * Its ids carry a D2P<serial>. prefix that the /inputs ids lack, so both sides are compared
 	 * through normaliseInputId(); entries without a matching input are ignored.
+	 * Called by the 500 ms meter poll (src/meter.js applyMeterSnapshot) — the interval poll does not
+	 * request levels at all.
 	 */
 	applyInputLevels(state, sourcesStatus) {
 		const byNormalisedId = new Map()

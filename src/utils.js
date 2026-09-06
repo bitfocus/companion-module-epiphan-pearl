@@ -339,6 +339,38 @@ function bookmarkText(text, appendTime, date = new Date()) {
 	return appendTime === true ? `${base} ${localTimeHms(date)}` : base
 }
 
+/** used-space thresholds of a storage (doc/PARITY.md §5.13): amber LOW at 90 %, red FULL at 97 % */
+const STORAGE_LOW_PCT = 90
+const STORAGE_FULL_PCT = 97
+/** the three severity levels of a mounted storage, worst last */
+const STORAGE_SEVERITY = ['ok', 'low', 'full']
+
+/**
+ * Severity of a storage from its StorageStatus: how full it is, which of the three severity levels
+ * that lands in, and the badge word for it. The single source of the 90 % / 97 % thresholds, shared
+ * by the storage_level feedback, the storage_<id>_level_word variable and the Storage presets.
+ * The mount states (nodev / dev / devro / formatting) are *not* severity — callers check
+ * `status.state` themselves and only ask this for a mounted ('ready' / 'devro') storage.
+ *
+ * @param {{total?: number|string, free?: number|string}} status
+ * @returns {{usedPct: number|undefined, level: 'ok'|'low'|'full', word: string}} word is '' at 'ok'
+ */
+function storageLevel(status) {
+	// blank / missing is unknown, not zero: a storage reporting free: '' has no severity at all
+	const size = (value) => {
+		if (value === undefined || value === null || value === '') return undefined
+		const n = Number(value)
+		return Number.isFinite(n) ? n : undefined
+	}
+	const total = size(status?.total)
+	const free = size(status?.free)
+	const usedPct = total !== undefined && total > 0 && free !== undefined ? ((total - free) / total) * 100 : undefined
+	if (usedPct === undefined) return { usedPct, level: 'ok', word: '' }
+	if (usedPct >= STORAGE_FULL_PCT) return { usedPct, level: 'full', word: 'FULL' }
+	if (usedPct >= STORAGE_LOW_PCT) return { usedPct, level: 'low', word: 'LOW' }
+	return { usedPct, level: 'ok', word: '' }
+}
+
 /**
  * The empty shape of the instance state, see doc/ARCHITECTURE.md "Instance state"
  * @returns {object}
@@ -391,7 +423,11 @@ module.exports = {
 	eventApplies,
 	localTimeHms,
 	bookmarkText,
+	storageLevel,
 	emptyState,
 	ACTIVE_RECORDER_STATES,
 	ACTIVE_PUBLISHER_STATES,
+	STORAGE_LOW_PCT,
+	STORAGE_FULL_PCT,
+	STORAGE_SEVERITY,
 }

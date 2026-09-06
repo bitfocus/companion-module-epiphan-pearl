@@ -1,5 +1,6 @@
-const { splitPair, eventApplies } = require('./utils')
+const { splitPair, eventApplies, storageLevel, STORAGE_LOW_PCT, STORAGE_FULL_PCT } = require('./utils')
 const { colors, stateStyle } = require('./style')
+const { meterOf, renderMeter, METER_DEFAULT_SIZE } = require('./meter')
 
 const RECORDER_STATES = [
 	{ id: 'started', label: 'Started' },
@@ -55,8 +56,8 @@ const SYSTEM_CONDITIONS = [
 ]
 
 const STORAGE_LEVELS = [
-	{ id: 'low', label: 'Low (90% or more used)' },
-	{ id: 'full', label: 'Full (97% or more used)' },
+	{ id: 'low', label: `Low (${STORAGE_LOW_PCT}% or more used)` },
+	{ id: 'full', label: `Full (${STORAGE_FULL_PCT}% or more used)` },
 	{ id: 'ro', label: 'Read-only' },
 	{ id: 'nomedia', label: 'No media' },
 	{ id: 'notready', label: 'Not ready' },
@@ -77,7 +78,8 @@ function previewKey(kind, id) {
 }
 
 /**
- * Preview feedbacks (and the audio meter) are enabled only when the preview interval is > 0.
+ * Preview feedbacks are enabled only when the preview interval is > 0. The audio meter is not gated
+ * on it: its levels come from its own 500 ms poll (src/meter.js), not from the preview poller.
  *
  * @param {object} self instance
  * @returns {boolean}
@@ -132,8 +134,9 @@ function unsubscribePreview(self, key) {
 }
 
 /**
- * Register interest in an input's level meter (Phase 3 draws the bars; for now this only tracks
- * ref-counts so the poller/render code arriving in Phase 3 has somewhere to read subscriptions from).
+ * Register interest in an input's level meter and start the 500 ms level poll if it is not running
+ * yet. One tick serves every subscribed input (one /sources/status request lists them all), so the
+ * ref count only decides whether the poll runs at all, never how many requests it makes.
  *
  * @param {object} self instance
  * @param {string} key input id
@@ -143,13 +146,15 @@ function subscribeMeter(self, key) {
 		if (!key) return
 		if (!(self.meterSubscriptions instanceof Map)) self.meterSubscriptions = new Map()
 		self.meterSubscriptions.set(key, (self.meterSubscriptions.get(key) || 0) + 1)
+		self.startMeterTimer?.()
 	} catch (err) {
 		self.log('error', `audio meter subscribe failed for ${key}: ${err?.message ?? err}`)
 	}
 }
 
 /**
- * Drop interest in an input's level meter.
+ * Drop interest in an input's level meter. The last unsubscribe stops the level poll and clears the
+ * levels, so the level variables read '' again instead of freezing at their last value.
  *
  * @param {object} self instance
  * @param {string} key input id
@@ -160,6 +165,10 @@ function unsubscribeMeter(self, key) {
 		const count = (self.meterSubscriptions.get(key) || 0) - 1
 		if (count > 0) self.meterSubscriptions.set(key, count)
 		else self.meterSubscriptions.delete(key)
+		if (self.meterSubscriptions.size === 0) {
+			self.stopMeterTimer?.()
+			self.applyMeterSnapshot?.([])
+		}
 	} catch (err) {
 		self.log('error', `audio meter unsubscribe failed for ${key}: ${err?.message ?? err}`)
 	}
@@ -665,17 +674,13 @@ module.exports = {
 				try {
 					const status = this.state.storages?.[feedback.options.storageId]?.status
 					const state = status?.state
-					const total = Number(status?.total)
-					const free = Number(status?.free)
-					const usedPct =
-						Number.isFinite(total) && total > 0 && Number.isFinite(free)
-							? ((total - free) / total) * 100
-							: undefined
+					// severity (how full) and mount state are separate axes: only a mounted storage has one
+					const { level } = storageLevel(status)
 					switch (feedback.options.level) {
 						case 'low':
-							return state === 'ready' && usedPct !== undefined && usedPct >= 90 && usedPct < 97
+							return state === 'ready' && level === 'low'
 						case 'full':
-							return state === 'ready' && usedPct !== undefined && usedPct >= 97
+							return state === 'ready' && level === 'full'
 						case 'ro':
 							return state === 'devro'
 						case 'nomedia':
@@ -685,7 +690,7 @@ module.exports = {
 						case 'formatting':
 							return state === 'formatting'
 						case 'ok':
-							return state === 'ready' && (usedPct === undefined || usedPct < 90)
+							return state === 'ready' && level === 'ok'
 						default:
 							return false
 					}
@@ -697,16 +702,16 @@ module.exports = {
 		}
 
 		// ------------------------------------------------------------------
-		// Audio (advanced; Phase 3 draws the meter)
+		// Audio (advanced: draws the level meter as an image)
 		// ------------------------------------------------------------------
 
 		feedbacks['audio'] = {
 			type: 'advanced',
 			name: 'Audio meter',
 			description:
-				'Stereo level meter for an audio input. Not yet drawn (a later release adds it); use the ' +
-				'input_<id>_level_text variable in the meantime. Subscribing still tracks interest so the future ' +
-				'poller has ref counts to work from.',
+				'Stereo level meter for an audio input: two bars with peak ticks on the right edge of the ' +
+				'button, green to 62%, amber to 82%, red above, over -60..0 dBFS. Placing it starts a 500 ms ' +
+				'level poll; the button keeps its own text.',
 			options: [
 				{
 					type: 'dropdown',
@@ -716,7 +721,24 @@ module.exports = {
 					default: this.firstId(this.choicesInputsWithAudio()),
 				},
 			],
-			callback: () => ({}),
+			callback: (feedback) => {
+				try {
+					const levels = meterOf(this.state.inputs?.[String(feedback.options.inputId ?? '')])
+					// no levels yet (nothing subscribed, no signal, or a device without the endpoint):
+					// return nothing at all so the button keeps its text and its own style
+					if (!levels) return {}
+					const width = Math.round(Number(feedback.image?.width) || METER_DEFAULT_SIZE)
+					const height = Math.round(Number(feedback.image?.height) || METER_DEFAULT_SIZE)
+					return {
+						imageBuffer: renderMeter(width, height, levels),
+						imageBufferEncoding: { pixelFormat: 'RGBA' },
+						imageBufferPosition: { x: 0, y: 0, width, height },
+					}
+				} catch (error) {
+					this.log('error', `audio feedback failed: ${error?.message ?? error}`)
+					return {}
+				}
+			},
 			subscribe: (feedback) => subscribeMeter(this, String(feedback.options.inputId ?? '')),
 			unsubscribe: (feedback) => unsubscribeMeter(this, String(feedback.options.inputId ?? '')),
 		}

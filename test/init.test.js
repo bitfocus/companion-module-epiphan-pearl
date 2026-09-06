@@ -73,8 +73,10 @@ describe('init against a v2.0 device', () => {
 			'sdi-a',
 		])
 		assert.equal(s.inputs['analog-a'].audio, true)
-		assert.deepEqual(Object.keys(s.inputs['analog-a'].levels).sort(), ['peak', 'rms'])
-		assert.equal(s.inputs['analog-a'].audioState, 'active')
+		// levels/audioState are filled by the 500 ms meter poll only (see test/meter.test.js), so the
+		// first interval poll leaves them empty
+		assert.equal(s.inputs['analog-a'].levels, undefined)
+		assert.equal(s.inputs['analog-a'].audioState, undefined)
 		assert.equal(s.inputs['analog-a'].settings.local_audio.gain, 27, 'audio settings cache for _gain/_delay')
 		assert.deepEqual(Object.keys(s.outputs), ['D1'])
 		assert.equal(s.outputs.D1.source, undefined)

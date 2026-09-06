@@ -1,6 +1,9 @@
-const { safeId, splitPair } = require('./utils')
+const { safeId, splitPair, STORAGE_SEVERITY } = require('./utils')
 const { colors, restStyle, stateStyle } = require('./style')
 const { ICONS } = require('./icons')
+
+/** colour of each severity level of utils.storageLevel() on the Storage presets */
+const STORAGE_SEVERITY_COLORS = { ok: colors.green, low: colors.amber, full: colors.red }
 
 const CAT_RECORDING = 'Recording'
 const CAT_STREAMING = 'Streaming'
@@ -760,21 +763,12 @@ module.exports = {
 					text: `${v(`storage_${sid}_free`)}\n${v(`storage_${sid}_text`)}\n${v('confirm_hint')}${v(`storage_${sid}_hint`)}`,
 					actions: [{ actionId: 'storage', options: { storageId: storage.id, confirm: true } }],
 					feedbacks: [
-						{
+						// the three severity levels of utils.storageLevel(), worst last so it wins
+						...STORAGE_SEVERITY.map((level) => ({
 							feedbackId: 'storage_level',
-							options: { storageId: storage.id, level: 'ok' },
-							style: stateStyle(colors.green),
-						},
-						{
-							feedbackId: 'storage_level',
-							options: { storageId: storage.id, level: 'low' },
-							style: stateStyle(colors.amber),
-						},
-						{
-							feedbackId: 'storage_level',
-							options: { storageId: storage.id, level: 'full' },
-							style: stateStyle(colors.red),
-						},
+							options: { storageId: storage.id, level },
+							style: stateStyle(STORAGE_SEVERITY_COLORS[level]),
+						})),
 						{
 							feedbackId: 'storage_level',
 							options: { storageId: storage.id, level: 'nomedia' },

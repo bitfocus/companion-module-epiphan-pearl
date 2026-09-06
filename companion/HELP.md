@@ -25,7 +25,7 @@ The setting names below are the labels shown in the connection's settings page.
 | **Accept self-signed certificate**                          | Shown only while _Use HTTPS_ is ticked. Ticked by default: accept the Pearl's own (self-signed) certificate without a trusted CA. Untick to require a certificate a public or internal CA has signed; an untrusted certificate then fails the connection instead of being accepted.                                                                                                                                                   |
 | **Poll interval (ms)**                                      | Milliseconds between state polls (500..300000, default `2000`). Every poll refreshes channels, publishers, recorders, inputs, outputs, storage, single touch, system status and the CMS schedule. Firmware, device identity and the list of configuration presets are fetched on the first poll and then every 30th poll. If a poll fails, the next one waits longer (doubling each time, up to 15 s) until the device answers again. |
 | **Request timeout (ms)**                                    | Milliseconds a single request may take before it is aborted (1000..60000, default `5000`).                                                                                                                                                                                                                                                                                                                                            |
-| **Preview image refresh interval (s, 0 disables previews)** | Seconds between preview image refreshes (0..300, default `2`). `0` disables every preview and the audio meter. Only previews actually placed on a button are fetched, at most 3 at a time, so a page full of preview buttons does not overwhelm the Pearl.                                                                                                                                                                            |
+| **Preview image refresh interval (s, 0 disables previews)** | Seconds between preview image refreshes (0..300, default `2`). `0` disables every preview (the audio meter has its own 500 ms level poll and is not affected). Only previews actually placed on a button are fetched, at most 3 at a time, so a page full of preview buttons does not overwhelm the Pearl.                                                                                                                            |
 | **Preview image width (px)**                                | Width in pixels requested from the Pearl for preview images (72..720, default `144`). Larger images look sharper on big surfaces but cost more bandwidth and CPU on the Pearl.                                                                                                                                                                                                                                                        |
 | **Poll CMS schedule**                                       | Ticked (default): poll the upcoming and ongoing CMS event, plus the next 10 scheduled/recent events, every poll (Kaltura, Panopto, YuJa, Opencast...). Untick if the Pearl is not connected to a CMS.                                                                                                                                                                                                                                 |
 | **Enable verbose logging**                                  | Log every request and response at debug level. Useful when reporting a problem; leave off in normal use.                                                                                                                                                                                                                                                                                                                              |
@@ -282,15 +282,26 @@ Rotary ticks arriving within 150 ms are combined into one step — see Rotary be
 
 _Step_ tooltip (verbatim): "Gain steps are in dB (0–100), delay steps in milliseconds (−300..300)."
 
-**Feedback — Audio meter** (advanced, `audio`): stereo level meter for an audio input. Not yet drawn (a
-later release adds it); use the `input_ID_level_text` variable in the meantime. Subscribing still tracks
-interest so the future poller has ref counts to work from.
+**Feedback — Audio meter** (advanced, `audio`): draws a stereo level meter for an audio input on the right
+edge of the button — two vertical bars (left and right channel) with a light peak tick each, over a
+−60..0 dBFS scale: green up to 62 % of the bar, amber to 82 %, red above. The bars are drawn _over_ the
+button, so its own text, colour and other feedbacks stay visible; a mono input gets a single bar, and an
+input reporting no levels (no signal, or a device without the level endpoint) draws nothing at all.
+
+Putting this feedback on a button starts a **500 ms level poll** for the whole connection; taking the last
+one off stops it again. One poll covers every metered input (a single request lists them all), so ten meter
+buttons cost the Pearl no more than one. The level variables below are filled by that poll only — while no
+meter is placed anywhere in the connection they read empty. If you want a text-only level readout, keep one
+meter button somewhere in the same connection, or press a button with _Press adjusts_ = Nothing, which
+re-reads the levels once.
 
 **Variables**: `input_ID_name` (every input, incl. video-only), and for audio-capable inputs also
-`_peak_dbfs`, `_peak_left`, `_peak_right`, `_level_text` (`-18 dBFS`/`silent`/`No signal`), `_gain`, `_delay`.
+`_peak_dbfs`, `_peak_left`, `_peak_right`, `_level_text` (`-18 dBFS`/`silent`/`No signal`; all four empty
+while no meter is subscribed), `_gain`, `_delay` (from the regular poll, always available).
 
-**Presets — Audio**: per audio input — meter (feedback only), Gain +, Gain −, Delay +, Delay −, a rotary
-Gain button and a rotary Delay button (see Rotary below).
+**Presets — Audio**: per audio input — meter (feedback only, so the button shows the input name with the
+bars beside it), Gain +, Gain −, Delay +, Delay −, a rotary Gain button and a rotary Delay button (see
+Rotary below).
 
 #### Storage
 
@@ -343,28 +354,31 @@ least that long and then released, and a short tap does nothing.
 Companion sends **Rotate left** / **Rotate right** (and, on push-capable surfaces, a separate **Press**)
 events for rotary controls. The Audio presets' rotary Gain and rotary Delay buttons wire the _Audio_ action
 into both rotate directions (Down = decrease, Up = increase, both with _Step_ 1) and put the same action
-with _Press adjusts_ set to Nothing on the push step, so pressing the dial simply re-reads the input instead
-of changing anything. Ticks that arrive within 150 ms of each other (a fast spin of the dial, or several
-quick presses of a Gain/Delay preset button) are combined into a single request carrying their summed step,
-rather than sending one request per tick.
+with _Press adjusts_ set to Nothing on the push step, so pressing the dial simply re-reads the input (its
+levels straight away, the rest with the next poll) instead of changing anything. Ticks that arrive within
+150 ms of each other (a fast spin of the dial, or several quick presses of a Gain/Delay preset button) are
+combined into a single request carrying their summed step, rather than sending one request per tick — three
+quick clicks of a _Step_ 1 gain dial send one change of +3, not three of +1.
+
+Add the **Audio meter** feedback to a dial's button to see the bars next to the gain or delay readout.
 
 ### Feedbacks summary
 
-| Feedback             | Type                            | Colour(s)                                                          |
-| -------------------- | ------------------------------- | ------------------------------------------------------------------ |
-| `recorder_state`     | boolean                         | red (Started/Error), amber (Starting/Paused)                       |
-| `stream_state`       | boolean                         | green (Started), amber (Starting/Listening), red (Error)           |
-| `layout_active`      | boolean                         | amber                                                              |
-| `layout_preview`     | advanced (image)                | —                                                                  |
-| `singletouch_active` | boolean                         | green (On), red (Error)                                            |
-| `preview`            | advanced (image)                | —                                                                  |
-| `output_set`         | boolean                         | green                                                              |
-| `event_state`        | boolean                         | green (Running), amber (Paused), cms blue (Scheduled), grey (None) |
-| `event_applies`      | boolean                         | cms blue                                                           |
-| `system`             | boolean                         | amber (CPU/paused), red (error), green (uploading)                 |
-| `storage_level`      | boolean                         | amber (Low), red (Full), grey (No media)                           |
-| `audio`              | advanced (image, not yet drawn) | —                                                                  |
-| `confirm_pending`    | boolean                         | red                                                                |
+| Feedback             | Type             | Colour(s)                                                          |
+| -------------------- | ---------------- | ------------------------------------------------------------------ |
+| `recorder_state`     | boolean          | red (Started/Error), amber (Starting/Paused)                       |
+| `stream_state`       | boolean          | green (Started), amber (Starting/Listening), red (Error)           |
+| `layout_active`      | boolean          | amber                                                              |
+| `layout_preview`     | advanced (image) | —                                                                  |
+| `singletouch_active` | boolean          | green (On), red (Error)                                            |
+| `preview`            | advanced (image) | —                                                                  |
+| `output_set`         | boolean          | green                                                              |
+| `event_state`        | boolean          | green (Running), amber (Paused), cms blue (Scheduled), grey (None) |
+| `event_applies`      | boolean          | cms blue                                                           |
+| `system`             | boolean          | amber (CPU/paused), red (error), green (uploading)                 |
+| `storage_level`      | boolean          | amber (Low), red (Full), grey (No media)                           |
+| `audio`              | advanced (image) | —                                                                  |
+| `confirm_pending`    | boolean          | red                                                                |
 
 ### Variables summary
 
@@ -453,10 +467,13 @@ above); all of them are on by default.
   unpublished endpoint it could change or be removed in a future firmware update without appearing in
   Epiphan's release notes. If that happens the preview simply stops producing an image, like any other
   unreachable preview.
-- **Input levels come from the legacy API.** `input_ID_peak_dbfs`/`_peak_left`/`_peak_right`/`_level_text`
-  are filled from the legacy `GET /api/sources/status` list (its ids carry a device-serial prefix the v2.0
-  `/inputs` ids lack; the module matches them with the prefix stripped). On a device where that endpoint is
-  unavailable the variables stay empty rather than erroring.
+- **Input levels come from the legacy API, and only while a meter is placed.**
+  `input_ID_peak_dbfs`/`_peak_left`/`_peak_right`/`_level_text` and the _Audio meter_ feedback are filled by
+  a 500 ms poll of the legacy `GET /api/sources/status` list (its ids carry a device-serial prefix the v2.0
+  `/inputs` ids lack; the module matches them with the prefix stripped). That poll runs only while at least
+  one _Audio meter_ feedback is on a button of this connection, so the four level variables read empty
+  otherwise; the regular poll interval never fetches levels. On a device where the endpoint is unavailable
+  they stay empty rather than erroring.
 - **Output source, applied configuration preset and storage hints are optimistic.** The API can set an
   output's source, apply a configuration preset and eject a storage, but has no endpoint to read any of
   those back. `output_ID_source`, `preset_last_applied` and the matching feedbacks therefore only reflect

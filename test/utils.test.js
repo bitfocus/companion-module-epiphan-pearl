@@ -215,6 +215,26 @@ describe('utils', () => {
 		assert.equal(utils.bookmarkText('', true, d), 'Marker 09:05:03')
 	})
 
+	it('storageLevel is the one place the 90 % / 97 % thresholds live', () => {
+		const gb = 1024 * 1024 * 1024
+		assert.deepEqual(utils.STORAGE_SEVERITY, ['ok', 'low', 'full'], 'worst last, so the preset styles stack')
+		assert.equal(utils.STORAGE_LOW_PCT, 90)
+		assert.equal(utils.STORAGE_FULL_PCT, 97)
+
+		const level = (total, free) => utils.storageLevel({ total, free })
+		assert.deepEqual(level(100 * gb, 50 * gb), { usedPct: 50, level: 'ok', word: '' })
+		assert.deepEqual(level(100 * gb, 10.5 * gb), { usedPct: 89.5, level: 'ok', word: '' })
+		assert.deepEqual(level(100 * gb, 10 * gb), { usedPct: 90, level: 'low', word: 'LOW' })
+		assert.deepEqual(level(100 * gb, 3.1 * gb), { usedPct: 96.9, level: 'low', word: 'LOW' })
+		assert.deepEqual(level(100 * gb, 3 * gb), { usedPct: 97, level: 'full', word: 'FULL' })
+		assert.deepEqual(level(100 * gb, 0), { usedPct: 100, level: 'full', word: 'FULL' })
+
+		// unknown size = no severity at all, never "full" by accident
+		for (const status of [{}, { total: 0, free: 0 }, { total: 100, free: '' }, { total: '', free: 5 }, undefined]) {
+			assert.deepEqual(utils.storageLevel(status), { usedPct: undefined, level: 'ok', word: '' })
+		}
+	})
+
 	it('emptyState has the target 3.0.0 shape (doc/PARITY.md §1 state shape target)', () => {
 		const s = utils.emptyState()
 		assert.deepEqual(Object.keys(s).sort(), [

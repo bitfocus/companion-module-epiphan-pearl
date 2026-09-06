@@ -556,6 +556,32 @@ describe('actions against a v2.0 device', () => {
 			})
 		})
 
+		it('three rotate_right ticks of the gain dial within 150 ms make one patch of +3 (D4)', async () => {
+			mock.state.inputs['analog-a'].settings.local_audio.gain = 27
+			// the real 150 ms window, and the options the shipped rotary preset actually carries
+			instance.rotaryWindowMs = undefined
+			const preset = instance.definitions.presets['audio_rotary_gain_analog-a']
+			assert.ok(preset?.options?.rotaryActions, 'the Audio gain rotary preset exists')
+			const [tick] = preset.steps[0].rotate_right
+			assert.deepEqual(tick.options, { inputId: 'analog-a', control: 'gain', direction: 'up', step: 1 })
+
+			// a spin of the dial: the three ticks are handed over in one go, well inside the 150 ms window
+			const start = Date.now()
+			await Promise.all([
+				runRotate(instance, tick.actionId, tick.options),
+				runRotate(instance, tick.actionId, tick.options),
+				runRotate(instance, tick.actionId, tick.options),
+			])
+			assert.ok(Date.now() - start < 150, 'the three ticks arrived inside the coalescing window')
+			assert.equal(recorded(mock, 'PATCH', `${V2}/inputs/analog-a/settings`).length, 0, 'nothing sent yet')
+
+			await waitFor(() => recorded(mock, 'PATCH', `${V2}/inputs/analog-a/settings`).length === 1)
+			await new Promise((resolve) => setTimeout(resolve, 200))
+			const list = recorded(mock, 'PATCH', `${V2}/inputs/analog-a/settings`)
+			assert.equal(list.length, 1, 'one request for the three ticks')
+			assert.deepEqual(list[0].body, { local_audio: { gain: 30 } }, '27 + 3')
+		})
+
 		it('rotary steps flush the same way runAction does (runRotate)', async () => {
 			mock.state.inputs['analog-a'].settings.local_audio.gain = 50
 			instance.rotaryWindowMs = 10
@@ -587,11 +613,15 @@ describe('actions against a v2.0 device', () => {
 			assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/sdi-a/settings`).body, { sdi: { audio: { delay: -20 } } })
 		})
 
-		it('"Nothing" (control none) sends no request; it only re-reads', async () => {
+		it('"Nothing" (control none) changes nothing; it only re-reads the levels', async () => {
 			instance.rotaryWindowMs = 10
 			await runAction(instance, 'audio', { inputId: 'analog-a', control: 'none', direction: 'up', step: 1 })
 			await new Promise((resolve) => setTimeout(resolve, 60))
-			assert.equal(mock.requests.length, 0)
+			// the immediate level fetch (src/meter.js) is the only thing it sends; nothing is written
+			assert.equal(recorded(mock, 'GET', '/api/sources/status').length, 1)
+			assert.equal(recorded(mock, 'PATCH').length, 0)
+			assert.equal(recorded(mock, 'POST').length, 0)
+			assert.equal(recorded(mock, 'PUT').length, 0)
 		})
 
 		it('an input with no gain/delay setting warns (from the coalesced flush) and sends nothing', async () => {

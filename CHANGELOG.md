@@ -42,9 +42,16 @@ confirm`, boolean feedback `confirm_pending`) and sends nothing; the same button
   variables, the `event_ongoing_toggle_command` variable, and the `event_title`/`event_state`/
   `event_remaining` aliases.
 - New action `audio`: nudges an input's gain (dB) or delay (ms) up/down by a configurable step, or just
-  re-reads it, replacing the old absolute gain/delay setters. New advanced feedback `audio` (a stereo level
-  meter; drawing the meter itself is still to come — for now it only tracks subscriber interest). New
-  `input_ID_gain`/`_delay` variables.
+  re-reads it, replacing the old absolute gain/delay setters. New `input_ID_gain`/`_delay` variables.
+- New advanced feedback `audio`: a real stereo level meter drawn onto the button — two vertical bars with
+  peak ticks on its right edge, over a −60..0 dBFS scale, green up to 62 % of the bar, amber to 82 %, red
+  above, on a `#2a2e35` track. The bars are drawn over the button, so its own text, colour and other
+  feedbacks stay visible; a mono input gets one bar, and an input without levels draws nothing.
+- The levels behind that meter come from a **500 ms level poll** that runs only while at least one `audio`
+  feedback is placed (its subscriptions are ref-counted; the last one taken off stops the poll again). One
+  tick is one legacy `GET /api/sources/status` for every metered input at once, so a page full of meters
+  costs the Pearl no more than a single one. Pressing an `audio` button with _Press adjusts_ = Nothing
+  re-reads the levels immediately, with or without a meter placed.
 - New preset categories **Bookmarks**, **Outputs** (restored — see Changed), **Power** and **Audio**.
 - New `src/style.js` (shared palette/state-word/standard-text module) and `src/icons.js` (one icon per
   preset category, rendered from the Stream Deck plugin's own artwork) — every generated preset now carries
@@ -53,8 +60,10 @@ confirm`, boolean feedback `confirm_pending`) and sends nothing; the same button
   are now reported: once per module start, the connection log prints one `warn` line per distinct removed
   id, naming how many buttons carried it and pointing at its replacement.
 - Input level variables `input_ID_peak_dbfs`, `_peak_left`, `_peak_right`, `_level_text` for every
-  audio-capable input, filled every poll from the legacy `GET /api/sources/status` list (its ids carry a
-  device-serial prefix the v2.0 `/inputs` ids lack; matched with that prefix stripped).
+  audio-capable input, filled by the level poll above from the legacy `GET /api/sources/status` list (its
+  ids carry a device-serial prefix the v2.0 `/inputs` ids lack; matched with that prefix stripped). They
+  read empty while no `audio` feedback is placed anywhere in the connection — keep one meter button (or
+  press a _Press adjusts_ = Nothing button) to feed a text-only level readout.
 - New variables: `recorder_ID_state_word`/`_duration_text`, `recorder_all_state_word`,
   `channel_CID_publisher_PID_state_word`/`_error`, `channel_CID_publishers_state_word`, `uptime`,
   `system_status_text`, `afu_text`, `storage_ID_text`/`_level_word`/`_hint`, `singletouch_ID_summary`/

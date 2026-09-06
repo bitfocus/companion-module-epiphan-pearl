@@ -11,6 +11,7 @@ const choices = require('./choices')
 const actions = require('./actions')
 const feedbacks = require('./feedbacks')
 const presets = require('./presets')
+const meter = require('./meter')
 const { getConfigFields } = require('./config')
 const upgrades = require('./upgrades')
 const { emptyState, firmwareVersionNumber, clampNumber } = require('./utils')
@@ -90,7 +91,7 @@ class EpiphanPearl extends InstanceBase {
 		this.previews = {}
 		/** preview subscriptions maintained by the preview feedbacks: Map<key, count> */
 		this.previewSubscriptions = new Map()
-		/** audio meter subscriptions maintained by the 'audio' feedback: Map<inputId, count> (Phase 3) */
+		/** audio meter subscriptions maintained by the 'audio' feedback: Map<inputId, count> */
 		this.meterSubscriptions = new Map()
 		/** keys whose last fetch failed, so a 'warn' is logged once on failure and once on recovery, not every poll */
 		this.previewFailedKeys = new Set()
@@ -118,6 +119,8 @@ class EpiphanPearl extends InstanceBase {
 		this.timer = undefined
 		this.previewTimer = undefined
 		this.pollSoonTimer = undefined
+		/** 500 ms audio level poll, running only while a meter is subscribed (src/meter.js) */
+		this.meterTimer = undefined
 		this.pollInProgress = false
 		/** promise of the poll currently running (pollAll returns it to overlapping callers) */
 		this.pollPromise = undefined
@@ -244,6 +247,9 @@ class EpiphanPearl extends InstanceBase {
 		this.resubscribePreviews()
 		this.initInterval()
 		this.initPreviewInterval()
+		// meter subscriptions survive a configuration change (Companion does not re-send subscribe for
+		// them), so the level poll is simply restarted here when one is still placed
+		this.startMeterTimer()
 	}
 
 	/**
@@ -298,6 +304,7 @@ class EpiphanPearl extends InstanceBase {
 		this.timer = undefined
 		this.previewTimer = undefined
 		this.pollSoonTimer = undefined
+		this.stopMeterTimer()
 		// Stage 1 mixins (confirm.js, rotary.js): a pending confirm or a coalescing rotary tick must not
 		// outlive this instance
 		this.clearConfirmTimer()
@@ -399,7 +406,7 @@ class EpiphanPearl extends InstanceBase {
 	}
 }
 
-Object.assign(EpiphanPearl.prototype, api, poller, choices, actions, feedbacks, presets)
+Object.assign(EpiphanPearl.prototype, api, poller, choices, actions, feedbacks, presets, meter)
 
 const upgradeToBooleanFeedbacks = CreateConvertToBooleanFeedbackUpgradeScript({
 	channelLayout: {

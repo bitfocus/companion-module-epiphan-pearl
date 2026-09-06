@@ -91,6 +91,9 @@ describe('audio helper (pure)', () => {
 	})
 })
 
+// The levels are read by the 500 ms meter poll (src/meter.js), never by the interval poll; every test
+// below therefore drives one tick itself with pollMeterLevels(). The poll's own timing, ref counting
+// and rendering live in test/meter.test.js.
 describe('audio levels from the legacy /sources/status list', () => {
 	let mock
 	let instance
@@ -98,6 +101,7 @@ describe('audio levels from the legacy /sources/status list', () => {
 	before(async () => {
 		mock = await startMockPearl()
 		instance = await createInstance({ mock })
+		await instance.pollMeterLevels()
 	})
 
 	after(async () => {
@@ -105,12 +109,13 @@ describe('audio levels from the legacy /sources/status list', () => {
 		await mock.close()
 	})
 
-	it('is fetched from the legacy base on every poll', async () => {
+	it('is fetched from the legacy base, once per level tick', async () => {
 		assert.ok(mock.requests.some((r) => r.method === 'GET' && r.path === '/api/sources/status'))
 		assert.ok(!mock.requests.some((r) => r.path === '/api/v2.0/sources/status'))
 		mock.requests.length = 0
-		await instance.pollAll()
+		await instance.pollMeterLevels()
 		assert.equal(mock.requests.filter((r) => r.path === '/api/sources/status').length, 1)
+		assert.equal(mock.requests.length, 1, 'a level tick asks for nothing else')
 	})
 
 	it('attaches levels to the inputs although the legacy ids carry the D2P<serial>. prefix', async () => {
@@ -159,15 +164,15 @@ describe('audio levels from the legacy /sources/status list', () => {
 		assert.ok(!ids.includes('input_hdmi-a_peak_dbfs'))
 	})
 
-	it('two polls see different levels', async () => {
+	it('two level ticks see different levels', async () => {
 		const first = instance.variableValues['input_analog-a_peak_dbfs']
-		await instance.pollAll()
+		await instance.pollMeterLevels()
 		const second = instance.variableValues['input_analog-a_peak_dbfs']
 		assert.equal(typeof second, 'number')
 		assert.notEqual(first, second)
 	})
 
-	it('moving levels alone trigger no feedback checks and no definition updates', async () => {
+	it('moving levels alone check only the meter feedback and update no definitions', async () => {
 		instance.checkedFeedbacks.length = 0
 		const before = instance.definitions.variables.length
 		let definitionUpdates = 0
@@ -177,13 +182,23 @@ describe('audio levels from the legacy /sources/status list', () => {
 			return original.apply(this, args)
 		}
 		try {
-			await instance.pollAll()
+			await instance.pollMeterLevels()
 		} finally {
 			delete instance.setVariableDefinitions
 		}
-		assert.deepEqual(instance.checkedFeedbacks, [])
+		assert.deepEqual(instance.checkedFeedbacks, [['audio']])
 		assert.equal(definitionUpdates, 0)
 		assert.equal(instance.definitions.variables.length, before)
+	})
+
+	it('an interval poll neither fetches nor drops the levels', async () => {
+		await instance.pollMeterLevels()
+		const before = instance.variableValues['input_analog-a_peak_dbfs']
+		mock.requests.length = 0
+		await instance.pollAll()
+		assert.equal(mock.requests.filter((r) => r.path === '/api/sources/status').length, 0)
+		assert.ok(instance.state.inputs['analog-a'].levels, 'carried over into the new state')
+		assert.equal(instance.variableValues['input_analog-a_peak_dbfs'], before)
 	})
 
 	it('matches an input whose /inputs id already carries the device prefix', async () => {
@@ -198,6 +213,7 @@ describe('audio levels from the legacy /sources/status list', () => {
 		}
 		try {
 			await instance.pollAll()
+			await instance.pollMeterLevels()
 			const input = instance.state.inputs['D2P496187.hdmi-c']
 			assert.ok(input, 'input listed')
 			assert.equal(input.audioState, 'active')
@@ -223,6 +239,7 @@ describe('audio levels from the legacy /sources/status list', () => {
 		instance.calls.log.length = 0
 		try {
 			await instance.pollAll()
+			await instance.pollMeterLevels()
 			assert.equal(instance.state.inputs['analog-a'].levels, undefined)
 			assert.equal(instance.state.inputs['analog-a'].audioState, undefined)
 			assert.equal(instance.variableValues['input_analog-a_level_text'], '')
@@ -238,7 +255,7 @@ describe('audio levels from the legacy /sources/status list', () => {
 		}
 	})
 
-	it('is not requested from a legacy-only device (its inputs are unknown there)', async () => {
+	it('is not requested while no meter is placed (legacy-only device, no subscriptions)', async () => {
 		const legacy = await startMockPearl({ firmware: '4.20.0', legacyOnly: true })
 		const other = await createInstance({ mock: legacy })
 		try {
