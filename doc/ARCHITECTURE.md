@@ -8,6 +8,18 @@ Reference API spec: `doc/pearl-api-v2.0.yaml` (Pearl REST API v2.0, firmware >= 
 Legacy v1 API (`/api/...`) is still served by the same firmware and is used for the few
 things v2.0 does not expose (see "Legacy-only endpoints").
 
+## Companion parity plan
+
+A full behavior spec and execution prompt for bringing this module and its sibling
+`companion-module-epiphan-ec20` to parity with their sibling Stream Deck plugins already exists in the
+`Epiphan-StreamDeck` repo: `docs/COMPANION-PARITY.md` (a 795-line behavior/look-and-feel spec) and
+`docs/COMPANION-PROMPT.md` (a four-phase execution prompt), commits `a576504`/`6c13c22`/`23e99bf`
+(2026-09-05). Its Phase 1 lists firmware-behavior corrections for this module (HTTPS/self-signed
+certificate config, per-channel audio gain, and clock-skew correction for event countdowns using the
+response's `Date` header, among others per that document) that have not been independently re-verified
+against this module's current source or folded into this file yet — treat that document as the source of
+truth pending that verification pass, not this paragraph's paraphrase of it.
+
 ## File layout
 
 ```

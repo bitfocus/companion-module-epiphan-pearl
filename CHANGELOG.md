@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Notes
+
+- A full Companion-parity behavior spec and execution prompt for this module and its sibling
+  `companion-module-epiphan-ec20` already exists in `Epiphan-StreamDeck/docs/COMPANION-PARITY.md`/
+  `COMPANION-PROMPT.md` — see `doc/ARCHITECTURE.md`'s new "Companion parity plan" section. Its Phase 1
+  lists firmware-behavior corrections for this module (HTTPS/self-signed certificate config, per-channel
+  audio gain, event-countdown clock-skew correction, among others) that have not yet been independently
+  verified against this module's current source.
+
+---
+
 ## [2.6.1] (2026-09-03)
 
 ### Bug Fixes
