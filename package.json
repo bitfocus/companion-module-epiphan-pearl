@@ -10,7 +10,8 @@
 	},
 	"license": "MIT",
 	"dependencies": {
-		"@companion-module/base": "^1.12.1"
+		"@companion-module/base": "^1.12.1",
+		"undici": "^8.10.2"
 	},
 	"devDependencies": {
 		"@companion-module/tools": "^2.8.0",

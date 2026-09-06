@@ -1,7 +1,10 @@
 const { InstanceStatus } = require('@companion-module/base')
+const { fetch, Agent } = require('undici')
 const { toQueryString, splitPair } = require('./utils')
 
 const DEFAULT_TIMEOUT = 5000
+/** changes of the device clock offset smaller than this (the Date header has 1 s resolution) are ignored */
+const CLOCK_SLACK_MS = 2000
 
 /**
  * Error thrown by the request layer for any failed request.
@@ -50,6 +53,17 @@ function normalisePath(path) {
 	return p
 }
 
+/**
+ * Build the undici Agent for a configuration: a self-signed certificate is accepted only when the
+ * connection uses HTTPS and `accept_self_signed` is on.
+ * @param {object} config normalised config
+ * @returns {Agent}
+ */
+function createDispatcher(config) {
+	const acceptSelfSigned = config?.use_https === true && config?.accept_self_signed === true
+	return new Agent({ connect: { rejectUnauthorized: !acceptSelfSigned } })
+}
+
 module.exports = {
 	/**
 	 * INTERNAL: update the instance status but only when it changed (status or message)
@@ -62,6 +76,58 @@ module.exports = {
 		this.currentStatus = status
 		this.currentStatusMessage = message
 		this.updateStatus(status, message)
+	},
+
+	/**
+	 * INTERNAL: replace this.dispatcher with an Agent built from the current configuration.
+	 * The previous Agent is closed gracefully so requests still in flight on it can finish.
+	 */
+	resetDispatcher() {
+		const previous = this.dispatcher
+		this.dispatcher = createDispatcher(this.config)
+		if (previous) previous.close().catch(() => {})
+	},
+
+	/**
+	 * INTERNAL: close this.dispatcher (graceful: in-flight requests finish or time out on their own)
+	 */
+	closeDispatcher() {
+		const previous = this.dispatcher
+		this.dispatcher = undefined
+		if (previous) previous.close().catch(() => {})
+	},
+
+	/**
+	 * INTERNAL: the Agent to send a request through, created on demand when none exists yet
+	 * @returns {Agent}
+	 */
+	ensureDispatcher() {
+		if (!this.dispatcher) this.dispatcher = createDispatcher(this.config)
+		return this.dispatcher
+	},
+
+	/**
+	 * INTERNAL: track the device clock from the Date header of a response.
+	 * Offsets that moved by less than CLOCK_SLACK_MS are ignored.
+	 *
+	 * @param {Response} response
+	 */
+	syncClock(response) {
+		const date = response?.headers?.get?.('date')
+		if (!date) return
+		const deviceMs = Date.parse(date)
+		if (!Number.isFinite(deviceMs)) return
+		const offset = deviceMs - Date.now()
+		if (Math.abs(offset - (this.clockOffsetMs || 0)) < CLOCK_SLACK_MS) return
+		this.clockOffsetMs = offset
+	},
+
+	/**
+	 * Current time in ms according to the device clock (host clock corrected by the Date header offset)
+	 * @returns {number}
+	 */
+	deviceNow() {
+		return Date.now() + (this.clockOffsetMs || 0)
 	},
 
 	/**
@@ -89,7 +155,9 @@ module.exports = {
 		const base = opts.base || 'auto'
 		const verb = String(method || 'GET').toUpperCase()
 		const cleanPath = base === 'raw' ? String(path || '') : normalisePath(path)
-		const url = `http://${config.host}:${config.host_port || 80}${basePrefix(this, base)}${cleanPath}${toQueryString(opts.query)}`
+		const scheme = config.use_https === true ? 'https' : 'http'
+		const port = config.host_port || (config.use_https === true ? 443 : 80)
+		const url = `${scheme}://${config.host}:${port}${basePrefix(this, base)}${cleanPath}${toQueryString(opts.query)}`
 		const timeout =
 			Number(opts.timeout) > 0
 				? Number(opts.timeout)
@@ -103,7 +171,12 @@ module.exports = {
 				'Basic ' + Buffer.from(`${config.username ?? ''}:${config.password ?? ''}`).toString('base64'),
 			Accept: opts.raw ? 'image/*, */*' : opts.text ? 'text/plain, */*' : 'application/json, */*',
 		}
-		const init = { method: verb, headers, signal: AbortSignal.timeout(timeout) }
+		const init = {
+			method: verb,
+			headers,
+			signal: AbortSignal.timeout(timeout),
+			dispatcher: this.ensureDispatcher(),
+		}
 		if (verb !== 'GET' && opts.body !== undefined) {
 			headers['Content-Type'] = 'application/json'
 			init.body = typeof opts.body === 'string' ? opts.body : JSON.stringify(opts.body)
@@ -118,16 +191,20 @@ module.exports = {
 			response = await fetch(url, init)
 		} catch (error) {
 			const isTimeout = error?.name === 'TimeoutError' || error?.name === 'AbortError'
+			const cause = error?.cause
+			const reason = `${cause?.message || error?.message || error}${cause?.code ? ` (${cause.code})` : ''}`
 			const message = isTimeout
 				? `Request timed out after ${timeout} ms: ${verb} ${url}`
-				: `Connection failed: ${verb} ${url} - ${error?.cause?.message || error?.message || error}`
+				: `Connection failed: ${verb} ${url} - ${reason}`
 			this.applyStatus(
 				InstanceStatus.ConnectionFailure,
-				isTimeout ? 'Request timed out' : error?.cause?.code || error?.message || 'Connection failed',
+				isTimeout ? 'Request timed out' : cause?.code || error?.message || 'Connection failed',
 			)
 			if (!opts.silent) this.log('error', message)
 			throw new PearlApiError(message, { status: 0, ...errInfo })
 		}
+
+		this.syncClock(response)
 
 		if (response.status === 401 || response.status === 403) {
 			const message = `Authentication failed (${response.status}) for ${verb} ${url}`

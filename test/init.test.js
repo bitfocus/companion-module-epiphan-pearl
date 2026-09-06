@@ -1,7 +1,14 @@
 const { describe, it, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 
-const { createInstance, InstanceStatus, DEFAULT_CONFIG, subscribeFeedback, runFeedback } = require('./harness')
+const {
+	createInstance,
+	installStub,
+	InstanceStatus,
+	DEFAULT_CONFIG,
+	subscribeFeedback,
+	runFeedback,
+} = require('./harness')
 const { startMockPearl } = require('./mock-pearl')
 
 const VARIABLE_ID_RE = /^[a-zA-Z0-9_-]+$/
@@ -55,8 +62,18 @@ describe('init against a v2.0 device', () => {
 		assert.equal(s.recorders['m1'].multisource, true)
 		assert.equal(s.recorders['1'].lastFile.name, 'HDMI-A_Dec11_17-32-30')
 
-		assert.deepEqual(Object.keys(s.inputs).sort(), ['SRT1', 'USBA', 'analog-a', 'hdmi-a'])
+		assert.deepEqual(Object.keys(s.inputs).sort(), [
+			'SRT1',
+			'USBA',
+			'analog-a',
+			'analog-b',
+			'hdmi-a',
+			'hdmi-b',
+			'sdi-a',
+		])
 		assert.equal(s.inputs['analog-a'].audio, true)
+		assert.deepEqual(Object.keys(s.inputs['analog-a'].levels).sort(), ['peak', 'rms'])
+		assert.equal(s.inputs['analog-a'].audioState, 'active')
 		assert.deepEqual(Object.keys(s.outputs), ['D1'])
 		assert.equal(s.outputs.D1.source, undefined)
 		assert.deepEqual(Object.keys(s.storages).sort(), ['external', 'main', 'maintenance'])
@@ -116,6 +133,9 @@ describe('init against a v2.0 device', () => {
 		assert.equal(v.publishers_active_count, 1)
 		assert.equal(v['input_hdmi-a_name'], 'HDMI-A')
 		assert.equal(v['input_analog-a_type'], 'embedded')
+		assert.equal(typeof v['input_analog-a_peak_dbfs'], 'number')
+		assert.match(String(v['input_analog-a_level_text']), /^-\d+ dBFS$/)
+		assert.equal(v['input_sdi-a_level_text'], 'No signal')
 		assert.equal(v.output_D1_name, 'HDMI')
 		assert.equal(v.output_D1_source, '')
 		assert.equal(v.storage_main_state, 'ready')
@@ -310,6 +330,30 @@ describe('init edge cases', () => {
 			await instance.destroy()
 			await mock.close()
 		}
+	})
+
+	it('normaliseConfig defaults HTTPS off, accepts self-signed certificates and moves port 80 to 443 with HTTPS', () => {
+		installStub()
+		const { normaliseConfig } = require('../src/instance')
+		const plain = normaliseConfig({ host: '1.2.3.4' })
+		assert.equal(plain.use_https, false)
+		assert.equal(plain.accept_self_signed, true)
+		assert.equal(plain.host_port, '80')
+		assert.equal(normaliseConfig({ host: '1.2.3.4', use_https: true }).host_port, '443')
+		assert.equal(normaliseConfig({ host: '1.2.3.4', use_https: true, host_port: '80' }).host_port, '443')
+		assert.equal(normaliseConfig({ host: '1.2.3.4', use_https: true, host_port: 80 }).host_port, '443')
+		assert.equal(normaliseConfig({ host: '1.2.3.4', use_https: true, host_port: '' }).host_port, '443')
+		assert.equal(normaliseConfig({ host: '1.2.3.4', use_https: true, host_port: '8443' }).host_port, '8443')
+		assert.equal(normaliseConfig({ host: '1.2.3.4', use_https: false, host_port: '' }).host_port, '80')
+		assert.equal(
+			normaliseConfig({ host: '1.2.3.4', use_https: true, accept_self_signed: false }).accept_self_signed,
+			false,
+		)
+		assert.equal(
+			normaliseConfig({ host: '1.2.3.4', use_https: 'true' }).use_https,
+			false,
+			'only a real boolean enables HTTPS',
+		)
 	})
 
 	it('sets BadConfig for an invalid port', async () => {

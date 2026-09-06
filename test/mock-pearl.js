@@ -5,20 +5,32 @@
  * `/api/v2.0/...` and the legacy `/api/...` prefix, the legacy-only endpoints listed in
  * doc/ARCHITECTURE.md, and the `/admin/channelN/{get,set}_params.cgi` metadata CGIs.
  *
- * No dependencies beyond node:http / node:zlib.
+ * No dependencies beyond node:http / node:https / node:zlib (+ the self-signed TLS pair in test/fixtures).
  *
  * Usage:
  *   const { startMockPearl } = require('./mock-pearl')
- *   const mock = await startMockPearl({ firmware: '4.24.1', legacyOnly: false })
- *   mock.url        // 'http://127.0.0.1:<port>'
+ *   const mock = await startMockPearl({ firmware: '4.24.1', legacyOnly: false, https: false, clockSkewMs: 0 })
+ *   mock.url        // 'http://127.0.0.1:<port>' ('https://...' with https: true)
  *   mock.port
  *   mock.state      // live, mutable model (see seedState)
  *   mock.requests   // [{ method, path, query, body, headers }]
  *   mock.reset()    // reseed state (and clear requests)
+ *   mock.setClockSkew(ms)  // offset applied to the Date header of every response from now on
  *   await mock.close()
  */
+const fs = require('node:fs')
 const http = require('node:http')
+const https = require('node:https')
+const path = require('node:path')
 const zlib = require('node:zlib')
+
+/** self-signed certificate for 127.0.0.1 (CN + SAN IP:127.0.0.1, DNS:localhost), test-only material */
+const TLS_KEY_PATH = path.join(__dirname, 'fixtures', 'selfsigned.key')
+const TLS_CERT_PATH = path.join(__dirname, 'fixtures', 'selfsigned.crt')
+
+/** device serial prefix carried by the ids of the legacy /sources/status list (the /inputs ids lack it) */
+const SOURCE_ID_PREFIX = 'D2P492324.'
+const SOURCE_ID_PREFIX_RE = /^D2P[^.]*\./
 
 // ---------------------------------------------------------------------------
 // 1x1 PNG (built programmatically so the bytes are guaranteed valid)
@@ -309,6 +321,47 @@ function seedState(firmware) {
 					},
 				},
 			},
+			'analog-b': {
+				id: 'analog-b',
+				name: 'Analog-B',
+				real_device_name: 'RCA',
+				audio: true,
+				video: false,
+				type: 'embedded',
+				settings: {
+					audio: { delay: 0 },
+					local_audio: {
+						mute: false,
+						phantom_power: false,
+						stereo_pair: false,
+						channels: { channelA: { gain: 20, mute: false }, channelB: { gain: 24, mute: false } },
+					},
+				},
+			},
+			'hdmi-b': {
+				id: 'hdmi-b',
+				name: 'HDMI-B',
+				real_device_name: 'HDMI-B',
+				audio: true,
+				video: true,
+				type: 'embedded',
+				settings: {
+					hdmi: { audio: { delay: 0, mute: false } },
+				},
+			},
+			'sdi-a': {
+				id: 'sdi-a',
+				name: 'SDI-A',
+				real_device_name: 'SDI-A',
+				audio: true,
+				video: true,
+				type: 'embedded',
+				// reported with inactive audio (no levels) by the legacy /sources/status list
+				audioState: 'inactive',
+				settings: {
+					sdi: { audio: { delay: 0, mute: false } },
+				},
+			},
 			USBA: {
 				id: 'USBA',
 				name: 'USB-A',
@@ -397,8 +450,35 @@ function seedState(firmware) {
 		},
 		speedtest: { bandwidth: 91318568, bitrate_limit: 1000000000, duration: 10, udpLoss: 0 },
 		control: { lastCommand: null, ejected: [] },
-		counters: { publisher: 2, input: { RTSP: 0, SRT: 1, NDI: 0, WEBG: 0, DANTE: 0 }, event: 0 },
+		counters: { publisher: 2, input: { RTSP: 0, SRT: 1, NDI: 0, WEBG: 0, DANTE: 0 }, event: 0, levelPolls: 0 },
 	}
+}
+
+/**
+ * Audio levels in dBFS for one /sources/status request; they wander per request so two polls differ
+ */
+function audioLevels(state) {
+	const phase = state.counters.levelPolls++ / 2
+	const left = Math.round(-30 + 8 * Math.sin(phase))
+	const right = Math.round(-32 + 8 * Math.cos(phase))
+	return { rms: [left, right], peak: [Math.min(0, left + 6), Math.min(0, right + 6)] }
+}
+
+/**
+ * One entry of the legacy GET /api/sources/status list: the id carries the device serial prefix
+ * (unless it already has one), audio inputs carry levels unless their audio is inactive
+ */
+function sourceStatus(state, input) {
+	const status = {}
+	if (input.video) status.video = { state: 'active', resolution: '1920x1080', actual_fps: 30 }
+	if (input.audio) {
+		status.audio =
+			input.audioState === 'inactive'
+				? { state: 'inactive' }
+				: { state: 'active', levels: audioLevels(state), codec: 'pcm', sample_rate: 48000 }
+	}
+	const id = SOURCE_ID_PREFIX_RE.test(input.id) ? input.id : `${SOURCE_ID_PREFIX}${input.id}`
+	return { id, name: input.name, status }
 }
 
 // ---------------------------------------------------------------------------
@@ -504,11 +584,20 @@ const notAllowed = (message) => new HttpError(405, 'notallowed', message)
  * @param {string} [opts.firmware='4.24.1']  firmware version reported by /system/firmware(/version)
  * @param {boolean} [opts.legacyOnly=false]  when true every /api/v2.0/ path returns 404
  * @param {number} [opts.port=0]             0 = ephemeral
- * @returns {Promise<{url:string, port:number, state:object, requests:object[], reset:Function, close:Function, server:import('node:http').Server}>}
+ * @param {boolean} [opts.https=false]       serve TLS with the self-signed pair in test/fixtures
+ * @param {number} [opts.clockSkewMs=0]      offset added to the Date header of every response (device clock skew)
+ * @returns {Promise<{url:string, port:number, state:object, requests:object[], reset:Function, setClockSkew:Function, close:Function, server:import('node:http').Server}>}
  */
-async function startMockPearl({ firmware = '4.24.1', legacyOnly = false, port = 0 } = {}) {
+async function startMockPearl({
+	firmware = '4.24.1',
+	legacyOnly = false,
+	port = 0,
+	https: useHttps = false,
+	clockSkewMs = 0,
+} = {}) {
 	const state = seedState(firmware)
 	const requests = []
+	const clock = { skewMs: Number(clockSkewMs) || 0 }
 
 	function reset({ clearRequests = true } = {}) {
 		const fresh = seedState(firmware)
@@ -904,6 +993,11 @@ async function startMockPearl({ firmware = '4.24.1', legacyOnly = false, port = 
 		input.settings = deepMerge(input.settings, body)
 		return { result: input.settings }
 	})
+	// legacy only: the VU-meter list of the Admin UI, every input with its status incl. audio levels in dBFS
+	route('GET', '/sources/status', ({ v2 }) => {
+		if (v2) throw notFound('Not found: GET /api/v2.0/sources/status')
+		return { result: Object.values(state.inputs).map((input) => sourceStatus(state, input)) }
+	})
 
 	// -- Outputs
 	route('GET', '/outputs', ({ query }) => {
@@ -1170,10 +1264,11 @@ async function startMockPearl({ firmware = '4.24.1', legacyOnly = false, port = 
 		return true
 	}
 
-	const server = http.createServer((req, res) => {
+	const handler = (req, res) => {
 		const chunks = []
 		req.on('data', (c) => chunks.push(c))
 		req.on('end', () => {
+			res.setHeader('Date', new Date(Date.now() + clock.skewMs).toUTCString())
 			const url = new URL(req.url, 'http://localhost')
 			const query = Object.fromEntries(url.searchParams)
 			const rawBody = Buffer.concat(chunks).toString('utf8')
@@ -1246,7 +1341,10 @@ async function startMockPearl({ firmware = '4.24.1', legacyOnly = false, port = 
 				sendError(res, err)
 			}
 		})
-	})
+	}
+	const server = useHttps
+		? https.createServer({ key: fs.readFileSync(TLS_KEY_PATH), cert: fs.readFileSync(TLS_CERT_PATH) }, handler)
+		: http.createServer(handler)
 
 	await new Promise((resolve, reject) => {
 		server.once('error', reject)
@@ -1258,12 +1356,16 @@ async function startMockPearl({ firmware = '4.24.1', legacyOnly = false, port = 
 	const actualPort = server.address().port
 
 	return {
-		url: `http://127.0.0.1:${actualPort}`,
+		url: `${useHttps ? 'https' : 'http'}://127.0.0.1:${actualPort}`,
 		port: actualPort,
+		https: useHttps,
 		state,
 		requests,
 		server,
 		reset,
+		setClockSkew(ms) {
+			clock.skewMs = Number(ms) || 0
+		},
 		close() {
 			return new Promise((resolve) => {
 				if (typeof server.closeAllConnections === 'function') server.closeAllConnections()

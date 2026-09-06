@@ -1,4 +1,5 @@
 const { safeId, formatHms, formatClock, bytesToMb, bytesToGb, round1 } = require('./utils')
+const { levelSummary } = require('./audio')
 
 /**
  * Normalise a value for a Companion variable: undefined/null become '' (never undefined),
@@ -119,7 +120,7 @@ function buildVariables(self) {
 		values[variableId] = val(value)
 	}
 
-	const nowSeconds = Math.floor(Date.now() / 1000)
+	const nowSeconds = Math.floor((self?.deviceNow?.() ?? Date.now()) / 1000)
 
 	// ---------------------------------------------------------------- channels + publishers
 	const channels = state.channels || {}
@@ -246,6 +247,13 @@ function buildVariables(self) {
 		const inLabel = labelFor('Input', rawSid, input.name)
 		add(`input_${sid}_name`, `${inLabel} Name`, input.name)
 		add(`input_${sid}_type`, `${inLabel} Type`, input.type)
+		if (input.audio === true) {
+			const level = levelSummary(input)
+			add(`input_${sid}_peak_dbfs`, `${inLabel} Peak (dBFS)`, level.peak)
+			add(`input_${sid}_peak_left`, `${inLabel} Peak Left (dBFS)`, level.left)
+			add(`input_${sid}_peak_right`, `${inLabel} Peak Right (dBFS)`, level.right)
+			add(`input_${sid}_level_text`, `${inLabel} Level Text`, level.text)
+		}
 	}
 
 	// ---------------------------------------------------------------- outputs

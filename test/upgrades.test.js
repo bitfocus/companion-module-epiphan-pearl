@@ -11,7 +11,13 @@ describe('upgrade scripts', () => {
 	it('are exported in the historical order (scripts are only ever appended)', () => {
 		assert.deepEqual(
 			upgrades.map((fn) => fn.name),
-			['setDefaultConfig', 'renameStreaming', 'setDefaultConfigV230', 'setDefaultConfigV260'],
+			[
+				'setDefaultConfig',
+				'renameStreaming',
+				'setDefaultConfigV230',
+				'setDefaultConfigV260',
+				'setDefaultConfigV300Https',
+			],
 		)
 		for (const fn of upgrades) assert.equal(typeof fn, 'function')
 	})
@@ -67,11 +73,36 @@ describe('upgrade scripts', () => {
 		assert.equal(upgrades[3](null, props(null)).updatedConfig, null)
 	})
 
-	it('the three default scripts together cover CONFIG_DEFAULTS exactly once', () => {
+	it('setDefaultConfigV300Https fills use_https / accept_self_signed when undefined', () => {
+		const result = upgrades[4](null, props({ host: 'x' }))
+		assert.deepEqual(result.updatedConfig, { host: 'x', use_https: false, accept_self_signed: true })
+		assert.deepEqual(result.updatedActions, [])
+		assert.deepEqual(result.updatedFeedbacks, [])
+
+		// a connection that already chose (either way) is left alone, only missing keys are filled
+		assert.equal(
+			upgrades[4](null, props({ host: 'x', use_https: true, accept_self_signed: false })).updatedConfig,
+			null,
+		)
+		assert.deepEqual(upgrades[4](null, props({ host: 'x', use_https: true })).updatedConfig, {
+			host: 'x',
+			use_https: true,
+			accept_self_signed: true,
+		})
+		assert.equal(upgrades[4](null, props(null)).updatedConfig, null)
+
+		// the earlier scripts do not touch the new fields
+		const older = upgrades[2](null, props({ host: 'x' })).updatedConfig
+		assert.equal('use_https' in older, false)
+		assert.equal('accept_self_signed' in older, false)
+	})
+
+	it('the default scripts together cover CONFIG_DEFAULTS exactly once', () => {
 		const covered = [
 			...upgrades.CONFIG_DEFAULT_KEYS_V220,
 			...upgrades.CONFIG_DEFAULT_KEYS_V230,
 			...upgrades.CONFIG_DEFAULT_KEYS_V260,
+			...upgrades.CONFIG_DEFAULT_KEYS_V300_HTTPS,
 		].sort()
 		assert.deepEqual(covered, Object.keys(upgrades.CONFIG_DEFAULTS).sort())
 	})

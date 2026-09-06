@@ -10,14 +10,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Notes
+### Added
 
-- A full Companion-parity behavior spec and execution prompt for this module and its sibling
-  `companion-module-epiphan-ec20` already exists in `Epiphan-StreamDeck/docs/COMPANION-PARITY.md`/
-  `COMPANION-PROMPT.md` — see `doc/ARCHITECTURE.md`'s new "Companion parity plan" section. Its Phase 1
-  lists firmware-behavior corrections for this module (HTTPS/self-signed certificate config, per-channel
-  audio gain, event-countdown clock-skew correction, among others) that have not yet been independently
-  verified against this module's current source.
+- Connection settings **Use HTTPS** and **Accept self-signed certificate** (off / on by default). Requests
+  go through `undici`'s `fetch` with a dispatcher `Agent` built per connection; the port defaults to `443`
+  when HTTPS is turned on and the port was left at `80` (or blank). Upgrade script
+  `setDefaultConfigV300Https` fills both fields for existing connections (HTTPS off, self-signed accepted),
+  so nothing changes until HTTPS is deliberately turned on
+- Input level variables `input_ID_peak_dbfs`, `_peak_left`, `_peak_right`, `_level_text` for every
+  audio-capable input, filled every poll from the legacy `GET /api/sources/status` list (its ids carry a
+  device-serial prefix the v2.0 `/inputs` ids lack; matched with that prefix stripped)
+- The module now reads the `Date` header of every response and keeps the offset between the Pearl's clock
+  and the Companion host's (`clockOffsetMs`, changes under 2 s ignored). The event countdown variables
+  (`event_upcoming_starts_in_hms`, `event_ongoing_remaining_hms`) are computed from that corrected
+  `deviceNow()` instead of the host clock, so they stay accurate when the two clocks disagree
+
+### Fixed
+
+- `Input: audio gain` and `Input: audio delay` used to write a blind absolute value straight into the
+  settings body. Setting a single channel (**Audio channel** = Channel A/B) still writes directly — the
+  body needs nothing from the device — but **Both (stereo pair)** and `Input: audio delay` now read the
+  input's current settings first (shared helper `src/audio.js`) and patch the gain (both channels together
+  when the input's `local_audio.stereo_pair` is already `false`) or the delay at whichever path the input
+  actually keeps it (`audio.delay`, `hdmi.audio.delay` or `sdi.audio.delay`), logging an error and sending
+  nothing for an input with no such setting
+
+These are part of the coming 3.0.0 rewrite (see `doc/PARITY.md`); the remaining Phase 1-4 Companion-parity
+items are still in progress.
 
 ---
 

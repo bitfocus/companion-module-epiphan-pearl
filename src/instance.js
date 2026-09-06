@@ -38,6 +38,9 @@ function normaliseConfig(config) {
 		c.host_port === undefined || c.host_port === null || c.host_port === '' ? '80' : String(c.host_port).trim()
 	c.username = typeof c.username === 'string' ? c.username : 'admin'
 	c.password = typeof c.password === 'string' ? c.password : ''
+	c.use_https = c.use_https === true
+	c.accept_self_signed = c.accept_self_signed !== false
+	if (c.use_https && c.host_port === '80') c.host_port = '443'
 	c.pollfreq = clampNumber(c.pollfreq, 10, 1, 300)
 	c.timeout = clampNumber(c.timeout, 5000, 1000, 60000)
 	c.use_api_v2 = c.use_api_v2 !== false
@@ -103,6 +106,10 @@ class EpiphanPearl extends InstanceBase {
 		this.currentStatusMessage = undefined
 		/** sorted variable ids joined, kept by variables.updateVariables */
 		this.lastVariableIds = ''
+		/** device clock minus host clock in ms, from the Date header of every response (api.syncClock) */
+		this.clockOffsetMs = 0
+		/** undici Agent carrying the TLS settings of the current configuration (api.resetDispatcher) */
+		this.dispatcher = undefined
 
 		/** incremented by every configUpdated(); a poll started under an older generation discards its result */
 		this.configGeneration = 0
@@ -156,6 +163,8 @@ class EpiphanPearl extends InstanceBase {
 		// pollAllInner makes it discard its result, so there is no need to wait for it here
 		this.configGeneration++
 		this.config = normaliseConfig(config)
+		this.clockOffsetMs = 0
+		this.resetDispatcher()
 
 		const problem = validateConfig(this.config)
 		if (problem) {
@@ -241,6 +250,7 @@ class EpiphanPearl extends InstanceBase {
 		this.previewSubscriptions.clear()
 		this.previews = {}
 		this.previewFailedKeys.clear()
+		this.closeDispatcher()
 		this.applyStatus(InstanceStatus.Disconnected)
 		this.log('debug', `destroy ${this.id}`)
 	}
@@ -428,4 +438,4 @@ const upgradeToBooleanFeedbacks = CreateConvertToBooleanFeedbackUpgradeScript({
 
 const upgradeScripts = [upgradeToBooleanFeedbacks, ...upgrades]
 
-module.exports = { EpiphanPearl, upgradeScripts, PearlApiError, MIN_API_V2_VERSION }
+module.exports = { EpiphanPearl, upgradeScripts, PearlApiError, MIN_API_V2_VERSION, normaliseConfig }

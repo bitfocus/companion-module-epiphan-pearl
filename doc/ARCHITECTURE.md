@@ -14,11 +14,13 @@ A full behavior spec and execution prompt for bringing this module and its sibli
 `companion-module-epiphan-ec20` to parity with their sibling Stream Deck plugins already exists in the
 `Epiphan-StreamDeck` repo: `docs/COMPANION-PARITY.md` (a 795-line behavior/look-and-feel spec) and
 `docs/COMPANION-PROMPT.md` (a four-phase execution prompt), commits `a576504`/`6c13c22`/`23e99bf`
-(2026-09-05). Its Phase 1 lists firmware-behavior corrections for this module (HTTPS/self-signed
-certificate config, per-channel audio gain, and clock-skew correction for event countdowns using the
-response's `Date` header, among others per that document) that have not been independently re-verified
-against this module's current source or folded into this file yet — treat that document as the source of
-truth pending that verification pass, not this paragraph's paraphrase of it.
+(2026-09-05); see also this repo's own `doc/PARITY.md` (the Phase 0 control-set mapping). Its Phase 1
+firmware-behavior corrections for this module — HTTPS/self-signed certificate config, the shared audio
+gain/delay helper, clock-skew correction for event countdowns using the response's `Date` header, and
+legacy `/sources/status` input levels — are implemented and folded into this file below (see "Request
+layer", "Audio helper", "Poller" and the config table). Phases 2-4 (the new control set, upgrade scripts,
+presets, style module) are not yet folded in — treat `COMPANION-PARITY.md` as the source of truth for those
+pending that work, not this paragraph's paraphrase of it.
 
 ## File layout
 
@@ -35,6 +37,7 @@ src/presets.js        getPresets()            -> preset definitions
 src/config.js         getConfigFields()
 src/upgrades.js       upgrade scripts array
 src/utils.js          pure helpers (formatting, sanitising, diffing)
+src/audio.js          pure helpers for an input's audio gain/delay read-modify-write and its levels
 test/mock-pearl.js    in-memory HTTP mock of the Pearl (v2.0 + legacy endpoints used)
 test/harness.js       stub of @companion-module/base injected via require.cache
 test/*.test.js        node:test suites
@@ -64,7 +67,18 @@ this.state = {
 		},
 	},
 	recorders: { [rid]: { id, name, multisource, status /* RecorderStatus */, lastFile /* ArchiveFile|undefined */ } },
-	inputs: { [sid]: { id, name, type, audio, video, real_device_name } },
+	inputs: {
+		[sid]: {
+			id,
+			name,
+			type,
+			audio,
+			video,
+			real_device_name,
+			levels: { rms: [number], peak: [number] } | undefined, // legacy GET /api/sources/status, see "Poller" step 2
+			audioState: string | undefined, // e.g. 'active' | 'inactive', from the same legacy entry
+		},
+	},
 	outputs: { [did]: { id, name, source /* string|undefined, optimistic: last value set via Companion */ } },
 	storages: { [stid]: { id, status /* StorageStatus|undefined */ } },
 	singleTouch: { [stcid]: { id, state /* SingleTouchControlState|undefined */ } },
@@ -102,25 +116,32 @@ Other instance fields:
 - `this.startupPromise` promise of the background `connect()` started by the last `configUpdated()`
 - `this.timer`, `this.previewTimer` interval handles
 - `this.lastVariableIds` string (sorted variable ids joined) to avoid redundant `setVariableDefinitions`
+- `this.clockOffsetMs` device clock minus host clock, in ms, from the `Date` header of every response
+  (`api.syncClock`); reset to `0` by every `configUpdated()`. `deviceNow()` = `Date.now() + clockOffsetMs`.
+- `this.dispatcher` the `undici` `Agent` requests are sent through, carrying the TLS settings (`use_https` /
+  `accept_self_signed`) of the current configuration; rebuilt by `configUpdated()` (`api.resetDispatcher`),
+  closed by `destroy()` (`api.closeDispatcher`)
 
 ## Config fields (`src/config.js`)
 
-| id                | type          | default         | notes                                                                                                                                                                                                                                           |
-| ----------------- | ------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| host              | textinput     | 192.168.255.250 | IP or hostname, validated with `REGEX_IP_OR_HOSTNAME` (see below)                                                                                                                                                                               |
-| host_port         | textinput     | 80              | Regex.PORT                                                                                                                                                                                                                                      |
-| username          | textinput     | admin           |                                                                                                                                                                                                                                                 |
-| password          | textinput     | ''              |                                                                                                                                                                                                                                                 |
-| pollfreq          | number        | 10              | 1..300 seconds                                                                                                                                                                                                                                  |
-| timeout           | number        | 5000            | request timeout ms, 1000..60000                                                                                                                                                                                                                 |
-| use_api_v2        | checkbox      | true            |                                                                                                                                                                                                                                                 |
-| preview_interval  | number        | 2               | seconds between preview image refreshes; 0 disables preview feedbacks                                                                                                                                                                           |
-| preview_width     | number        | 144             | width in px requested from the device for preview images (72..720)                                                                                                                                                                              |
-| poll_events       | checkbox      | true            | poll CMS schedule (upcoming/ongoing)                                                                                                                                                                                                            |
-| poll_archive      | checkbox      | false           | poll last archive file per recorder                                                                                                                                                                                                             |
-| poll_connectivity | checkbox      | false           | poll /system/connectivity/details every 6th poll                                                                                                                                                                                                |
-| verbose           | checkbox      | false           |                                                                                                                                                                                                                                                 |
-| preset_categories | multidropdown | every category  | which categories `getPresets()` generates (see "Presets" and `PRESET_CATEGORY_IDS` in `src/presets.js`); an id outside that list is dropped, an absent/non-array value defaults to all, but an explicit `[]` is respected as "generate nothing" |
+| id                 | type          | default         | notes                                                                                                                                                                                                                                           |
+| ------------------ | ------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| host               | textinput     | 192.168.255.250 | IP or hostname, validated with `REGEX_IP_OR_HOSTNAME` (see below)                                                                                                                                                                               |
+| host_port          | textinput     | 80              | Regex.PORT                                                                                                                                                                                                                                      |
+| username           | textinput     | admin           |                                                                                                                                                                                                                                                 |
+| password           | textinput     | ''              |                                                                                                                                                                                                                                                 |
+| use_https          | checkbox      | false           | label "Use HTTPS", tooltip "If HTTPS is enabled on the Pearl, enable it here too."                                                                                                                                                              |
+| accept_self_signed | checkbox      | true            | label "Accept self-signed certificate"; `isVisible` only while `use_https` is on                                                                                                                                                                |
+| pollfreq           | number        | 10              | 1..300 seconds                                                                                                                                                                                                                                  |
+| timeout            | number        | 5000            | request timeout ms, 1000..60000                                                                                                                                                                                                                 |
+| use_api_v2         | checkbox      | true            |                                                                                                                                                                                                                                                 |
+| preview_interval   | number        | 2               | seconds between preview image refreshes; 0 disables preview feedbacks                                                                                                                                                                           |
+| preview_width      | number        | 144             | width in px requested from the device for preview images (72..720)                                                                                                                                                                              |
+| poll_events        | checkbox      | true            | poll CMS schedule (upcoming/ongoing)                                                                                                                                                                                                            |
+| poll_archive       | checkbox      | false           | poll last archive file per recorder                                                                                                                                                                                                             |
+| poll_connectivity  | checkbox      | false           | poll /system/connectivity/details every 6th poll                                                                                                                                                                                                |
+| verbose            | checkbox      | false           |                                                                                                                                                                                                                                                 |
+| preset_categories  | multidropdown | every category  | which categories `getPresets()` generates (see "Presets" and `PRESET_CATEGORY_IDS` in `src/presets.js`); an id outside that list is dropped, an absent/non-array value defaults to all, but an explicit `[]` is respected as "generate nothing" |
 
 Companion's `Regex.IP` and `Regex.HOSTNAME` are single anchored patterns, so `config.js` builds its own
 `REGEX_IP_OR_HOSTNAME` constant (`/^(?:<IP>|<HOSTNAME>)$/`, both patterns with their slashes and anchors stripped and
@@ -131,14 +152,22 @@ choices/default come from `presets.js`'s `PRESET_CATEGORY_IDS` (imported by `con
 `upgrades.js` adds defaults for new fields when undefined. Companion runs each upgrade script only once per connection,
 so an existing script is never extended: `setDefaultConfig` (v2.2.0) only sets `use_api_v2` / `verbose`, the appended
 `setDefaultConfigV230` fills `timeout`, `preview_interval`, `preview_width`, `poll_events`, `poll_archive`, `poll_connectivity`,
-and `setDefaultConfigV260` fills `preset_categories` (every category, so an upgraded connection keeps generating exactly
-what it already had). The exported order is fixed: `setDefaultConfig`, `renameStreaming`, `setDefaultConfigV230`,
-`setDefaultConfigV260`; a future version appends a new script (values from `CONFIG_DEFAULTS`, which must match the
-field defaults above — compared with `assert.deepEqual` in tests since some defaults, like this one, are arrays).
+`setDefaultConfigV260` fills `preset_categories` (every category, so an upgraded connection keeps generating exactly
+what it already had), and `setDefaultConfigV300Https` fills `use_https` (`false`) / `accept_self_signed` (`true`), so an
+upgraded connection keeps using plain HTTP until it opts in. The exported order is fixed: `setDefaultConfig`,
+`renameStreaming`, `setDefaultConfigV230`, `setDefaultConfigV260`, `setDefaultConfigV300Https`; a future version appends
+a new script (values from `CONFIG_DEFAULTS`, which must match the field defaults above — compared with
+`assert.deepEqual` in tests since some defaults, like this one, are arrays).
+
+`normaliseConfig(config)` (exported from `src/instance.js`) coerces `use_https` / `accept_self_signed` to real booleans
+(anything but `true` counts as off / on respectively) and, when `use_https` is on and `host_port` was left at `80` or
+blank, rewrites `host_port` to `443` — a port the caller set explicitly (including `443` itself) is never touched again.
 
 `configUpdated(config)`: stops the timers, bumps `configGeneration`, normalises and validates the config (BadConfig -> still
-`updateSystem()` so definitions exist, then return), resets state/metadata/previews, publishes the definitions for the empty
-state and returns immediately, storing `this.startupPromise = this.connect(generation)`. Companion restarts a module whose
+`updateSystem()` so definitions exist, then return), resets `clockOffsetMs` to `0` and rebuilds `this.dispatcher`
+(`api.resetDispatcher`, closing the previous Agent gracefully) from the new config, resets state/metadata/previews,
+publishes the definitions for the empty state and returns immediately, storing `this.startupPromise =
+this.connect(generation)`. Companion restarts a module whose
 `init`/`configUpdated` takes more than a few seconds, and an unreachable device costs two request timeouts, so the first
 contact must not be awaited. `connect(generation)` runs `determineApiBase()`, waits for a stale `pollPromise`, runs the first
 `pollAll()` (which rebuilds the definitions when the structure changed), re-subscribes previews and starts the timers; it stops
@@ -169,8 +198,28 @@ async request(method, path, opts = {})
 
 Behaviour:
 
-- Uses global `fetch` with `AbortSignal.timeout(timeout)` (real timeout; the old `timeout:` fetch option did nothing).
+- Uses `undici`'s `fetch` (imported explicitly — `const { fetch, Agent } = require('undici')` — not the global one,
+  so requests run on a Node.js HTTP implementation independent of whatever Node version Companion embeds) with
+  `AbortSignal.timeout(timeout)` (real timeout; the old `timeout:` fetch option did nothing).
+- URL scheme is `https` when `config.use_https === true`, else `http`; the port is `config.host_port` (already
+  defaulted to `443` by `normaliseConfig` when HTTPS is on and the port was left at `80`/blank — see "Config
+  fields"). Every request carries `dispatcher: this.ensureDispatcher()`, an `undici` `Agent` built by
+  `createDispatcher(config)` with `connect: { rejectUnauthorized: !(use_https && accept_self_signed) }` — the
+  only way a self-signed certificate is accepted is that flag on that Agent; `NODE_TLS_REJECT_UNAUTHORIZED` is
+  never touched (that would blind the whole Node process, not just this connection). `resetDispatcher()` /
+  `closeDispatcher()` / `ensureDispatcher()` manage `this.dispatcher` (built in `configUpdated()`, closed
+  gracefully in `configUpdated()` and `destroy()` so requests already in flight on the old Agent can finish).
 - `Authorization: Basic` header from config; `Content-Type: application/json` when a body is sent.
+- On every response that comes back at all (a fetch that fails before a response arrives, e.g. a TLS or timeout
+  failure, has none to read), `syncClock(response)` reads the `Date` header, parses it, and — when the resulting
+  offset from `Date.now()` differs from the stored `this.clockOffsetMs` by 2000 ms (`CLOCK_SLACK_MS`) or more —
+  replaces `this.clockOffsetMs` with it (a smaller change is within the header's 1 s resolution and is ignored).
+  `deviceNow()` returns `Date.now() + this.clockOffsetMs`; `variables.js` uses it (not `Date.now()`) as "now" for
+  the event countdown variables, so a Pearl whose clock disagrees with the Companion host still counts down
+  correctly. Reset to `0` by every `configUpdated()` (a new configuration may be a different device).
+- A TLS failure (untrusted self-signed certificate, wrong host, etc.) surfaces through the same catch branch as
+  any other network error below — `error.cause.code` from Node's TLS stack (e.g. `DEPTH_ZERO_SELF_SIGNED_CERT`)
+  is included in the logged message and the `ConnectionFailure` status message.
 - 401/403 -> `updateStatus(InstanceStatus.AuthenticationFailure, ...)` and throw.
 - Network error / timeout -> `updateStatus(InstanceStatus.ConnectionFailure, message)` and throw.
 - Other non-2xx -> parse `{status, message}` if JSON, throw `PearlApiError`; do NOT change instance status
@@ -187,14 +236,15 @@ Behaviour:
 
 ### Legacy-only endpoints (always `base: 'v1'`)
 
-| purpose          | request                                                                                                                                                                                                                                                                                                                                                          |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| list layouts     | `GET /channels/{cid}/layouts` -> `[ {id, name, active} ]`                                                                                                                                                                                                                                                                                                        |
-| layout settings  | `GET/PUT /channels/{cid}/layouts/{lid}/settings`                                                                                                                                                                                                                                                                                                                 |
-| layout preview   | `GET /channels/{cid}/layouts/{lid}/preview?resolution=WxH` -> JPEG. **Undocumented** — not in `doc/pearl-api-v2.0.yaml`; confirmed by Epiphan. Renders that layout's own composition regardless of whether it is active. Do not send `format`/`keep_aspect_ratio` — unconfirmed for this endpoint. `fetchPreviewImage('layout', '<cid>-<lid>')` in `src/api.js`. |
-| recorder reset   | `POST /recorders/{rid}/control/reset`                                                                                                                                                                                                                                                                                                                            |
-| content metadata | `GET /admin/channel{cid}/get_params.cgi?title&author&rec_prefix` (base 'raw', text/plain)                                                                                                                                                                                                                                                                        |
-| set metadata     | `GET /admin/channel{cid}/set_params.cgi?title=..&author=..&rec_prefix=..` (base 'raw')                                                                                                                                                                                                                                                                           |
+| purpose            | request                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| list layouts       | `GET /channels/{cid}/layouts` -> `[ {id, name, active} ]`                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| layout settings    | `GET/PUT /channels/{cid}/layouts/{lid}/settings`                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| layout preview     | `GET /channels/{cid}/layouts/{lid}/preview?resolution=WxH` -> JPEG. **Undocumented** — not in `doc/pearl-api-v2.0.yaml`; confirmed by Epiphan. Renders that layout's own composition regardless of whether it is active. Do not send `format`/`keep_aspect_ratio` — unconfirmed for this endpoint. `fetchPreviewImage('layout', '<cid>-<lid>')` in `src/api.js`.                                                                                                                 |
+| recorder reset     | `POST /recorders/{rid}/control/reset`                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| content metadata   | `GET /admin/channel{cid}/get_params.cgi?title&author&rec_prefix` (base 'raw', text/plain)                                                                                                                                                                                                                                                                                                                                                                                        |
+| set metadata       | `GET /admin/channel{cid}/set_params.cgi?title=..&author=..&rec_prefix=..` (base 'raw')                                                                                                                                                                                                                                                                                                                                                                                           |
+| input audio levels | `GET /sources/status` (`optional: true`) -> `[ {id, name, status: {audio: {state, levels: {rms:[], peak:[]}}, video: {...}}} ]`, dBFS. **Only polled when `isV2`** (pre-4.24.1 devices have no `/inputs` list to match against). Its ids carry a `D2P<serial>.` device prefix the v2.0 `/inputs` ids lack (a real Pearl-2 might answer `D2P492324.analog-a` for the input the rest of the API calls `analog-a`); see "Poller" step 2 and `utils.normaliseInputId`/`sameInputId`. |
 
 ### v2 parameter conventions that differ from v1
 
@@ -219,9 +269,18 @@ state empty rather than aborting the whole poll):
      gives publishers (id/type/name/status), encoders and active_layout in one call.
    - v1: `GET /channels?publishers=yes&encoders=yes` then per channel `/publishers/type` and `/publishers/status`.
    - Layout `active` flag comes from the legacy list; when v2 `active_layout` is present it wins.
-2. v2 only, every poll: `/system/status`, `/afu/status` (optional), `/inputs`, `/outputs`,
+2. v2 only, every poll: `/system/status`, `/afu/status` (optional), `/inputs`, `/sources/status` (legacy base,
+   optional — see "Legacy-only endpoints"), `/outputs`,
    `/system/storages` + `/system/storages/{id}/status` each, `/system/singletouchcontrol` + `/{id}/state` each,
    and when `poll_events`: `/schedule/events/upcoming` and `/schedule/events/ongoing` (both `optional`; 404 -> null).
+   `/sources/status` is applied after the round settles, once every input from `/inputs` exists in `state.inputs`:
+   `applyInputLevels(state, sourcesStatus)` matches each entry to an input (by id, then by `utils.normaliseInputId`
+   on both sides so the `D2P<serial>.` prefix does not have to match) and, when it carries `status.audio`, sets
+   that input's `audioState` (`status.audio.state`) and, when `status.audio.levels.rms` is an array, `levels`
+   (`{ rms: [...], peak: [...] }`, non-finite values filtered out). An entry with no matching input is ignored; an
+   input untouched by any entry keeps the `levels: undefined, audioState: undefined` it was seeded with in step 2's
+   `/inputs` handler. Levels are not part of `structureKey` or any `DOMAIN_FEEDBACKS` slice (below), so a level
+   changing alone never rebuilds definitions or checks a feedback — only `variables.updateVariables` picks it up.
 3. v2 only, on the first poll and then every 30th poll (`STRUCTURE_REFRESH_EVERY`): `/system/firmware`, `/system/ident`,
    `/system/presets?details=true`. In between, the previous values are carried over.
 4. Conditional: `poll_archive` -> `/recorders/{rid}/archive/files?from=0&limit=1` per recorder (v2);
@@ -277,6 +336,31 @@ All return `[{ id, label }]` sorted as the device lists them. Existing ids forma
 - `choicesEventAlias()` -> static `upcoming`, `ongoing`, `running`, `paused`, `completed`
 - `firstId(arr)` -> id of first entry or ''
 
+## Audio helper (`src/audio.js`)
+
+Pure functions, no instance access and no side effects — every value they need comes in as a parameter, so
+they are tested without a mock server (`test/audio.test.js`, "audio helper (pure)"). `src/actions.js`
+(`inputAudioGain` / `inputAudioDelay`) and `src/variables.js` are the only callers.
+
+The Pearl's gain and delay settings live at different paths depending on the input, and there is no single
+"set gain to N" request that works for every input — a caller has to read the input's current
+`GET /inputs/{sid}/settings` first and patch back only the field(s) that already exist there:
+
+- `readGain(settings)` / `gainPatch(settings, newGain)`: the gain lives at `local_audio.gain` for a stereo
+  pair, or at both `local_audio.channels.channelA/B.gain` when `local_audio.stereo_pair === false` (an
+  unpaired input has no single "gain", so both channels move together to the same clamped value, `0..100`).
+  `gainPatch` returns `undefined` (send nothing) when the input has no `local_audio` gain setting at all —
+  the caller logs an error rather than inventing one.
+- `readDelay(settings)` / `delayPatch(settings, newDelay)`: the delay lives at whichever of `audio.delay`
+  (analog/USB/network inputs), `hdmi.audio.delay` (`HdmiInputSettings`) or `sdi.audio.delay`
+  (`SdiInputSettings`) the settings actually contain — checked in that order — and is patched back at that
+  same path, clamped `-300..300`. `undefined` (send nothing) when none of the three paths is present.
+- `levelSummary(input)` turns `state.inputs[sid]` (`.levels: {rms, peak}` from the legacy `/sources/status`
+  poll, see "Poller" step 2, and `.audioState`) into the display shape used by `variables.js`: `peak` (the
+  loudest of all peak/RMS values, rounded), `left`/`right` (that channel's peak, or its RMS when no peak
+  value exists), and `text` — `'-18 dBFS'`, `'silent'` at or below `SILENT_DBFS` (`-99`), `'No signal'` when
+  `audioState === 'inactive'` and there are no levels, or `''` when nothing has been polled yet.
+
 ## Actions (`src/actions.js`) — `getActions()`
 
 Existing action ids and option ids are unchanged (`channelChangeLayout`, `controlStreaming`, `recorderRecording`,
@@ -286,34 +370,34 @@ bookmarks/layouts use the v2 parameter conventions above.
 
 New actions (all textinputs `useVariables: true`, values run through `await this.parseVariablesInString`):
 
-| id                      | options                                                                                                                           | request                                                                                                                                                                         |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| recorderControlAll      | action start/stop                                                                                                                 | `POST /recorders/control/{start                                                                                                                                                 | stop}` |
-| setChannelName          | channel, name                                                                                                                     | `PUT /channels/{cid}/name?name=`                                                                                                                                                |
-| setPublisherName        | publisher (no all), name                                                                                                          | `PUT /channels/{cid}/publishers/{pid}/name?name=`                                                                                                                               |
-| setPublisherEnabled     | publisher (no all), enabled true/false                                                                                            | `PATCH .../settings {common:{enabled}}`                                                                                                                                         |
-| setPublisherSingleTouch | publisher (no all), single_touch true/false                                                                                       | `PATCH .../settings {common:{single_touch}}`                                                                                                                                    |
-| setRtmpDestination      | publisher, url, stream, username, password (blank = unchanged)                                                                    | `PATCH .../settings {rtmp:{...non-blank}}`                                                                                                                                      |
-| setSrtDestination       | publisher, mode unchanged (default)/caller/listener/rendezvous, url, stream_id, port, latency (blank = unchanged)                 | `PATCH .../settings {srt:{...non-blank}}`; `mode` only when not 'unchanged'; url/stream_id/port only where the mode applies (all three when unchanged); nothing to send -> warn |
-| patchPublisherSettings  | publisher, json                                                                                                                   | `PATCH .../settings <json>`                                                                                                                                                     |
-| addPublisher            | channel, name, json settings                                                                                                      | `POST /channels/{cid}/publishers {name, settings}`; `settings.common` defaults to `{enabled:false,single_touch:false}`                                                          |
-| setOutputSource         | output, source dropdown (choicesOutputSources) or custom text when source === 'custom'                                            | `PUT /outputs/{did}/settings?source=`; on success set `state.outputs[did].source`                                                                                               |
-| inputAudioMute          | input (audio inputs), mute true/false                                                                                             | `PATCH /inputs/{sid}/settings` with `audioSettingsBody(sid,'mute',v)`: id contains hdmi -> `{hdmi:{audio:{mute}}}`, sdi -> `{sdi:{audio:{mute}}}`, else `{local_audio:{mute}}`  |
-| inputAudioGain          | input, gain number, channel both/A/B                                                                                              | both: `{local_audio:{gain}}`; A/B: `{local_audio:{stereo_pair:false,channels:{channelA:{gain}}}}`                                                                               |
-| inputAudioDelay         | input, delay -300..300                                                                                                            | `audioSettingsBody(sid,'delay',v)`: hdmi -> `{hdmi:{audio:{delay}}}`, sdi -> `{sdi:{audio:{delay}}}`, else `{audio:{delay}}` (HdmiInputSettings / SdiInputSettings)             |
-| inputPhantomPower       | input, on/off                                                                                                                     | `PATCH {local_audio:{phantom_power}}`                                                                                                                                           |
-| patchInputSettings      | input, json                                                                                                                       | `PATCH /inputs/{sid}/settings <json>`                                                                                                                                           |
-| createNetworkInput      | type (rtsp/srt/ndi/web-graphics/dante), name, json settings                                                                       | `POST /inputs {type,name,settings}`                                                                                                                                             |
-| singleTouchToggle       | stc                                                                                                                               | `POST /system/singletouchcontrol/{stcid}/control/toggle`                                                                                                                        |
-| applyConfigPreset       | preset, sections multidropdown (system, network, sources, edid, channels, afu, cms, avstudio, frontscreen, displays; empty = all) | `POST /system/presets/{name}/control/apply {sections}`; log if result.reboot                                                                                                    |
-| storageEject            | storage                                                                                                                           | `POST /system/storages/{stid}/control/eject`                                                                                                                                    |
-| eventControl            | event alias dropdown (+ 'custom' with id text), action start/stop/pause/resume                                                    | `POST /schedule/events/{id}/control/{action}`                                                                                                                                   |
-| eventExtend             | event alias/id, seconds (default 300)                                                                                             | `POST /schedule/events/{id}/control/extend {finish}`                                                                                                                            |
-| createAdhocEvent        | json body                                                                                                                         | `POST /schedule/events <json>`                                                                                                                                                  |
-| adhocSessionLogout      | –                                                                                                                                 | `DELETE /schedule/events/adhoc/session`                                                                                                                                         |
-| refreshConnectivity     | –                                                                                                                                 | `GET /system/connectivity/details` -> `state.connectivity`, update variables                                                                                                    |
-| runSpeedTest            | mode uplink/downlink, protocol tcp/udp, timeout s (default 10)                                                                    | `GET /system/connectivity/tools/speedtest` with request timeout = (timeout+15)s -> `state.speedtest`, variables                                                                 |
-| refreshPoll             | –                                                                                                                                 | `await this.pollAll()`                                                                                                                                                          |
+| id                      | options                                                                                                                           | request                                                                                                                                                                                                                                                                                                               |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| recorderControlAll      | action start/stop                                                                                                                 | `POST /recorders/control/{start                                                                                                                                                                                                                                                                                       | stop}` |
+| setChannelName          | channel, name                                                                                                                     | `PUT /channels/{cid}/name?name=`                                                                                                                                                                                                                                                                                      |
+| setPublisherName        | publisher (no all), name                                                                                                          | `PUT /channels/{cid}/publishers/{pid}/name?name=`                                                                                                                                                                                                                                                                     |
+| setPublisherEnabled     | publisher (no all), enabled true/false                                                                                            | `PATCH .../settings {common:{enabled}}`                                                                                                                                                                                                                                                                               |
+| setPublisherSingleTouch | publisher (no all), single_touch true/false                                                                                       | `PATCH .../settings {common:{single_touch}}`                                                                                                                                                                                                                                                                          |
+| setRtmpDestination      | publisher, url, stream, username, password (blank = unchanged)                                                                    | `PATCH .../settings {rtmp:{...non-blank}}`                                                                                                                                                                                                                                                                            |
+| setSrtDestination       | publisher, mode unchanged (default)/caller/listener/rendezvous, url, stream_id, port, latency (blank = unchanged)                 | `PATCH .../settings {srt:{...non-blank}}`; `mode` only when not 'unchanged'; url/stream_id/port only where the mode applies (all three when unchanged); nothing to send -> warn                                                                                                                                       |
+| patchPublisherSettings  | publisher, json                                                                                                                   | `PATCH .../settings <json>`                                                                                                                                                                                                                                                                                           |
+| addPublisher            | channel, name, json settings                                                                                                      | `POST /channels/{cid}/publishers {name, settings}`; `settings.common` defaults to `{enabled:false,single_touch:false}`                                                                                                                                                                                                |
+| setOutputSource         | output, source dropdown (choicesOutputSources) or custom text when source === 'custom'                                            | `PUT /outputs/{did}/settings?source=`; on success set `state.outputs[did].source`                                                                                                                                                                                                                                     |
+| inputAudioMute          | input (audio inputs), mute true/false                                                                                             | `PATCH /inputs/{sid}/settings` with `audioMuteBody(sid,mute)` (id-derived, unrelated to the settings read below): id contains hdmi -> `{hdmi:{audio:{mute}}}`, sdi -> `{sdi:{audio:{mute}}}`, else `{local_audio:{mute}}`                                                                                             |
+| inputAudioGain          | input, gain number (clamped `audio.GAIN_MIN..GAIN_MAX`), channel both/A/B                                                         | channel A/B -> `{local_audio:{stereo_pair:false,channels:{channel<A\|B>:{gain}}}}` sent directly (that one channel only, no read); `both` -> `GET /inputs/{sid}/settings` first, then `audio.gainPatch(settings, gain)` (both channels when unpaired, see "Audio helper"); no gain setting -> log error, send nothing |
+| inputAudioDelay         | input, delay (clamped `audio.DELAY_MIN..DELAY_MAX`)                                                                               | `GET /inputs/{sid}/settings` first, then `audio.delayPatch(settings, delay)` (writes back at whichever path the settings already contain, see "Audio helper"); no delay setting -> log error, send nothing                                                                                                            |
+| inputPhantomPower       | input, on/off                                                                                                                     | `PATCH {local_audio:{phantom_power}}`                                                                                                                                                                                                                                                                                 |
+| patchInputSettings      | input, json                                                                                                                       | `PATCH /inputs/{sid}/settings <json>`                                                                                                                                                                                                                                                                                 |
+| createNetworkInput      | type (rtsp/srt/ndi/web-graphics/dante), name, json settings                                                                       | `POST /inputs {type,name,settings}`                                                                                                                                                                                                                                                                                   |
+| singleTouchToggle       | stc                                                                                                                               | `POST /system/singletouchcontrol/{stcid}/control/toggle`                                                                                                                                                                                                                                                              |
+| applyConfigPreset       | preset, sections multidropdown (system, network, sources, edid, channels, afu, cms, avstudio, frontscreen, displays; empty = all) | `POST /system/presets/{name}/control/apply {sections}`; log if result.reboot                                                                                                                                                                                                                                          |
+| storageEject            | storage                                                                                                                           | `POST /system/storages/{stid}/control/eject`                                                                                                                                                                                                                                                                          |
+| eventControl            | event alias dropdown (+ 'custom' with id text), action start/stop/pause/resume                                                    | `POST /schedule/events/{id}/control/{action}`                                                                                                                                                                                                                                                                         |
+| eventExtend             | event alias/id, seconds (default 300)                                                                                             | `POST /schedule/events/{id}/control/extend {finish}`                                                                                                                                                                                                                                                                  |
+| createAdhocEvent        | json body                                                                                                                         | `POST /schedule/events <json>`                                                                                                                                                                                                                                                                                        |
+| adhocSessionLogout      | –                                                                                                                                 | `DELETE /schedule/events/adhoc/session`                                                                                                                                                                                                                                                                               |
+| refreshConnectivity     | –                                                                                                                                 | `GET /system/connectivity/details` -> `state.connectivity`, update variables                                                                                                                                                                                                                                          |
+| runSpeedTest            | mode uplink/downlink, protocol tcp/udp, timeout s (default 10)                                                                    | `GET /system/connectivity/tools/speedtest` with request timeout = (timeout+15)s -> `state.speedtest`, variables                                                                                                                                                                                                       |
+| refreshPoll             | –                                                                                                                                 | `await this.pollAll()`                                                                                                                                                                                                                                                                                                |
 
 Actions touching v2-only endpoints must check `this.isV2` and log a warning + return when false.
 Actions never throw: wrap requests in try/catch and `this.log('error', ...)`.
@@ -388,7 +472,10 @@ Keep all existing ids. Add:
 - per recorder: `recorder_{rid}_name`, `recorder_{rid}_duration_hms`, `recorder_{rid}_total`, and when poll_archive:
   `recorder_{rid}_last_file_name`, `recorder_{rid}_last_file_size_mb`, `recorder_{rid}_last_file_created`
 - totals: `recorders_active_count`, `publishers_active_count`
-- per input: `input_{safeId(sid)}_name`, `input_{safeId(sid)}_type`
+- per input: `input_{safeId(sid)}_name`, `input_{safeId(sid)}_type`; when `input.audio === true` also
+  `_peak_dbfs`, `_peak_left`, `_peak_right`, `_level_text` from `audio.levelSummary(input)` (see "Audio
+  helper" and "Poller" step 2) — not added at all for a video-only input, so it never appears in the
+  variable list
 - per output: `output_{safeId(did)}_name`, `output_{safeId(did)}_source` (optimistic, '' if unknown)
 - per storage: `storage_{stid}_state`, `storage_{stid}_media_type`, `storage_{stid}_total_gb`, `storage_{stid}_free_gb`, `storage_{stid}_free_percent`
 - per single touch: `stc_{id}_pressed`, `stc_{id}_status`, `stc_{id}_recorders_active`, `stc_{id}_recorders_total`, `stc_{id}_publishers_active`, `stc_{id}_publishers_total`
@@ -403,7 +490,9 @@ Keep all existing ids. Add:
 
 Numbers stay numbers; unknown values are `''` (not `undefined`). `hms` = `HH:MM:SS` via `utils.formatHms(seconds)`;
 `_time` = `HH:MM` local time via `utils.formatClock(unixSeconds)`; `*_mb`/`*_gb` rounded to 1 decimal.
-Countdown variables (`starts_in`, `remaining`) are recomputed each poll from `Date.now()`.
+Countdown variables (`starts_in`, `remaining`) are recomputed each poll from `self.deviceNow()` (`Date.now()`
+corrected by `clockOffsetMs`, see "Request layer" — falls back to `Date.now()` itself when `self` has no
+`deviceNow`, e.g. a hand-built test double), not the host's uncorrected clock.
 
 ## Presets (`src/presets.js`) — `getPresets()`
 
@@ -454,6 +543,8 @@ so any prefix other than `local`/`internal`/`custom` works; `pearl` matches the 
 `parseKeyValueText(text)` (legacy `key=value` per line response of `get_params.cgi` -> object),
 `firmwareVersionNumber(version)` (`'4.24.1' -> 42401`, null when unparseable; compared against `MIN_API_V2_VERSION`),
 `clampNumber(value, def, min, max)` (config normalisation), `metadataRetryDue(entry, now)` (see "Other instance fields"),
+`normaliseInputId(id)` (strips the `D2P<serial>.` device prefix the legacy `/sources/status` ids carry but the
+v2.0 `/inputs` ids lack), `sameInputId(a, b)` (`normaliseInputId(a) === normaliseInputId(b)`, see "Poller" step 2),
 `emptyState()` (the empty shape of `this.state` described above).
 
 ## Test harness
@@ -469,9 +560,19 @@ pointed at the given mock server (`config` = overrides of the harness `DEFAULT_C
 Every suite starts its own mock and destroys the instance in `after()`. Tests run with `node --test "test/**/*.test.js"`
 (`yarn test`); Node >= 21 no longer expands a bare directory argument.
 
-`test/mock-pearl.js` exports `startMockPearl({ firmware = '4.24.1', legacyOnly = false, port = 0 })` -> `{ url, port, state, requests, reset(), close() }`.
-It serves every endpoint the module uses from an in-memory model (2 channels with layouts and publishers, 3 recorders, inputs,
-1 output, storages, single touch, presets, events, afu, system), records `{ method, path, query, body }` for each request,
-mutates state on control calls (start/stop publishers and recorders, layout activation, names, output source, single touch toggle,
-patch settings), returns a 1x1 PNG for previews, and returns 404 JSON `{status:'notfound', message}` for unknown ids.
-With `legacyOnly: true` it 404s everything under `/api/v2.0/` so v1 fallback can be tested.
+`test/mock-pearl.js` exports `startMockPearl({ firmware = '4.24.1', legacyOnly = false, port = 0, https = false, clockSkewMs = 0 })`
+-> `{ url, port, state, requests, reset(), setClockSkew(ms), close() }`.
+It serves every endpoint the module uses from an in-memory model (2 channels with layouts and publishers, 3 recorders, inputs
+(including an unpaired stereo input, an HDMI input with `hdmi.audio.delay` and an SDI input with `sdi.audio.delay`, for the
+audio helper tests), 1 output, storages, single touch, presets, events, afu, system), records `{ method, path, query, body }`
+for each request, mutates state on control calls (start/stop publishers and recorders, layout activation, names, output
+source, single touch toggle, patch settings), returns a 1x1 PNG for previews, and returns 404 JSON
+`{status:'notfound', message}` for unknown ids. With `legacyOnly: true` it 404s everything under `/api/v2.0/` so v1
+fallback can be tested. With `https: true` it serves TLS instead of plain HTTP, using the self-signed certificate in
+`test/fixtures/selfsigned.{key,crt}` (CN/SAN `127.0.0.1` + `localhost`, generated once for testing and committed —
+regenerate only if it expires: `openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=127.0.0.1"
+-addext "subjectAltName=IP:127.0.0.1"`). `clockSkewMs` (and `setClockSkew(ms)` to change it after the server is
+already running) offsets the `Date` response header from the real clock on every response, simulating a Pearl whose
+onboard clock disagrees with the test host's — see "Request layer"'s `syncClock`/`deviceNow`. `GET /sources/status`
+(legacy base) answers with the model's inputs, each id prefixed `D2P492324.` (or left alone if already prefixed) the
+way a real Pearl-2 does, with wandering dBFS levels on every call (`state.counters.levelPolls`) so two polls differ.

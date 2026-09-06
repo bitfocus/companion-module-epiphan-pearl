@@ -22,6 +22,23 @@ describe('utils', () => {
 		assert.equal(utils.formatClock('x'), '')
 	})
 
+	it('normaliseInputId strips the D2P<serial>. prefix and sameInputId compares without it', () => {
+		assert.equal(utils.normaliseInputId('D2P492324.analog-a'), 'analog-a')
+		assert.equal(utils.normaliseInputId('D2P0.SDI-B'), 'SDI-B')
+		assert.equal(utils.normaliseInputId('analog-a'), 'analog-a')
+		assert.equal(utils.normaliseInputId('USBA'), 'USBA')
+		assert.equal(utils.normaliseInputId('D2P.x'), 'x')
+		assert.equal(
+			utils.normaliseInputId('SRT1.something'),
+			'SRT1.something',
+			'only the D2P device prefix is removed',
+		)
+		assert.equal(utils.normaliseInputId(undefined), '')
+		assert.equal(utils.sameInputId('D2P492324.analog-a', 'analog-a'), true)
+		assert.equal(utils.sameInputId('D2P1.hdmi-a', 'D2P2.hdmi-a'), true)
+		assert.equal(utils.sameInputId('analog-a', 'analog-b'), false)
+	})
+
 	it('safeId replaces everything outside [a-zA-Z0-9_-]', () => {
 		assert.equal(utils.safeId('D2P496187.hdmi-a'), 'D2P496187_hdmi-a')
 		assert.equal(utils.safeId('weird id!'), 'weird_id_')

@@ -481,34 +481,92 @@ describe('actions against a v2.0 device', () => {
 		assert.ok(errors(instance).some((m) => /405/.test(m)))
 	})
 
-	it('inputAudioMute / inputAudioDelay nest HDMI and SDI audio under hdmi.audio / sdi.audio', async () => {
+	it('inputAudioMute nests HDMI and SDI audio under hdmi.audio / sdi.audio (derived from the id)', async () => {
 		// HdmiInputSettings / SdiInputSettings in doc/pearl-api-v2.0.yaml
 		await runAction(instance, 'inputAudioMute', { input: 'hdmi-a', mute: 'true' })
 		let req = one(mock, 'PATCH', `${V2}/inputs/hdmi-a/settings`)
 		assert.deepEqual(req.body, { hdmi: { audio: { mute: true } } })
 
 		mock.requests.length = 0
-		await runAction(instance, 'inputAudioDelay', { input: 'hdmi-a', delay: 20 })
-		req = one(mock, 'PATCH', `${V2}/inputs/hdmi-a/settings`)
-		assert.deepEqual(req.body, { hdmi: { audio: { delay: 20 } } })
-
-		mock.requests.length = 0
 		await runAction(instance, 'inputAudioMute', { input: 'D2P0.SDI-B', mute: 'false' })
 		req = one(mock, 'PATCH', `${V2}/inputs/D2P0.SDI-B/settings`)
 		assert.deepEqual(req.body, { sdi: { audio: { mute: false } } })
-
-		mock.requests.length = 0
-		await runAction(instance, 'inputAudioDelay', { input: 'D2P0.SDI-B', delay: -20 })
-		req = one(mock, 'PATCH', `${V2}/inputs/D2P0.SDI-B/settings`)
-		assert.deepEqual(req.body, { sdi: { audio: { delay: -20 } } })
 
 		// analog inputs keep the flat shape
 		mock.requests.length = 0
 		await runAction(instance, 'inputAudioMute', { input: 'analog-a', mute: 'true' })
 		assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`).body, { local_audio: { mute: true } })
+		mock.reset()
+	})
+
+	it('inputAudioDelay reads the settings first and writes the delay where the input keeps it', async () => {
+		// hdmi-b keeps it in hdmi.audio.delay (HdmiInputSettings)
+		await runAction(instance, 'inputAudioDelay', { input: 'hdmi-b', delay: 20 })
+		assert.deepEqual(
+			mock.requests.map((r) => `${r.method} ${r.path}`),
+			[`GET ${V2}/inputs/hdmi-b/settings`, `PATCH ${V2}/inputs/hdmi-b/settings`],
+		)
+		assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/hdmi-b/settings`).body, { hdmi: { audio: { delay: 20 } } })
+		assert.equal(mock.state.inputs['hdmi-b'].settings.hdmi.audio.delay, 20)
+
+		// sdi-a keeps it in sdi.audio.delay (SdiInputSettings)
+		mock.requests.length = 0
+		await runAction(instance, 'inputAudioDelay', { input: 'sdi-a', delay: -20 })
+		assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/sdi-a/settings`).body, { sdi: { audio: { delay: -20 } } })
+		assert.equal(mock.state.inputs['sdi-a'].settings.sdi.audio.delay, -20)
+
+		// analog-a keeps it in audio.delay
 		mock.requests.length = 0
 		await runAction(instance, 'inputAudioDelay', { input: 'analog-a', delay: 5 })
 		assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`).body, { audio: { delay: 5 } })
+		assert.equal(mock.state.inputs['analog-a'].settings.audio.delay, 5)
+		assert.ok(instance.pollSoonTimer, 'poll nudged')
+		mock.reset()
+	})
+
+	it('inputAudioDelay / inputAudioGain send nothing when the settings cannot be read or lack the value', async () => {
+		// hdmi-a: the device answers GET .../settings with 405 "Input settings are not supported"
+		await runAction(instance, 'inputAudioDelay', { input: 'hdmi-a', delay: 20 })
+		assert.equal(recorded(mock, 'PATCH').length, 0)
+		assert.ok(errors(instance).some((m) => /405/.test(m)))
+
+		// USBA with settings that carry no delay at all
+		mock.state.inputs.USBA.settings = { local_audio: { gain: 50, mute: false } }
+		mock.requests.length = 0
+		instance.calls.log.length = 0
+		await runAction(instance, 'inputAudioDelay', { input: 'USBA', delay: 20 })
+		assert.equal(recorded(mock, 'PATCH').length, 0)
+		assert.ok(errors(instance).some((m) => /no audio delay setting/.test(m)))
+
+		// SRT1 has settings but no local_audio, so no gain
+		mock.requests.length = 0
+		instance.calls.log.length = 0
+		await runAction(instance, 'inputAudioGain', { input: 'SRT1', gain: 10, channel: 'both' })
+		assert.equal(recorded(mock, 'PATCH').length, 0)
+		assert.ok(errors(instance).some((m) => /no gain setting/.test(m)))
+		mock.reset()
+	})
+
+	it('inputAudioGain reads the settings first and moves both channels of an unpaired input', async () => {
+		// analog-b has stereo_pair: false with channel A 20 / channel B 24
+		await runAction(instance, 'inputAudioGain', { input: 'analog-b', gain: 40, channel: 'both' })
+		assert.deepEqual(
+			mock.requests.map((r) => `${r.method} ${r.path}`),
+			[`GET ${V2}/inputs/analog-b/settings`, `PATCH ${V2}/inputs/analog-b/settings`],
+		)
+		assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/analog-b/settings`).body, {
+			local_audio: { channels: { channelA: { gain: 40 }, channelB: { gain: 40 } } },
+		})
+		const la = mock.state.inputs['analog-b'].settings.local_audio
+		assert.equal(la.channels.channelA.gain, 40)
+		assert.equal(la.channels.channelB.gain, 40)
+		assert.equal(la.stereo_pair, false, 'the input stays unpaired')
+		assert.equal(la.gain, undefined, 'no stereo pair gain is invented')
+
+		// out-of-range values are clamped to 0..100
+		mock.requests.length = 0
+		await runAction(instance, 'inputAudioGain', { input: 'analog-a', gain: 150, channel: 'both' })
+		assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`).body, { local_audio: { gain: 100 } })
 		mock.reset()
 	})
 
@@ -519,10 +577,41 @@ describe('actions against a v2.0 device', () => {
 
 		mock.requests.length = 0
 		await runAction(instance, 'inputAudioGain', { input: 'analog-a', gain: 12, channel: 'B' })
+		// a single-channel gain set is a blind write: no settings GET, just the PATCH
+		assert.deepEqual(
+			mock.requests.map((r) => `${r.method} ${r.path}`),
+			[`PATCH ${V2}/inputs/analog-a/settings`],
+		)
 		req = one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`)
 		assert.deepEqual(req.body, { local_audio: { stereo_pair: false, channels: { channelB: { gain: 12 } } } })
 		assert.equal(mock.state.inputs['analog-a'].settings.local_audio.channels.channelB.gain, 12)
 		assert.equal(mock.state.inputs['analog-a'].settings.local_audio.channels.channelA.gain, 27)
+		mock.reset()
+	})
+
+	it('inputAudioGain channel A/B write succeeds even when the settings GET would fail', async () => {
+		// A channel A/B gain set never reads settings at all, so a GET failure that would abort
+		// the "both" path (network hiccup, timeout, 405, ...) cannot affect it. Simulate that by
+		// making only GET throw; the PATCH must still reach the device unharmed.
+		const realRequest = instance.request.bind(instance)
+		instance.request = async (method, path, opts) => {
+			if (method === 'GET' && path === `/inputs/analog-a/settings`) {
+				throw new Error('simulated transient GET failure')
+			}
+			return realRequest(method, path, opts)
+		}
+		try {
+			await runAction(instance, 'inputAudioGain', { input: 'analog-a', gain: 33, channel: 'A' })
+		} finally {
+			instance.request = realRequest
+		}
+		assert.deepEqual(
+			mock.requests.map((r) => `${r.method} ${r.path}`),
+			[`PATCH ${V2}/inputs/analog-a/settings`],
+		)
+		const req = one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`)
+		assert.deepEqual(req.body, { local_audio: { stereo_pair: false, channels: { channelA: { gain: 33 } } } })
+		assert.equal(errors(instance).length, 0)
 		mock.reset()
 	})
 

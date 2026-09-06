@@ -7,11 +7,13 @@ const { PRESET_CATEGORY_IDS } = require('./presets')
  * Companion runs every upgrade script exactly once per connection and remembers how far it got, so an
  * existing script must never be extended: fields added in a later version get their own script that is
  * APPENDED to the exported array (setDefaultConfig = v2.2.0, setDefaultConfigV230 = v2.3.0,
- * setDefaultConfigV260 = v2.6.0).
+ * setDefaultConfigV260 = v2.6.0, setDefaultConfigV300Https = v3.0.0).
  */
 const CONFIG_DEFAULTS = {
 	use_api_v2: true,
 	verbose: false,
+	use_https: false,
+	accept_self_signed: true,
 	timeout: 5000,
 	preview_interval: 2,
 	preview_width: 144,
@@ -36,6 +38,8 @@ const CONFIG_DEFAULT_KEYS_V230 = [
 ]
 /** fields handled by setDefaultConfigV260 (v2.6.0) */
 const CONFIG_DEFAULT_KEYS_V260 = ['preset_categories']
+/** fields handled by setDefaultConfigV300Https (v3.0.0) */
+const CONFIG_DEFAULT_KEYS_V300_HTTPS = ['use_https', 'accept_self_signed']
 
 /**
  * Build an upgrade script that fills the given config keys with their CONFIG_DEFAULTS value when undefined
@@ -71,9 +75,11 @@ function fillConfigDefaults(keys) {
 const setDefaultConfig = fillConfigDefaults(CONFIG_DEFAULT_KEYS_V220)
 const setDefaultConfigV230 = fillConfigDefaults(CONFIG_DEFAULT_KEYS_V230)
 const setDefaultConfigV260 = fillConfigDefaults(CONFIG_DEFAULT_KEYS_V260)
+const setDefaultConfigV300Https = fillConfigDefaults(CONFIG_DEFAULT_KEYS_V300_HTTPS)
 Object.defineProperty(setDefaultConfig, 'name', { value: 'setDefaultConfig' })
 Object.defineProperty(setDefaultConfigV230, 'name', { value: 'setDefaultConfigV230' })
 Object.defineProperty(setDefaultConfigV260, 'name', { value: 'setDefaultConfigV260' })
+Object.defineProperty(setDefaultConfigV300Https, 'name', { value: 'setDefaultConfigV300Https' })
 
 // Rename old streaming feedback and action identifiers
 function renameStreaming(context, props) {
@@ -110,9 +116,12 @@ module.exports = [
 	setDefaultConfigV230,
 	// v2.6.0: default value (every category) for the new preset_categories setting
 	setDefaultConfigV260,
+	// v3.0.0: default values (HTTPS off, self-signed accepted) for the connection security settings
+	setDefaultConfigV300Https,
 ]
 
 module.exports.CONFIG_DEFAULTS = CONFIG_DEFAULTS
 module.exports.CONFIG_DEFAULT_KEYS_V220 = CONFIG_DEFAULT_KEYS_V220
 module.exports.CONFIG_DEFAULT_KEYS_V230 = CONFIG_DEFAULT_KEYS_V230
 module.exports.CONFIG_DEFAULT_KEYS_V260 = CONFIG_DEFAULT_KEYS_V260
+module.exports.CONFIG_DEFAULT_KEYS_V300_HTTPS = CONFIG_DEFAULT_KEYS_V300_HTTPS

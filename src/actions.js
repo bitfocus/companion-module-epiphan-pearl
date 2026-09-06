@@ -1,5 +1,6 @@
 const variables = require('./variables')
 const { splitPair, parseJsonOption, nonBlank } = require('./utils')
+const { gainPatch, delayPatch, GAIN_MIN, GAIN_MAX, DELAY_MIN, DELAY_MAX } = require('./audio')
 
 const JSON_TOOLTIP_SUFFIX = ' See the examples in doc/pearl-api-v2.0.yaml. Variables are allowed.'
 
@@ -61,24 +62,22 @@ const toInt = (v, fallback) => {
 }
 
 /**
- * Body for `PATCH /inputs/{sid}/settings` that changes one audio field of an input.
+ * Body for `PATCH /inputs/{sid}/settings` that mutes or unmutes an input.
  *
  * The InputSettings schema in doc/pearl-api-v2.0.yaml nests the audio settings of HDMI and SDI
- * inputs under `hdmi.audio.{mute,delay}` (HdmiInputSettings) and `sdi.audio.{mute,delay}`
- * (SdiInputSettings), while analog, USB and network inputs use `local_audio.mute` / `audio.delay`.
- * The input type is derived from the input id (e.g. `hdmi-a`, `D2P0.sdi-b`).
+ * inputs under `hdmi.audio.mute` (HdmiInputSettings) and `sdi.audio.mute` (SdiInputSettings), while
+ * analog, USB and network inputs use `local_audio.mute`. The input type is derived from the input id
+ * (e.g. `hdmi-a`, `D2P0.sdi-b`).
  *
  * @param {string} sid input id
- * @param {'mute'|'delay'} field
- * @param {boolean|number} value
+ * @param {boolean} mute
  * @returns {object} request body
  */
-function audioSettingsBody(sid, field, value) {
+function audioMuteBody(sid, mute) {
 	const id = String(sid).toLowerCase()
-	if (id.includes('hdmi')) return { hdmi: { audio: { [field]: value } } }
-	if (id.includes('sdi')) return { sdi: { audio: { [field]: value } } }
-	if (field === 'delay') return { audio: { delay: value } }
-	return { local_audio: { [field]: value } }
+	if (id.includes('hdmi')) return { hdmi: { audio: { mute } } }
+	if (id.includes('sdi')) return { sdi: { audio: { mute } } }
+	return { local_audio: { mute } }
 }
 
 module.exports = {
@@ -894,7 +893,7 @@ module.exports = {
 					return
 				}
 				await this.request('PATCH', `/inputs/${enc(sid)}/settings`, {
-					body: audioSettingsBody(sid, 'mute', isTrue(action.options.mute)),
+					body: audioMuteBody(sid, isTrue(action.options.mute)),
 				})
 				this.schedulePollSoon()
 			}),
@@ -903,7 +902,9 @@ module.exports = {
 		actions['inputAudioGain'] = {
 			name: 'Input: audio gain',
 			description:
-				'Sets the capture gain (dB or %, depending on the device). Channel A/B switches the input to individual channel settings.',
+				'Sets the capture gain (dB or %, depending on the device). The current settings are read first: ' +
+				'Both sets the stereo pair gain, or both channels when the input already has individual channel settings. ' +
+				'Channel A/B switches the input to individual channel settings.',
 			options: [
 				optInput(this.choicesInputsWithAudio()),
 				{
@@ -911,8 +912,8 @@ module.exports = {
 					id: 'gain',
 					label: 'Gain',
 					default: 0,
-					min: 0,
-					max: 100,
+					min: GAIN_MIN,
+					max: GAIN_MAX,
 					step: 1,
 				},
 				{
@@ -934,20 +935,35 @@ module.exports = {
 					this.log('error', 'Input: audio gain: no input selected')
 					return
 				}
-				const gain = Math.max(0, toInt(action.options.gain, 0))
-				let local_audio
+				const gain = Math.min(GAIN_MAX, Math.max(GAIN_MIN, toInt(action.options.gain, 0)))
+				let body
 				if (action.options.channel === 'A' || action.options.channel === 'B') {
-					local_audio = { stereo_pair: false, channels: { [`channel${action.options.channel}`]: { gain } } }
+					// Single channel: the body is built entirely from the option values, so no read is needed.
+					body = {
+						local_audio: {
+							stereo_pair: false,
+							channels: { [`channel${action.options.channel}`]: { gain } },
+						},
+					}
 				} else {
-					local_audio = { gain }
+					// Both: the existing settings decide whether this is a stereo pair or an unpaired input.
+					const settings = await this.request('GET', `/inputs/${enc(sid)}/settings`)
+					body = gainPatch(settings, gain)
+					if (!body) {
+						this.log('error', `Input: audio gain: input ${sid} has no gain setting`)
+						return
+					}
 				}
-				await this.request('PATCH', `/inputs/${enc(sid)}/settings`, { body: { local_audio } })
+				await this.request('PATCH', `/inputs/${enc(sid)}/settings`, { body })
 				this.schedulePollSoon()
 			}),
 		}
 
 		actions['inputAudioDelay'] = {
 			name: 'Input: audio delay',
+			description:
+				'Sets the audio delay in milliseconds. The current settings are read first and the delay is written where ' +
+				'the input keeps it (audio.delay, hdmi.audio.delay or sdi.audio.delay).',
 			options: [
 				optInput(this.choicesInputsWithAudio()),
 				{
@@ -955,8 +971,8 @@ module.exports = {
 					id: 'delay',
 					label: 'Delay (ms)',
 					default: 0,
-					min: -300,
-					max: 300,
+					min: DELAY_MIN,
+					max: DELAY_MAX,
 					step: 1,
 				},
 			],
@@ -967,10 +983,14 @@ module.exports = {
 					this.log('error', 'Input: audio delay: no input selected')
 					return
 				}
-				const delay = Math.min(300, Math.max(-300, toInt(action.options.delay, 0)))
-				await this.request('PATCH', `/inputs/${enc(sid)}/settings`, {
-					body: audioSettingsBody(sid, 'delay', delay),
-				})
+				const delay = Math.min(DELAY_MAX, Math.max(DELAY_MIN, toInt(action.options.delay, 0)))
+				const settings = await this.request('GET', `/inputs/${enc(sid)}/settings`)
+				const body = delayPatch(settings, delay)
+				if (!body) {
+					this.log('error', `Input: audio delay: input ${sid} has no audio delay setting`)
+					return
+				}
+				await this.request('PATCH', `/inputs/${enc(sid)}/settings`, { body })
 				this.schedulePollSoon()
 			}),
 		}

@@ -231,6 +231,28 @@ function metadataRetryDue(entry, now = Date.now()) {
 	return now - failedAt > METADATA_RETRY_BASE_MS * attempts
 }
 
+/** `D2P<serial>.` prefix carried by the ids of the legacy /sources/status list but not by the v2.0 /inputs ids */
+const INPUT_ID_PREFIX_RE = /^D2P[^.]*\./
+
+/**
+ * Strip the `D2P<serial>.` device prefix from an input id
+ * @param {*} id
+ * @returns {string}
+ */
+function normaliseInputId(id) {
+	return String(id ?? '').replace(INPUT_ID_PREFIX_RE, '')
+}
+
+/**
+ * true when two input ids name the same input once the device prefix is ignored
+ * @param {*} a
+ * @param {*} b
+ * @returns {boolean}
+ */
+function sameInputId(a, b) {
+	return normaliseInputId(a) === normaliseInputId(b)
+}
+
 /**
  * The empty shape of the instance state, see doc/ARCHITECTURE.md "Instance state"
  * @returns {object}
@@ -273,5 +295,7 @@ module.exports = {
 	firmwareVersionNumber,
 	clampNumber,
 	metadataRetryDue,
+	normaliseInputId,
+	sameInputId,
 	emptyState,
 }

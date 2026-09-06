@@ -2,7 +2,7 @@ const { describe, it, before, after } = require('node:test')
 const assert = require('node:assert/strict')
 const net = require('node:net')
 
-const { createInstance, InstanceStatus } = require('./harness')
+const { createInstance, InstanceStatus, DEFAULT_CONFIG } = require('./harness')
 const { startMockPearl } = require('./mock-pearl')
 
 describe('request layer', () => {
@@ -33,6 +33,18 @@ describe('request layer', () => {
 	it('returns true for an ok envelope without result', async () => {
 		const result = await instance.request('POST', '/channels/1/publishers/0/control/stop')
 		assert.equal(result, true)
+	})
+
+	it('a device clock in step with the host leaves the clock offset at 0', () => {
+		assert.equal(instance.clockOffsetMs, 0)
+		assert.ok(Math.abs(instance.deviceNow() - Date.now()) < 50)
+	})
+
+	it('uses plain http and the configured port by default', () => {
+		assert.equal(instance.config.use_https, false)
+		assert.equal(instance.config.accept_self_signed, true)
+		assert.match(mock.url, /^http:/)
+		assert.ok(instance.dispatcher, 'an undici Agent exists for the configuration')
 	})
 
 	it('strips a leading /api or /api/v2.0 and honours base v1 / raw', async () => {
@@ -223,6 +235,114 @@ describe('authentication', () => {
 			assert.ok(
 				instance.calls.log.some((l) => l.level === 'error' && /Authentication failed \(401\)/.test(l.message)),
 			)
+		} finally {
+			await instance.destroy()
+			await mock.close()
+		}
+	})
+})
+
+describe('HTTPS with a self-signed certificate', () => {
+	let mock
+
+	before(async () => {
+		mock = await startMockPearl({ https: true })
+		assert.match(mock.url, /^https:/)
+	})
+
+	after(async () => {
+		await mock.close()
+	})
+
+	it('is accepted when "Accept self-signed certificate" is on', async () => {
+		const instance = await createInstance({ mock, config: { use_https: true, accept_self_signed: true } })
+		try {
+			assert.equal(instance.currentStatus, InstanceStatus.Ok)
+			assert.equal(instance.apiBasePath, '/api/v2.0')
+			assert.deepEqual(Object.keys(instance.state.channels).sort(), ['1', '2'])
+			assert.ok(mock.requests.length > 0, 'requests reached the TLS mock')
+			assert.deepEqual(
+				instance.calls.log.filter((l) => l.level === 'error'),
+				[],
+			)
+			// the request layer keeps working over TLS for actions as well
+			await instance.request('POST', '/channels/1/publishers/0/control/start')
+			assert.equal(mock.state.channels['1'].publishers['0'].status.state, 'started')
+		} finally {
+			await instance.destroy()
+		}
+	})
+
+	it('is refused with ConnectionFailure and a certificate error when the setting is off', async () => {
+		mock.reset()
+		const instance = await createInstance({ mock, config: { use_https: true, accept_self_signed: false } })
+		try {
+			const { PearlApiError } = require('../src/instance')
+			assert.equal(instance.currentStatus, InstanceStatus.ConnectionFailure)
+			assert.equal(mock.requests.length, 0, 'the TLS handshake fails before any request is served')
+			assert.equal(Object.keys(instance.state.channels).length, 0)
+			const failure = instance.calls.status.find((s) => s.status === InstanceStatus.ConnectionFailure)
+			assert.match(String(failure.message), /SELF_SIGNED|CERT/)
+			assert.ok(
+				instance.calls.log.some(
+					(l) => l.level === 'error' && /self.signed certificate|certificate/i.test(l.message),
+				),
+				'the certificate problem is logged at error level',
+			)
+			// only the module's own error class leaves the request layer
+			await assert.rejects(instance.request('GET', '/channels'), (err) => {
+				assert.ok(
+					err instanceof PearlApiError,
+					`unexpected error type ${err?.constructor?.name}: ${err?.message}`,
+				)
+				assert.equal(err.status, 0)
+				assert.match(err.message, /self.signed certificate|certificate/i)
+				return true
+			})
+		} finally {
+			await instance.destroy()
+		}
+	})
+})
+
+describe('device clock skew', () => {
+	it('is picked up from the Date header and feeds the event countdowns', async () => {
+		const mock = await startMockPearl({ clockSkewMs: 60000 })
+		const instance = await createInstance({ mock })
+		try {
+			assert.ok(
+				instance.clockOffsetMs > 55000 && instance.clockOffsetMs < 65000,
+				`offset ${instance.clockOffsetMs} ms`,
+			)
+			assert.ok(Math.abs(instance.deviceNow() - Date.now() - instance.clockOffsetMs) < 50)
+			// the event starts 3600 s after the mock was seeded (host clock); through a device clock that runs
+			// 60 s ahead the countdown the module computes (event.start - deviceNow()) is about a minute shorter,
+			// i.e. close to 00:59:00 rather than the raw 01:00:00 an uncorrected Date.now() would give
+			assert.match(String(instance.variableValues.event_upcoming_starts_in_hms), /^00:(58:5\d|59:0\d)$/)
+		} finally {
+			await instance.destroy()
+			await mock.close()
+		}
+	})
+
+	it('ignores offset changes under 2 s, follows larger ones and restarts from 0 on a config change', async () => {
+		const mock = await startMockPearl({ clockSkewMs: 5000 })
+		const instance = await createInstance({ mock })
+		try {
+			const first = instance.clockOffsetMs
+			assert.ok(first > 3500 && first < 6500, `offset ${first} ms`)
+			mock.setClockSkew(6000)
+			await instance.request('GET', '/channels')
+			assert.equal(instance.clockOffsetMs, first, 'a 1 s change is within the resolution of the Date header')
+			mock.setClockSkew(-30000)
+			await instance.request('GET', '/channels')
+			assert.ok(
+				instance.clockOffsetMs < -28000 && instance.clockOffsetMs > -32000,
+				`offset ${instance.clockOffsetMs} ms`,
+			)
+			await instance.configUpdated({ ...DEFAULT_CONFIG, host_port: mock.port })
+			assert.equal(instance.clockOffsetMs, 0)
+			await instance.startupPromise
 		} finally {
 			await instance.destroy()
 			await mock.close()

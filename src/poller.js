@@ -1,5 +1,5 @@
 const variables = require('./variables')
-const { stableJson, emptyState, metadataRetryDue } = require('./utils')
+const { stableJson, emptyState, metadataRetryDue, normaliseInputId } = require('./utils')
 
 /** every Nth poll the slow changing system information is refreshed */
 const STRUCTURE_REFRESH_EVERY = 30
@@ -159,6 +159,7 @@ module.exports = {
 
 		// ---- 2. second round: legacy layouts (+ v1 publishers), and v2-only collections
 		const round2 = []
+		let sourcesStatus = []
 		const cids = Object.keys(state.channels)
 		for (const cid of cids) {
 			round2.push(
@@ -202,8 +203,15 @@ module.exports = {
 							audio: input.audio === true,
 							video: input.video === true,
 							real_device_name: input.real_device_name,
+							levels: undefined,
+							audioState: undefined,
 						}
 					}
+				}),
+			)
+			round2.push(
+				req('GET', '/sources/status', { base: 'v1', optional: true }).then((list) => {
+					sourcesStatus = Array.isArray(list) ? list : []
 				}),
 			)
 			round2.push(
@@ -348,6 +356,7 @@ module.exports = {
 		for (const [did, output] of Object.entries(prev.outputs || {})) {
 			if (state.outputs[did] && state.outputs[did].source === undefined) state.outputs[did].source = output.source
 		}
+		this.applyInputLevels(state, sourcesStatus)
 
 		// ---- 5./6. swap state and diff
 		if (gen !== this.configGeneration) {
@@ -477,6 +486,32 @@ module.exports = {
 		if (activeId === undefined) {
 			const active = Object.values(channel.layouts).find((l) => l.active)
 			if (active) channel.active_layout = { id: active.id, name: active.name }
+		}
+	},
+
+	/**
+	 * INTERNAL: attach the audio state and levels of the legacy /sources/status list to state.inputs.
+	 * Its ids carry a D2P<serial>. prefix that the /inputs ids lack, so both sides are compared
+	 * through normaliseInputId(); entries without a matching input are ignored.
+	 */
+	applyInputLevels(state, sourcesStatus) {
+		const byNormalisedId = new Map()
+		for (const input of Object.values(state.inputs || {})) byNormalisedId.set(normaliseInputId(input.id), input)
+		const finite = (v) => typeof v === 'number' && Number.isFinite(v)
+		for (const entry of Array.isArray(sourcesStatus) ? sourcesStatus : []) {
+			if (!entry || entry.id === undefined) continue
+			const input = state.inputs[entry.id] ?? byNormalisedId.get(normaliseInputId(entry.id))
+			if (!input) continue
+			const audio = entry.status?.audio
+			if (!audio || typeof audio !== 'object') continue
+			input.audioState = typeof audio.state === 'string' ? audio.state : undefined
+			const levels = audio.levels
+			if (levels && typeof levels === 'object' && Array.isArray(levels.rms)) {
+				input.levels = {
+					rms: levels.rms.filter(finite),
+					peak: Array.isArray(levels.peak) ? levels.peak.filter(finite) : [],
+				}
+			}
 		}
 	},
 

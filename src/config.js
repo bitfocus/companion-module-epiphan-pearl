@@ -56,6 +56,22 @@ function getConfigFields() {
 			default: '',
 		},
 		{
+			type: 'checkbox',
+			id: 'use_https',
+			label: 'Use HTTPS',
+			width: 6,
+			default: false,
+			tooltip: 'If HTTPS is enabled on the Pearl, enable it here too.',
+		},
+		{
+			type: 'checkbox',
+			id: 'accept_self_signed',
+			label: 'Accept self-signed certificate',
+			width: 6,
+			default: true,
+			isVisible: (options) => options.use_https === true,
+		},
+		{
 			type: 'number',
 			id: 'pollfreq',
 			label: 'Feedback polling frequency in seconds',
