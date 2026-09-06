@@ -11,19 +11,21 @@ const choices = require('./choices')
 const actions = require('./actions')
 const feedbacks = require('./feedbacks')
 const presets = require('./presets')
-const variables = require('./variables')
 const { getConfigFields } = require('./config')
 const upgrades = require('./upgrades')
-const { emptyState, parseKeyValueText, firmwareVersionNumber, clampNumber } = require('./utils')
+const { emptyState, firmwareVersionNumber, clampNumber } = require('./utils')
 
 /** Minimum firmware version (4.24.01) that supports API v2.0 */
 const MIN_API_V2_VERSION = 42401
 /** delay of the coalesced poll triggered after a control action */
 const POLL_SOON_DELAY = 750
+/** poll_interval bounds and fallback (D8); kept in sync with src/config.js and src/poller.js */
+const POLL_INTERVAL_DEFAULT_MS = 2000
+const POLL_INTERVAL_MIN_MS = 500
+const POLL_INTERVAL_MAX_MS = 300000
 
 const IP_RE = new RegExp(Regex.IP.slice(1, -1))
 const HOSTNAME_RE = new RegExp(Regex.HOSTNAME.slice(1, -1))
-const CHANNEL_ID_RE = /^[a-zA-Z0-9_-]+$/
 
 /**
  * Fill missing / invalid config values with sane defaults (in memory only)
@@ -41,14 +43,12 @@ function normaliseConfig(config) {
 	c.use_https = c.use_https === true
 	c.accept_self_signed = c.accept_self_signed !== false
 	if (c.use_https && c.host_port === '80') c.host_port = '443'
-	c.pollfreq = clampNumber(c.pollfreq, 10, 1, 300)
+	c.poll_interval = clampNumber(c.poll_interval, POLL_INTERVAL_DEFAULT_MS, POLL_INTERVAL_MIN_MS, POLL_INTERVAL_MAX_MS)
 	c.timeout = clampNumber(c.timeout, 5000, 1000, 60000)
 	c.use_api_v2 = c.use_api_v2 !== false
 	c.preview_interval = clampNumber(c.preview_interval, 2, 0, 300)
 	c.preview_width = Math.round(clampNumber(c.preview_width, 144, 72, 720))
 	c.poll_events = c.poll_events !== false
-	c.poll_archive = c.poll_archive === true
-	c.poll_connectivity = c.poll_connectivity === true
 	c.verbose = c.verbose === true
 	c.preset_categories = presets.normalisePresetCategories(c.preset_categories)
 	return c
@@ -86,19 +86,18 @@ class EpiphanPearl extends InstanceBase {
 
 		/** device state, rebuilt on every poll (see doc/ARCHITECTURE.md) */
 		this.state = emptyState()
-		/**
-		 * content metadata per channel from the legacy get_params.cgi: { [cid]: { title, author, rec_prefix } }.
-		 * A failed fetch leaves a retryable marker with the extra fields `_failedAt` (ms) and `_attempts`.
-		 */
-		this.metadata = {}
 		/** cached preview images: { [key]: { png64, fetchedAt } } */
 		this.previews = {}
 		/** preview subscriptions maintained by the preview feedbacks: Map<key, count> */
 		this.previewSubscriptions = new Map()
+		/** audio meter subscriptions maintained by the 'audio' feedback: Map<inputId, count> (Phase 3) */
+		this.meterSubscriptions = new Map()
 		/** keys whose last fetch failed, so a 'warn' is logged once on failure and once on recovery, not every poll */
 		this.previewFailedKeys = new Set()
 		/** incremented on every poll */
 		this.pollCounter = 0
+		/** consecutive failed polls; drives the poller's failure backoff (D8, poller.nextPollDelayMs) */
+		this.pollFailureCount = 0
 		/** '/api' or '/api/v2.0', decided by determineApiBase() */
 		this.apiBasePath = '/api'
 		/** last status passed to updateStatus (tracked by api.applyStatus) */
@@ -148,7 +147,37 @@ class EpiphanPearl extends InstanceBase {
 	 */
 	async init(config) {
 		this.applyStatus(InstanceStatus.Connecting)
+		this.reportRemovedLegacy()
 		await this.configUpdated(config)
+	}
+
+	/**
+	 * INTERNAL: warn once, at module start, about every legacy action/feedback id the upgrade script
+	 * (`upgrades.convertToParityV300`) found and could not delete (D13: an upgrade script has no way to
+	 * remove a placed instance, only to report it). One 'warn' line per distinct id, naming how many
+	 * buttons carried it; the shared array is then emptied so a later init() in the same process does
+	 * not repeat the message.
+	 */
+	reportRemovedLegacy() {
+		const removed = upgrades.REMOVED_LEGACY
+		if (!Array.isArray(removed) || removed.length === 0) return
+		const counts = new Map()
+		for (const entry of removed) {
+			const key = `${entry.kind}:${entry.id}`
+			counts.set(key, (counts.get(key) || 0) + 1)
+		}
+		for (const [key, count] of counts) {
+			const sep = key.indexOf(':')
+			const kind = key.slice(0, sep)
+			const id = key.slice(sep + 1)
+			this.log(
+				'warn',
+				`Removed legacy ${kind} '${id}' (${count} button${count === 1 ? '' : 's'}): no longer available ` +
+					'after the 3.0.0 Companion-parity rewrite. Remove it from the affected button(s) or replace it ' +
+					'with its listed counterpart (see CHANGELOG.md).',
+			)
+		}
+		removed.length = 0
 	}
 
 	/**
@@ -177,11 +206,12 @@ class EpiphanPearl extends InstanceBase {
 
 		this.applyStatus(InstanceStatus.Connecting)
 		this.state = emptyState()
-		this.metadata = {}
 		this.previews = {}
 		this.previewFailedKeys.clear()
 		this.pollCounter = 0
 		this.pollErrorLogged = false
+		// a new configuration may be a different device entirely; it should not inherit the old one's backoff
+		this.pollFailureCount = 0
 
 		// publish definitions for the (still empty) state right away; the first poll refreshes them
 		this.updateSystem()
@@ -227,7 +257,7 @@ class EpiphanPearl extends InstanceBase {
 		const previous = this.previewSubscriptions
 		this.previewSubscriptions = new Map()
 		try {
-			this.subscribeFeedbacks('channelPreview', 'inputPreview', 'outputPreview', 'channelLayoutPreview')
+			this.subscribeFeedbacks('preview', 'layout_preview')
 		} catch (error) {
 			this.log('debug', `re-subscribing preview feedbacks failed: ${error?.message || error}`)
 		}
@@ -248,6 +278,7 @@ class EpiphanPearl extends InstanceBase {
 		// destroy() already ran
 		this.configGeneration++
 		this.previewSubscriptions.clear()
+		this.meterSubscriptions.clear()
 		this.previews = {}
 		this.previewFailedKeys.clear()
 		this.closeDispatcher()
@@ -259,12 +290,18 @@ class EpiphanPearl extends InstanceBase {
 	 * INTERNAL: clear all timers
 	 */
 	stopTimers() {
-		if (this.timer) clearInterval(this.timer)
+		// this.timer now chains via setTimeout (D8 backoff, see initInterval); clearTimeout and
+		// clearInterval clear either kind of handle interchangeably in Node, but this names the truth
+		if (this.timer) clearTimeout(this.timer)
 		if (this.previewTimer) clearInterval(this.previewTimer)
 		if (this.pollSoonTimer) clearTimeout(this.pollSoonTimer)
 		this.timer = undefined
 		this.previewTimer = undefined
 		this.pollSoonTimer = undefined
+		// Stage 1 mixins (confirm.js, rotary.js): a pending confirm or a coalescing rotary tick must not
+		// outlive this instance
+		this.clearConfirmTimer()
+		this.clearRotaryTimers()
 	}
 
 	/**
@@ -294,21 +331,6 @@ class EpiphanPearl extends InstanceBase {
 			}
 		} catch (error) {
 			this.log('warn', `API v2.0 check failed (${error?.message || error}), using legacy API`)
-		}
-	}
-
-	/**
-	 * INTERNAL: compatibility status handler (used by older action code)
-	 *
-	 * @param {InstanceStatus} level
-	 * @param {string} [message]
-	 */
-	setStatus(level, message = '') {
-		this.applyStatus(level, message)
-		if (level === 'error') {
-			this.log('error', message)
-		} else if (level === 'warn') {
-			this.log('warn', message)
 		}
 	}
 
@@ -344,62 +366,20 @@ class EpiphanPearl extends InstanceBase {
 	}
 
 	/**
-	 * Fetch the content metadata (title, author, rec_prefix) of a channel via the legacy admin interface
-	 *
-	 * @param {string|number} channelId
-	 */
-	async fetchMetadata(channelId) {
-		const cid = String(channelId)
-		if (!CHANNEL_ID_RE.test(cid)) {
-			this.log('error', `Invalid channelId: ${cid}`)
-			return
-		}
-		if (this.config.verbose) {
-			this.log('debug', `Fetching metadata for channel ${cid}`)
-		}
-		try {
-			const text = await this.request('GET', `/admin/channel${cid}/get_params.cgi?title&author&rec_prefix`, {
-				base: 'raw',
-				text: true,
-				silent: true,
-			})
-			const parsed = parseKeyValueText(text)
-			this.metadata[cid] = {
-				title: parsed.title ?? '',
-				author: parsed.author ?? '',
-				rec_prefix: parsed.rec_prefix ?? '',
-			}
-			if (this.config.verbose) {
-				this.log('debug', `Parsed metadata ${JSON.stringify(this.metadata[cid])}`)
-			}
-			variables.updateVariables(this)
-		} catch (error) {
-			// leave a retryable marker so the poller backs off instead of hammering the device every poll
-			const previous = this.metadata[cid] || {}
-			const attempts = (Number(previous._attempts) || 0) + 1
-			this.metadata[cid] = {
-				title: previous.title ?? '',
-				author: previous.author ?? '',
-				rec_prefix: previous.rec_prefix ?? '',
-				_failedAt: Date.now(),
-				_attempts: attempts,
-			}
-			this.log(
-				attempts === 1 ? 'error' : 'debug',
-				`Failed to get metadata for channel ${cid} (attempt ${attempts}): ${error?.message || error}`,
-			)
-		}
-	}
-
-	/**
-	 * INTERNAL: start the interval data poller
+	 * INTERNAL: start the interval data poller. Chains via setTimeout rather than a fixed setInterval so
+	 * the D8 failure backoff (poller.nextPollDelayMs) can widen the gap between polls; the delay is
+	 * recomputed from the current failure count after every poll, not fixed at start time.
 	 */
 	initInterval() {
-		if (this.timer) clearInterval(this.timer)
-		const ms = Math.ceil((Number(this.config?.pollfreq) || 10) * 1000)
-		this.timer = setInterval(() => {
-			this.pollAll().catch(() => {})
-		}, ms)
+		if (this.timer) clearTimeout(this.timer)
+		const runOnce = () => {
+			this.pollAll()
+				.catch(() => {})
+				.finally(() => {
+					this.timer = setTimeout(runOnce, this.nextPollDelayMs())
+				})
+		}
+		this.timer = setTimeout(runOnce, this.nextPollDelayMs())
 	}
 
 	/**

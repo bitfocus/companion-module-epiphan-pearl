@@ -33,14 +33,12 @@ describe('startup with an unreachable device', () => {
 				host_port: port,
 				username: 'admin',
 				password: 'x',
-				pollfreq: 1,
+				poll_interval: 1000,
 				timeout: 1500,
 				use_api_v2: true,
 				preview_interval: 0,
 				preview_width: 144,
 				poll_events: true,
-				poll_archive: false,
-				poll_connectivity: false,
 				verbose: false,
 			})
 			const elapsed = Date.now() - started
@@ -49,8 +47,8 @@ describe('startup with an unreachable device', () => {
 			assert.equal(instance.currentStatus, InstanceStatus.Connecting)
 			assert.ok(instance.startupPromise, 'first contact runs in the background')
 			// definitions are published immediately so Companion has something to show
-			assert.ok(Object.keys(instance.definitions.actions).length > 30)
-			assert.ok(Object.keys(instance.definitions.feedbacks).length > 15)
+			assert.equal(Object.keys(instance.definitions.actions).length, 11)
+			assert.equal(Object.keys(instance.definitions.feedbacks).length, 13)
 			assert.equal(instance.timer, undefined, 'polling interval starts after the first contact')
 
 			await instance.startupPromise
@@ -84,14 +82,12 @@ describe('startup with an unreachable device', () => {
 				host_port: port,
 				username: 'admin',
 				password: 'x',
-				pollfreq: 1,
+				poll_interval: 1000,
 				timeout: 200,
 				use_api_v2: true,
 				preview_interval: 0,
 				preview_width: 144,
 				poll_events: true,
-				poll_archive: false,
-				poll_connectivity: false,
 				verbose: false,
 			})
 			// init() returns before the device answers (see the test above); connect() is still running

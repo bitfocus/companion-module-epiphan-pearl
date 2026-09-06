@@ -4,9 +4,12 @@
 [Epiphan Pearl](https://www.epiphan.com/products/pearl/) encoders (Pearl-2, Pearl Mini, Pearl Nano, Pearl Nexus).
 
 It talks to the Pearl REST API v2.0 (firmware 4.24.1 and newer) and falls back to the legacy `/api` on older firmware.
-From Companion you can switch layouts, start/stop streams and recorders, rename and reconfigure publishers, mute and
-route inputs and outputs, trigger single touch, eject storage, apply configuration presets, control CMS events, and
-show live preview thumbnails and device state (storage, CPU, AFU, schedule) on your buttons.
+The control set matches the sibling Epiphan Pearl Stream Deck plugin one for one: Recorder, Stream, Layout, Single
+Touch, Bookmark, Preview, Output Source, Apply Preset, Event, System Status, Reboot / Shutdown, Audio and Storage.
+From Companion you can switch layouts, start/stop/pause streams and recorders, route outputs, nudge an audio input's
+gain and delay, trigger single touch, insert recording bookmarks, eject storage, apply configuration presets, control
+CMS scheduled events, and show live preview thumbnails and device state (storage, CPU, AFU, schedule) on your
+buttons — all with matching ready-made presets and icons.
 
 The module targets `@companion-module/base` 1.12 (Companion 3.x and newer) and runs on the `node22` runtime.
 

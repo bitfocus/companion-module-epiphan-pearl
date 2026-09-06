@@ -8,22 +8,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [3.0.0] (unreleased)
+
+Companion parity rewrite: the module's control set is now exactly the one offered by the sibling **Epiphan
+Pearl** Stream Deck plugin — same 13 actions (by Stream Deck action suffix), same feedback/variable ids
+(`doc/PARITY.md` §9 casing), same 13 preset categories, same colours and state words. See `doc/PARITY.md`
+for the full target-set table and the exact legacy→new id conversion the upgrade script performs, and
+`doc/ARCHITECTURE.md` for how each piece is implemented. **This is a breaking release for hand-built
+buttons**: read "Upgrade notes" below before updating a production connection.
 
 ### Added
 
+- **Confirm with a second press** (checkbox, default on) on the `preset` (Apply Preset), `power`
+  (Reboot / Shutdown) and `storage` (Storage eject) actions, replacing the Stream Deck's hold-to-confirm
+  gesture (Companion has no hold arc): the first press arms the button (`confirm_hint` = `Press again to
+confirm`, boolean feedback `confirm_pending`) and sends nothing; the same button pressed again within 3
+  seconds sends the command. Untick the checkbox to send immediately, as every existing button of this kind
+  already did before this release (the upgrade script sets it to off for them).
+- Rotary (Stream Deck+/encoder) support for the `audio` action: `rotate_left`/`rotate_right` nudge gain or
+  delay, the push step re-reads. Ticks within 150 ms are combined into one request.
 - Connection settings **Use HTTPS** and **Accept self-signed certificate** (off / on by default). Requests
   go through `undici`'s `fetch` with a dispatcher `Agent` built per connection; the port defaults to `443`
-  when HTTPS is turned on and the port was left at `80` (or blank). Upgrade script
-  `setDefaultConfigV300Https` fills both fields for existing connections (HTTPS off, self-signed accepted),
-  so nothing changes until HTTPS is deliberately turned on
+  when HTTPS is turned on and the port was left at `80` (or blank).
+- New config field **Poll interval (ms)** replaces the old **Feedback polling frequency in seconds**: the
+  default drops from 10 s to 2 s, and a poll that fails now waits longer before the next try (doubling per
+  consecutive failure, capped at 15 s; the first success resets it) instead of retrying at a fixed rate.
+- The module now reads the `Date` header of every response and keeps the offset between the Pearl's clock
+  and the Companion host's (`clockOffsetMs`, changes under 2 s ignored). The event countdown variables are
+  computed from that corrected clock instead of the host clock, so they stay accurate when the two disagree.
+- New action `event`: start/stop/pause/resume/extend/toggle/status-only against an "Ongoing"/"Upcoming"/
+  "Running"/"Paused"/"Completed" alias or a specific polled event, resolved live at press time. New
+  feedbacks `event_state` and `event_applies`; new `event_upcoming_*`/`event_ongoing_*` time-text/state-word
+  variables, the `event_ongoing_toggle_command` variable, and the `event_title`/`event_state`/
+  `event_remaining` aliases.
+- New action `audio`: nudges an input's gain (dB) or delay (ms) up/down by a configurable step, or just
+  re-reads it, replacing the old absolute gain/delay setters. New advanced feedback `audio` (a stereo level
+  meter; drawing the meter itself is still to come — for now it only tracks subscriber interest). New
+  `input_ID_gain`/`_delay` variables.
+- New preset categories **Bookmarks**, **Outputs** (restored — see Changed), **Power** and **Audio**.
+- New `src/style.js` (shared palette/state-word/standard-text module) and `src/icons.js` (one icon per
+  preset category, rendered from the Stream Deck plugin's own artwork) — every generated preset now carries
+  a matching icon and the same background/text/badge colours as the Stream Deck key for the same control.
+- Removed legacy actions/feedbacks that are still placed on a button (no longer possible to add new ones)
+  are now reported: once per module start, the connection log prints one `warn` line per distinct removed
+  id, naming how many buttons carried it and pointing at its replacement.
 - Input level variables `input_ID_peak_dbfs`, `_peak_left`, `_peak_right`, `_level_text` for every
   audio-capable input, filled every poll from the legacy `GET /api/sources/status` list (its ids carry a
-  device-serial prefix the v2.0 `/inputs` ids lack; matched with that prefix stripped)
-- The module now reads the `Date` header of every response and keeps the offset between the Pearl's clock
-  and the Companion host's (`clockOffsetMs`, changes under 2 s ignored). The event countdown variables
-  (`event_upcoming_starts_in_hms`, `event_ongoing_remaining_hms`) are computed from that corrected
-  `deviceNow()` instead of the host clock, so they stay accurate when the two clocks disagree
+  device-serial prefix the v2.0 `/inputs` ids lack; matched with that prefix stripped).
+- New variables: `recorder_ID_state_word`/`_duration_text`, `recorder_all_state_word`,
+  `channel_CID_publisher_PID_state_word`/`_error`, `channel_CID_publishers_state_word`, `uptime`,
+  `system_status_text`, `afu_text`, `storage_ID_text`/`_level_word`/`_hint`, `singletouch_ID_summary`/
+  `_state_word`, `preset_status`, `power_status`, `confirm_hint`, `last_error`.
+
+### Changed
+
+- Every action, feedback and (where the reference names one) variable id now matches the Stream Deck
+  plugin's naming (`doc/PARITY.md` §2, §9): `channelChangeLayout`→`layout`, `controlStreaming`→`stream`,
+  `recorderRecording`+`recorderControlAll`→`recorder`, `insertMarker`→`bookmark`, `systemReboot`/
+  `systemShutdown`→`power`, `setOutputSource`→`output`, `singleTouchToggle`→`singletouch`,
+  `applyConfigPreset`→`preset` (now confirm-gated by default), `storageEject`→`storage` (now confirm-gated
+  by default), `eventControl`+`eventExtend`→`event`, `inputAudioGain`/`inputAudioDelay`→`audio` (now a
+  relative nudge, not an absolute set — the upgrade script converts an existing button to "up, step 1" and
+  logs that the old absolute value is not carried over). Feedback ids are now snake_case
+  (`channelLayout`→`layout_active`, `streamingState`/`publisherState`→`stream_state`,
+  `recorderRecording`/`recorderState`/`anyRecording`→`recorder_state`, `singleTouchPressed`/
+  `singleTouchOk`→`singletouch_active`, `storageState`/`storageFreeBelow`→`storage_level`, `afuState`/
+  `cpuLoadHigh`/`cpuTempHigh`→`system`, `eventStatus`→`event_state`, `channelPreview`/`inputPreview`/
+  `outputPreview`→`preview`, `channelLayoutPreview`→`layout_preview`, `outputSourceOptimistic`→`output_set`).
+  See `doc/PARITY.md` §2.1/§2.2 for every option translation the upgrade script applies.
+- Config field **Feedback polling frequency in seconds** (`pollfreq`) is now **Poll interval (ms)**
+  (`poll_interval`); **Target IP or hostname**/**Target Port** are now **Host**/**Port**; **Request timeout
+  in milliseconds** is now **Request timeout (ms)**; the preview interval/width labels are shortened.
+  **Use API v2.0 (if available)** now sits last among the operational settings, immediately before **Preset
+  categories to generate**.
+- **Preset categories to generate** now offers the 13 Stream-Deck-matching categories (`Recording`,
+  `Streaming`, `Layouts`, `Single touch`, `Bookmarks`, `Previews`, `Outputs`, `Configuration presets`, `CMS
+events`, `System`, `Power`, `Audio`, `Storage`) instead of the previous 11; `Channels`→`Layouts`,
+  `Publishers`→`Streaming`, `Recorders`→`Recording`, `Events`→`CMS events`, `Config presets`→`Configuration
+presets` are 1:1 renames, `AFU` is folded into `System`. The upgrade script turns on every new category
+  for an existing connection.
+- **Outputs** preset category is back (removed in 2.6.0): one button per output × the three built-in
+  sources (Multiview, Device info, Console), highlighted for 5 s after a press.
+- `storage_ID_total_gb`/`_free_gb` are now `storage_ID_total`/`_free` (human-readable, e.g. `11 GB`, not a
+  fixed-unit number); `storage_ID_free_percent` is now `storage_ID_used_pct` (used, not free — the sense is
+  flipped); `identity_name` is now `device_name`; `firmware_version` is now `firmware`.
+
+### Removed
+
+No longer available; see `doc/PARITY.md` §2 for the conversion each replaces (where one exists) and
+`companion/HELP.md`'s Requirements section for what happens to a button that still holds one.
+
+- **Actions** (21, no Stream Deck counterpart): `getLayoutData`, `setLayoutData`, `getContentMetadata`,
+  `setContentMetadata`, `setChannelName`, `setPublisherName`, `setPublisherEnabled`,
+  `setPublisherSingleTouch`, `setRtmpDestination`, `setSrtDestination`, `patchPublisherSettings`,
+  `addPublisher`, `inputAudioMute`, `inputPhantomPower`, `patchInputSettings`, `createNetworkInput`,
+  `createAdhocEvent`, `adhocSessionLogout`, `refreshConnectivity`, `runSpeedTest`, `refreshPoll` (Companion
+  polls on its own interval and after every action, so a manual refresh action is redundant).
+- **Feedbacks** (2): `anyStreaming`, `configPresetApplied`.
+- **Variables**: `channel_CID_resolution`/`_fps`/`_bitrate` (encoder details), `channel_CID_publishers_count`/
+  `_streaming_count`, `channel_CID_metadata_title`/`_author`/`_rec_prefix`, `stream_CID_PID_bitrate`/
+  `_duration`/`_duration_hms`/`_configured`, `recorder_ID_active`/`_total`, `recorder_ID_last_file_name`/
+  `_last_file_size_mb`/`_last_file_created`, `publishers_active_count`, `input_ID_type`,
+  `storage_ID_media_type`, `afu_queue_size_mb`/`afu_file_name`/`afu_file_progress_percent`,
+  `system_status_date`, `system_cpuload_high`/`system_cputemp_threshold` (the `system` feedback's own
+  thresholds replace them), `firmware_revision`, `product_id`, `identity_location`, `identity_description`,
+  `connectivity_*` (9 variables), `speedtest_*` (5 variables), `config_presets` (renamed `preset_names`),
+  `last_config_preset` (renamed `preset_last_applied`).
+- **Config fields**: `pollfreq` (converted to `poll_interval`), `poll_archive` (last archive file per
+  recorder), `poll_connectivity` (network connectivity details every 6th poll).
+- **Preset categories**: `Channels`, `Publishers`, `Recorders`, `Config presets` (all renamed, see Changed),
+  `Inputs` (per-input mute/unmute buttons — `inputAudioMute` has no Stream Deck counterpart; the new
+  **Audio** category replaces it with meters and gain/delay nudges), `AFU` (folded into **System**).
+- **Poll targets**: recorder archive files (`poll_archive`), network connectivity details
+  (`poll_connectivity`, every 6th poll), content metadata (the admin CGI `get_params.cgi` pair), each
+  channel's `encoders` list.
 
 ### Fixed
 
@@ -33,10 +131,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   input's current settings first (shared helper `src/audio.js`) and patch the gain (both channels together
   when the input's `local_audio.stereo_pair` is already `false`) or the delay at whichever path the input
   actually keeps it (`audio.delay`, `hdmi.audio.delay` or `sdi.audio.delay`), logging an error and sending
-  nothing for an input with no such setting
+  nothing for an input with no such setting. (These two actions are themselves replaced by the new `audio`
+  nudge action above; the fix lives on in `src/audio.js`, which the new action also uses.)
 
-These are part of the coming 3.0.0 rewrite (see `doc/PARITY.md`); the remaining Phase 1-4 Companion-parity
-items are still in progress.
+### Upgrade notes
+
+Opening an existing connection with this release runs a new upgrade script, `convertToParityV300`,
+automatically: every action and feedback listed under Changed is rewritten in place to its new id and
+options (existing buttons keep working, though a few option layouts changed — for example `layout` gained a
+manual-entry fallback, and `audio` now nudges instead of setting an absolute value); `pollfreq` becomes
+`poll_interval` in milliseconds; `preset_categories` is reset to include every one of the 13 new categories.
+Anything listed under Removed that is still placed on a button cannot be converted (there is nothing to
+convert it to) — it is left exactly as it was, and the connection log prints one line like:
+
+> Removed legacy action 'refreshPoll' (2 buttons): no longer available after the 3.0.0 Companion-parity
+> rewrite. Remove it from the affected button(s) or replace it with its listed counterpart (see
+> CHANGELOG.md).
+
+once per module start for each such id still in use, naming how many buttons carried it. Companion does not
+rewrite variable references inside button text, so a button whose text uses a renamed or removed variable
+(see Changed/Removed above) needs updating by hand; nothing logs this case since Companion gives the module
+no way to detect it.
 
 ---
 

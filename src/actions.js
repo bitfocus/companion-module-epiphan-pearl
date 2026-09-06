@@ -1,38 +1,51 @@
 const variables = require('./variables')
-const { splitPair, parseJsonOption, nonBlank } = require('./utils')
-const { gainPatch, delayPatch, GAIN_MIN, GAIN_MAX, DELAY_MIN, DELAY_MAX } = require('./audio')
+const confirm = require('./confirm')
+const rotary = require('./rotary')
+const {
+	splitPair,
+	clampNumber,
+	recorderToggleOp,
+	publisherToggleOp,
+	eventToggleOp,
+	eventApplies,
+	bookmarkText,
+} = require('./utils')
+const { readGain, gainPatch, readDelay, delayPatch } = require('./audio')
 
-const JSON_TOOLTIP_SUFFIX = ' See the examples in doc/pearl-api-v2.0.yaml. Variables are allowed.'
-
-const CHOICES_ENABLE_DISABLE = [
-	{ id: 'true', label: 'Enable' },
-	{ id: 'false', label: 'Disable' },
+const CHOICES_RECORDER_OPS = [
+	{ id: 'toggle', label: 'Toggle' },
+	{ id: 'start', label: 'Start' },
+	{ id: 'stop', label: 'Stop' },
+	{ id: 'pause', label: 'Pause' },
+	{ id: 'resume', label: 'Resume' },
+	{ id: 'reset', label: 'Reset' },
 ]
-const CHOICES_ON_OFF = [
-	{ id: 'true', label: 'On' },
-	{ id: 'false', label: 'Off' },
-]
-const CHOICES_MUTE = [
-	{ id: 'true', label: 'Mute' },
-	{ id: 'false', label: 'Unmute' },
-]
-const CHOICES_START_STOP = [
+const CHOICES_STREAM_OPS = [
+	{ id: 'toggle', label: 'Toggle' },
 	{ id: 'start', label: 'Start' },
 	{ id: 'stop', label: 'Stop' },
 ]
-const SRT_MODE_UNCHANGED = 'unchanged'
-const CHOICES_SRT_MODE = [
-	{ id: SRT_MODE_UNCHANGED, label: 'Unchanged (keep current mode)' },
-	{ id: 'caller', label: 'Caller' },
-	{ id: 'listener', label: 'Listener' },
-	{ id: 'rendezvous', label: 'Rendezvous' },
+const CHOICES_EVENT_OPS = [
+	{ id: 'status', label: 'Status only (no action)' },
+	{ id: 'toggle', label: 'Toggle (start / pause / resume)' },
+	{ id: 'start', label: 'Start' },
+	{ id: 'stop', label: 'Stop' },
+	{ id: 'pause', label: 'Pause' },
+	{ id: 'resume', label: 'Resume' },
+	{ id: 'extend', label: 'Extend' },
 ]
-const CHOICES_NETWORK_INPUT_TYPE = [
-	{ id: 'rtsp', label: 'RTSP' },
-	{ id: 'srt', label: 'SRT' },
-	{ id: 'ndi', label: 'NDI' },
-	{ id: 'web-graphics', label: 'Web graphics' },
-	{ id: 'dante', label: 'Dante' },
+const CHOICES_POWER_OPS = [
+	{ id: 'reboot', label: 'Reboot' },
+	{ id: 'shutdown', label: 'Shut down' },
+]
+const CHOICES_AUDIO_CONTROL = [
+	{ id: 'none', label: 'Nothing' },
+	{ id: 'gain', label: 'Gain' },
+	{ id: 'delay', label: 'Delay' },
+]
+const CHOICES_AUDIO_DIRECTION = [
+	{ id: 'up', label: 'Up' },
+	{ id: 'down', label: 'Down' },
 ]
 const CHOICES_PRESET_SECTIONS = [
 	{ id: 'system', label: 'System' },
@@ -46,41 +59,35 @@ const CHOICES_PRESET_SECTIONS = [
 	{ id: 'frontscreen', label: 'Front screen' },
 	{ id: 'displays', label: 'Displays' },
 ]
-const CHOICES_EVENT_ACTION = [
-	{ id: 'start', label: 'Start' },
-	{ id: 'stop', label: 'Stop' },
-	{ id: 'pause', label: 'Pause' },
-	{ id: 'resume', label: 'Resume' },
-]
+
+const RECORDER_OP_IDS = CHOICES_RECORDER_OPS.map((c) => c.id)
+const STREAM_OP_IDS = CHOICES_STREAM_OPS.map((c) => c.id)
+const EVENT_OP_IDS = CHOICES_EVENT_OPS.map((c) => c.id)
+const POWER_OP_IDS = CHOICES_POWER_OPS.map((c) => c.id)
+const SECTION_IDS = CHOICES_PRESET_SECTIONS.map((c) => c.id)
+
+/** how long `preset_status` says the device is rebooting after a preset that reports a reboot */
+const PRESET_REBOOT_MS = 60000
+/** how long `power_status` says the reboot / shutdown command was sent */
+const POWER_STATUS_MS = 30000
+/** how long a storage keeps its `Ejected` hint */
+const STORAGE_HINT_MS = 4000
+
+/** gain / delay steps accepted by the audio action */
+const STEP_MIN = 1
+const STEP_MAX = 100
+/** seconds the event action may add to an event's finish time */
+const EXTEND_MIN = 30
+const EXTEND_MAX = 21600
+const EXTEND_DEFAULT = 300
 
 const enc = (v) => encodeURIComponent(String(v))
 const errMsg = (e) => (e && e.message ? e.message : String(e))
-const isTrue = (v) => v === true || v === 'true'
-const toInt = (v, fallback) => {
-	const n = Number.parseInt(v, 10)
-	return Number.isFinite(n) ? n : fallback
-}
-
-/**
- * Body for `PATCH /inputs/{sid}/settings` that mutes or unmutes an input.
- *
- * The InputSettings schema in doc/pearl-api-v2.0.yaml nests the audio settings of HDMI and SDI
- * inputs under `hdmi.audio.mute` (HdmiInputSettings) and `sdi.audio.mute` (SdiInputSettings), while
- * analog, USB and network inputs use `local_audio.mute`. The input type is derived from the input id
- * (e.g. `hdmi-a`, `D2P0.sdi-b`).
- *
- * @param {string} sid input id
- * @param {boolean} mute
- * @returns {object} request body
- */
-function audioMuteBody(sid, mute) {
-	const id = String(sid).toLowerCase()
-	if (id.includes('hdmi')) return { hdmi: { audio: { mute } } }
-	if (id.includes('sdi')) return { sdi: { audio: { mute } } }
-	return { local_audio: { mute } }
-}
 
 module.exports = {
+	...confirm,
+	...rotary,
+
 	/**
 	 * Build all action definitions.
 	 *
@@ -89,14 +96,20 @@ module.exports = {
 	getActions() {
 		const actions = {}
 
-		/**
-		 * Wrap an action callback so it never throws and always logs failures.
-		 */
+		/** Record the message of a failed action and log it. */
+		const fail = (label, message) => {
+			if (this.state) this.state.lastError = message
+			this.log('error', `${label}: ${message}`)
+		}
+
+		/** Wrap an action callback so it never throws and always logs and records failures. */
 		const wrap = (label, fn) => async (action, context) => {
 			try {
 				await fn(action, context)
-			} catch (e) {
-				this.log('error', `${label} failed: ${errMsg(e)}`)
+			} catch (error) {
+				const message = errMsg(error)
+				if (this.state) this.state.lastError = message
+				this.log('error', `${label} failed: ${message}`)
 			}
 		}
 
@@ -112,723 +125,316 @@ module.exports = {
 
 		const parse = async (value) => this.parseVariablesInString(String(value ?? ''))
 
-		const parseJson = async (label, optionLabel, value) => {
-			const text = await parse(value)
+		/** Re-publish the variable values; a failure here must not mark the action as failed. */
+		const refreshVariables = () => {
 			try {
-				return parseJsonOption(text)
-			} catch (e) {
-				this.log('error', `${label}: option "${optionLabel}" is not valid JSON: ${errMsg(e)}`)
-				return null
+				variables.updateVariables(this)
+			} catch (error) {
+				this.log('debug', `Updating variables failed: ${errMsg(error)}`)
 			}
-		}
-
-		/** Split a "cid-lid" option and validate it against state. Returns [cid, lid] or null. */
-		const parseLayout = (label, value) => {
-			const pair = splitPair(value)
-			if (!pair) {
-				this.log(
-					'error',
-					`${label}: channel and layout are not known, please review your button config (${value})`,
-				)
-				return null
-			}
-			const [cid, lid] = pair
-			if (!this.state.channels[cid]) {
-				this.log('error', `${label}: action on non existing channel ${cid}`)
-				return null
-			}
-			if (!this.state.channels[cid].layouts?.[lid]) {
-				this.log('error', `${label}: action on non existing layout ${lid} on channel ${cid}`)
-				return null
-			}
-			return [cid, lid]
 		}
 
 		/** Validate a channel option against state. Returns the channel id as string or null. */
 		const parseChannel = (label, value) => {
 			const cid = value === undefined || value === null ? '' : String(value)
 			if (!cid) {
-				this.log('error', `${label}: no channel selected`)
+				fail(label, 'no channel selected')
 				return null
 			}
 			if (!this.state.channels[cid]) {
-				this.log('error', `${label}: unknown channel ${cid}`)
+				fail(label, `unknown channel ${cid}`)
 				return null
 			}
 			return cid
 		}
 
-		/** Split a "cid-pid" (or "cid-all") option and validate it. Returns [cid, pid] or null. */
-		const parsePublisher = (label, value, allowAll) => {
-			const pair = splitPair(value)
-			if (!pair) {
-				this.log(
-					'error',
-					`${label}: channel or publisher are not valid, please review your button config (${value})`,
-				)
-				return null
-			}
-			const [cid, pid] = pair
-			if (!this.state.channels[cid]) {
-				this.log('error', `${label}: action on non existing channel ${cid}`)
-				return null
-			}
-			if (pid === 'all') {
-				if (!allowAll) {
-					this.log('error', `${label}: "all publishers" is not supported here, pick a single publisher`)
-					return null
-				}
-			} else if (!this.state.channels[cid].publishers?.[pid]) {
-				this.log('error', `${label}: action on non existing publisher ${pid} on channel ${cid}`)
-				return null
-			}
-			return [cid, pid]
-		}
-
-		/** Resolve the event alias/custom id option pair into an event id (or null). */
-		const resolveEventId = async (label, options) => {
-			let id = options.event
-			if (id === 'custom') id = (await parse(options.eventId)).trim()
-			if (!id) {
-				this.log('error', `${label}: no event selected`)
-				return null
-			}
-			return id
-		}
-
-		const optChannel = (label = 'Channel') => ({
-			type: 'dropdown',
-			label,
-			id: 'channel',
-			choices: this.choicesChannel(),
-			default: this.firstId(this.choicesChannel()),
+		const optConfirm = () => ({
+			type: 'checkbox',
+			id: 'confirm',
+			label: 'Confirm with a second press',
+			default: true,
+			tooltip:
+				'The first press only arms the button and sets $(pearl:confirm_hint); press the same button again within 3 seconds to send the command. Untick to send it immediately.',
 		})
-		const optPublisherOnly = () => ({
-			type: 'dropdown',
-			label: 'Publisher (stream)',
-			id: 'channelIdpublisherId',
-			choices: this.choicesChannelPublishersOnly(),
-			default: this.firstId(this.choicesChannelPublishersOnly()),
-		})
-		const optInput = (choices) => ({
-			type: 'dropdown',
-			label: 'Input',
-			id: 'input',
-			choices,
-			default: this.firstId(choices),
-		})
-		const optText = (id, label, extra = {}) => ({
-			type: 'textinput',
-			id,
-			label,
-			default: '',
-			useVariables: true,
-			...extra,
-		})
-		const optJson = (id, label, tooltip) => ({
-			type: 'textinput',
-			id,
-			label,
-			default: '{}',
-			useVariables: true,
-			tooltip: tooltip + JSON_TOOLTIP_SUFFIX,
-		})
-		const optEvent = () => [
-			{
-				type: 'dropdown',
-				id: 'event',
-				label: 'Event',
-				choices: [...this.choicesEventAlias(), { id: 'custom', label: 'Custom event id (enter below)' }],
-				default: 'ongoing',
-			},
-			optText('eventId', 'Event id', {
-				tooltip: 'Event identifier as reported by the schedule (variable event_upcoming_id / event_ongoing_id)',
-				isVisible: (options) => options.event === 'custom',
-			}),
-		]
 
 		// ------------------------------------------------------------------
-		// Existing actions (ids and option ids unchanged)
+		// Recorder
 		// ------------------------------------------------------------------
 
-		actions['channelChangeLayout'] = {
-			name: 'Channel: change layout',
+		actions['recorder'] = {
+			name: 'Recorder',
+			description:
+				'Start, stop, pause or toggle a Pearl recorder. Toggle starts a stopped recorder and stops a running or paused one; "All recorders" controls every recorder on the device.',
 			options: [
 				{
 					type: 'dropdown',
-					id: 'channelIdlayoutId',
-					label: 'Change layout to:',
-					choices: this.choicesChannelLayout(),
-					default: this.firstId(this.choicesChannelLayout()),
+					id: 'recorderId',
+					label: 'Recorder',
+					choices: this.choicesRecordersWithAll(),
+					default: 'all',
+				},
+				{
+					type: 'dropdown',
+					id: 'op',
+					label: 'Action',
+					choices: CHOICES_RECORDER_OPS,
+					default: 'toggle',
 				},
 			],
-			callback: wrap('Channel: change layout', async (action) => {
-				const pair = parseLayout('Channel: change layout', action.options.channelIdlayoutId)
-				if (!pair) return
-				const [cid, lid] = pair
+			callback: wrap('Recorder', async (action) => {
+				const label = 'Recorder'
+				const rid = String(action.options.recorderId ?? 'all')
+				if (rid !== 'all' && !this.state.recorders?.[rid]) {
+					fail(label, `unknown recorder ${rid}`)
+					return
+				}
+				const requested = String(action.options.op ?? 'toggle')
+				if (!RECORDER_OP_IDS.includes(requested)) {
+					fail(label, `unknown action ${requested}`)
+					return
+				}
+				if ((rid === 'all' || requested === 'pause' || requested === 'resume') && !requireV2(label)) return
+
+				const op = requested === 'toggle' ? recorderToggleOp(this.state.recorders, rid) : requested
+				const path =
+					rid === 'all' ? `/recorders/control/${enc(op)}` : `/recorders/${enc(rid)}/control/${enc(op)}`
+
+				if (op === 'reset' && this.isV2) {
+					// reset only exists in the legacy API on older firmware
+					try {
+						await this.request('POST', path, { silent: true })
+					} catch (error) {
+						if (error?.status !== 404) throw error
+						await this.request('POST', path, { base: 'v1' })
+					}
+				} else {
+					await this.request('POST', path)
+				}
+				this.log('debug', `Recorder ${rid}: ${op}`)
+				this.schedulePollSoon()
+			}),
+		}
+
+		// ------------------------------------------------------------------
+		// Stream
+		// ------------------------------------------------------------------
+
+		actions['stream'] = {
+			name: 'Stream',
+			description:
+				'Start, stop or toggle a channel\'s stream (publisher). "All publishers" starts or stops every stream configured on the channel.',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'channelId',
+					label: 'Channel',
+					choices: this.choicesChannel(),
+					default: this.firstId(this.choicesChannel()),
+				},
+				{
+					type: 'dropdown',
+					id: 'publisherId',
+					label: 'Publisher',
+					choices: this.choicesPublishers(),
+					default: this.firstId(this.choicesPublishers()),
+				},
+				{
+					type: 'dropdown',
+					id: 'op',
+					label: 'Action',
+					choices: CHOICES_STREAM_OPS,
+					default: 'toggle',
+				},
+			],
+			callback: wrap('Stream', async (action) => {
+				const label = 'Stream'
+				// the composite carries its own channel; channelId is only used when it cannot be parsed
+				const pair = splitPair(String(action.options.publisherId ?? ''))
+				const cid = pair ? pair[0] : parseChannel(label, action.options.channelId)
+				if (!cid) return
+				const pid = pair ? pair[1] : 'all'
+				if (!this.state.channels[cid]) {
+					fail(label, `unknown channel ${cid}`)
+					return
+				}
+				if (pid !== 'all' && !this.state.channels[cid].publishers?.[pid]) {
+					fail(label, `unknown publisher ${pid} on channel ${cid}`)
+					return
+				}
+				const requested = String(action.options.op ?? 'toggle')
+				if (!STREAM_OP_IDS.includes(requested)) {
+					fail(label, `unknown action ${requested}`)
+					return
+				}
+
+				const op =
+					requested === 'toggle' ? publisherToggleOp(this.state.channels[cid].publishers, pid) : requested
+				const path =
+					pid === 'all'
+						? `/channels/${enc(cid)}/publishers/control/${enc(op)}`
+						: `/channels/${enc(cid)}/publishers/${enc(pid)}/control/${enc(op)}`
+				await this.request('POST', path)
+				this.log('debug', `Stream ${cid}-${pid}: ${op}`)
+				this.schedulePollSoon()
+			}),
+		}
+
+		// ------------------------------------------------------------------
+		// Layout
+		// ------------------------------------------------------------------
+
+		actions['layout'] = {
+			name: 'Layout',
+			description: 'Switch a channel to a layout. The key lights up while that layout is active.',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'channelId',
+					label: 'Channel',
+					choices: this.choicesChannel(),
+					default: this.firstId(this.choicesChannel()),
+				},
+				{
+					type: 'dropdown',
+					id: 'layoutId',
+					label: 'Layout',
+					choices: this.choicesLayouts(),
+					default: this.firstId(this.choicesLayouts()),
+				},
+				{
+					type: 'textinput',
+					id: 'layoutIdManual',
+					label: 'Layout ID',
+					default: '',
+					useVariables: true,
+					tooltip:
+						'Fallback for firmware that does not list layouts: type the layout ID shown in the Pearl Admin UI (Channel → Layouts). Used only while "Layout" is empty.',
+				},
+			],
+			callback: wrap('Layout', async (action) => {
+				const label = 'Layout'
+				const pair = splitPair(String(action.options.layoutId ?? ''))
+				let cid
+				let lid
+				if (pair) {
+					cid = pair[0]
+					lid = pair[1]
+					if (!this.state.channels[cid]) {
+						fail(label, `unknown channel ${cid}`)
+						return
+					}
+					if (!this.state.channels[cid].layouts?.[lid]) {
+						fail(label, `unknown layout ${lid} on channel ${cid}`)
+						return
+					}
+				} else {
+					cid = parseChannel(label, action.options.channelId)
+					if (!cid) return
+					lid = (await parse(action.options.layoutIdManual)).trim()
+					if (!lid) {
+						fail(label, 'no layout selected and no layout ID given')
+						return
+					}
+				}
+				const numeric = Number(lid)
 				// v1 wants the id in the body, v2 wants it as a query parameter; both accept both
 				await this.request('PUT', `/channels/${enc(cid)}/layouts/active`, {
 					query: { id: lid },
-					body: { id: Number(lid) },
+					body: { id: Number.isFinite(numeric) ? numeric : lid },
 				})
-				this.log('debug', `Activated layout ${lid} on channel ${cid}`)
+				this.log('debug', `Layout ${lid} activated on channel ${cid}`)
 				this.schedulePollSoon()
 			}),
 		}
 
-		actions['controlStreaming'] = {
-			name: 'Stream: start/stop',
+		// ------------------------------------------------------------------
+		// Single touch
+		// ------------------------------------------------------------------
+
+		actions['singletouch'] = {
+			name: 'Single Touch',
+			description:
+				'Trigger a Pearl single-touch control (start/stop recording and streaming together). Most devices have only control 0.',
 			options: [
 				{
 					type: 'dropdown',
-					label: 'Channel publishers',
-					id: 'channelIdpublisherId',
-					choices: this.choicesChannelPublishers(),
-					default: this.firstId(this.choicesChannelPublishers()),
-					tooltip:
-						'If a channel has only one "publisher" or "stream" then you just select all. Else you can pick the "publisher" you want to start/stop',
-				},
-				{
-					type: 'dropdown',
-					id: 'startStopAction',
-					label: 'Action',
-					choices: [
-						{ id: 99, label: '---' },
-						{ id: 1, label: 'Start' },
-						{ id: 0, label: 'Stop' },
-						{ id: 3, label: 'Toggle Start/Stop' },
-					],
-					default: 1,
+					id: 'stcId',
+					label: 'Single touch control',
+					choices: this.choicesSingleTouch(),
+					default: this.preferredId(this.choicesSingleTouch(), '0'),
 				},
 			],
-			callback: wrap('Stream: start/stop', async (action) => {
-				const pair = parsePublisher('Stream: start/stop', action.options.channelIdpublisherId, true)
-				if (!pair) return
-				const [cid, pid] = pair
-
-				const selected = Number(action.options.startStopAction)
-				if (selected === 99) return
-
-				let verb = selected === 1 ? 'start' : 'stop'
-				if (selected === 3) {
-					const channel = this.state.channels[cid]
-					let isStreaming
-					if (pid !== 'all') {
-						isStreaming = channel.publishers[pid]?.status?.state === 'started'
-					} else {
-						// toggle all: if at least one publisher is not streaming, start them all
-						const states = Object.values(channel.publishers || {}).map((p) => p?.status?.state)
-						isStreaming = states.length > 0 && !states.some((s) => s !== 'started')
-					}
-					verb = isStreaming ? 'stop' : 'start'
+			callback: wrap('Single Touch', async (action) => {
+				const label = 'Single Touch'
+				if (!requireV2(label)) return
+				const stcId = String(action.options.stcId ?? '')
+				if (!stcId) {
+					fail(label, 'no single touch control selected')
+					return
 				}
-
-				const path =
-					pid !== 'all'
-						? `/channels/${enc(cid)}/publishers/${enc(pid)}/control/${verb}`
-						: `/channels/${enc(cid)}/publishers/control/${verb}`
-				await this.request('POST', path)
+				if (!this.state.singleTouch?.[stcId]) {
+					fail(label, `unknown single touch control ${stcId}`)
+					return
+				}
+				await this.request('POST', `/system/singletouchcontrol/${enc(stcId)}/control/toggle`)
 				this.schedulePollSoon()
 			}),
 		}
 
-		actions['recorderRecording'] = {
-			name: 'Recorder: start/stop/reset',
+		// ------------------------------------------------------------------
+		// Bookmark
+		// ------------------------------------------------------------------
+
+		actions['bookmark'] = {
+			name: 'Bookmark',
+			description:
+				"Add a bookmark (marker) to a channel's recording. Bookmarks are only stored while the channel is recording.",
 			options: [
 				{
 					type: 'dropdown',
-					label: 'Recorder',
-					id: 'recorderId',
-					choices: this.choicesRecorders(),
-					default: this.firstId(this.choicesRecorders()),
+					id: 'channelId',
+					label: 'Channel',
+					choices: this.choicesChannel(),
+					default: this.firstId(this.choicesChannel()),
 				},
-				{
-					type: 'dropdown',
-					id: 'startStopAction',
-					label: 'Action',
-					choices: [
-						{ id: 99, label: '---' },
-						{ id: 1, label: 'Start' },
-						{ id: 0, label: 'Stop' },
-						{ id: 2, label: 'Reset' },
-						{ id: 3, label: 'Toggle Start/Stop' },
-					],
-					default: 1,
-				},
-			],
-			callback: wrap('Recorder: start/stop/reset', async (action) => {
-				const rid = action.options.recorderId
-				if (!this.state.recorders[rid]) {
-					this.log('warn', `Recorder: start/stop/reset: action on non existing recorder ${rid}`)
-					return
-				}
-
-				let selected = Number(action.options.startStopAction)
-				if (selected === 99) return
-				if (selected === 3) {
-					selected = this.state.recorders[rid]?.status?.state === 'started' ? 0 : 1
-				}
-
-				if (selected === 0) {
-					await this.request('POST', `/recorders/${enc(rid)}/control/stop`)
-				} else if (selected === 1) {
-					await this.request('POST', `/recorders/${enc(rid)}/control/start`)
-				} else if (selected === 2) {
-					// reset only exists in the legacy API
-					await this.request('POST', `/recorders/${enc(rid)}/control/reset`, { base: 'v1' })
-				} else {
-					this.log('error', `Recorder: start/stop/reset: unknown action ${action.options.startStopAction}`)
-					return
-				}
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['insertMarker'] = {
-			name: 'Recorder: insert marker (bookmark)',
-			description: 'Adds a bookmark to the recording of the channel. Only works while recording to MP4/MOV.',
-			options: [
-				optChannel(),
 				{
 					type: 'textinput',
-					id: 'markertext',
-					label: 'Marker text',
+					id: 'text',
+					label: 'Text',
+					default: 'Marker',
 					useVariables: true,
-					default: '',
-					tooltip: 'You can use variables in this field like current time',
+					tooltip: 'Shown in the recording’s bookmark list. Keep it short.',
+				},
+				{
+					type: 'checkbox',
+					id: 'appendTime',
+					label: 'Append the current time (HH:MM:SS)',
+					default: false,
 				},
 			],
-			callback: wrap('Recorder: insert marker', async (action) => {
-				const cid = parseChannel('Recorder: insert marker', action.options.channel)
+			callback: wrap('Bookmark', async (action) => {
+				const label = 'Bookmark'
+				const cid = parseChannel(label, action.options.channelId)
 				if (!cid) return
-				const text = await parse(action.options.markertext)
+				const text = bookmarkText(await parse(action.options.text), action.options.appendTime === true)
 				// v2 wants the text as a query parameter, v1 in the body; send both
 				await this.request('POST', `/channels/${enc(cid)}/bookmarks`, { query: { text }, body: { text } })
-				this.log('info', `Marker successfully sent: ${text}`)
-			}),
-		}
-
-		actions['getLayoutData'] = {
-			name: 'Channel: get layout data',
-			description: 'Reads the layout settings JSON into a custom variable',
-			options: [
-				{
-					type: 'dropdown',
-					id: 'channelIdlayoutId',
-					label: 'Layout to get',
-					choices: this.choicesChannelLayout(),
-					default: this.firstId(this.choicesChannelLayout()),
-				},
-				{
-					id: 'destination',
-					type: 'custom-variable',
-					label: 'Destination Variable',
-				},
-			],
-			callback: wrap('Channel: get layout data', async (action) => {
-				const pair = parseLayout('Channel: get layout data', action.options.channelIdlayoutId)
-				if (!pair) return
-				const [cid, lid] = pair
-				const result = await this.request('GET', `/channels/${enc(cid)}/layouts/${enc(lid)}/settings`, {
-					base: 'v1',
-				})
-				const layoutData = JSON.stringify(result)
-				this.log(
-					'debug',
-					`Layout data retrieved for channel ${this.state.channels[cid].name}, layout ${this.state.channels[cid].layouts[lid].name}: ${layoutData}`,
-				)
-				this.setCustomVariableValue(action.options.destination, layoutData)
-			}),
-		}
-
-		actions['setLayoutData'] = {
-			name: 'Channel: set layout data',
-			description: 'Writes a layout settings JSON (as produced by "Channel: get layout data") to the layout',
-			options: [
-				{
-					type: 'dropdown',
-					id: 'channelIdlayoutId',
-					label: 'Layout to set',
-					choices: this.choicesChannelLayout(),
-					default: this.firstId(this.choicesChannelLayout()),
-				},
-				{
-					id: 'source',
-					type: 'textinput',
-					label: 'Layout Data',
-					useVariables: true,
-					default: '{}',
-					tooltip:
-						'this text needs to hold a JSON-string describing a Pearl layout, you can retrieve a valid string with the according get action, variables are allowed in this option',
-				},
-			],
-			callback: wrap('Channel: set layout data', async (action) => {
-				const pair = parseLayout('Channel: set layout data', action.options.channelIdlayoutId)
-				if (!pair) return
-				const [cid, lid] = pair
-				const body = await parseJson('Channel: set layout data', 'Layout Data', action.options.source)
-				if (!body) return
-				await this.request('PUT', `/channels/${enc(cid)}/layouts/${enc(lid)}/settings`, { base: 'v1', body })
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['systemReboot'] = {
-			name: 'System: reboot',
-			options: [],
-			callback: wrap('System: reboot', async () => {
-				await this.request('POST', '/system/control/reboot')
-				this.log('info', 'Reboot requested')
-			}),
-		}
-
-		actions['systemShutdown'] = {
-			name: 'System: shutdown',
-			options: [],
-			callback: wrap('System: shutdown', async () => {
-				await this.request('POST', '/system/control/shutdown')
-				this.log('info', 'Shutdown requested')
-			}),
-		}
-
-		actions['getContentMetadata'] = {
-			name: 'Channel: get content metadata',
-			description: 'Refreshes the channel_N_metadata_* variables (title, author, filename prefix)',
-			options: [optChannel()],
-			callback: wrap('Channel: get content metadata', async (action) => {
-				const cid = parseChannel('Channel: get content metadata', action.options.channel)
-				if (!cid) return
-				if (this.config.verbose) this.log('debug', `Action get metadata for channel ${cid}`)
-				await this.fetchMetadata(cid)
-			}),
-		}
-
-		actions['setContentMetadata'] = {
-			name: 'Channel: set content metadata',
-			description: 'Sets recording title, author and filename prefix of the channel',
-			options: [
-				optChannel(),
-				optText('title', 'Title'),
-				optText('author', 'Author'),
-				optText('prefix', 'Filename Prefix'),
-			],
-			callback: wrap('Channel: set content metadata', async (action) => {
-				const cid = parseChannel('Channel: set content metadata', action.options.channel)
-				if (!cid) return
-				const title = await parse(action.options.title)
-				const author = await parse(action.options.author)
-				const rec_prefix = await parse(action.options.prefix)
-				if (this.config.verbose) this.log('debug', `Action set metadata for channel ${cid}`)
-				// legacy admin endpoint, answers text/plain
-				await this.request('GET', `/admin/channel${enc(cid)}/set_params.cgi`, {
-					base: 'raw',
-					text: true,
-					query: { title, author, rec_prefix },
-				})
-				// a fresh object: drops a failure marker (_failedAt/_attempts) left by fetchMetadata
-				this.metadata[cid] = { title, author, rec_prefix }
-				variables.updateVariables(this)
-			}),
-		}
-
-		// ------------------------------------------------------------------
-		// Recorders
-		// ------------------------------------------------------------------
-
-		actions['recorderControlAll'] = {
-			name: 'Recorder: start/stop all recorders',
-			options: [
-				{
-					type: 'dropdown',
-					id: 'action',
-					label: 'Action',
-					choices: CHOICES_START_STOP,
-					default: 'start',
-				},
-			],
-			callback: wrap('Recorder: start/stop all', async (action) => {
-				if (!requireV2('Recorder: start/stop all')) return
-				const verb = action.options.action === 'stop' ? 'stop' : 'start'
-				await this.request('POST', `/recorders/control/${verb}`)
+				this.log('info', `Bookmark added to channel ${cid}: ${text}`)
 				this.schedulePollSoon()
 			}),
 		}
 
 		// ------------------------------------------------------------------
-		// Channels / publishers
+		// Output source
 		// ------------------------------------------------------------------
 
-		actions['setChannelName'] = {
-			name: 'Channel: set name',
-			options: [optChannel(), optText('name', 'New name')],
-			callback: wrap('Channel: set name', async (action) => {
-				if (!requireV2('Channel: set name')) return
-				const cid = parseChannel('Channel: set name', action.options.channel)
-				if (!cid) return
-				const name = (await parse(action.options.name)).trim()
-				if (!name) {
-					this.log('error', 'Channel: set name: name must not be empty')
-					return
-				}
-				await this.request('PUT', `/channels/${enc(cid)}/name`, { query: { name } })
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['setPublisherName'] = {
-			name: 'Stream: set name',
-			options: [optPublisherOnly(), optText('name', 'New name')],
-			callback: wrap('Stream: set name', async (action) => {
-				if (!requireV2('Stream: set name')) return
-				const pair = parsePublisher('Stream: set name', action.options.channelIdpublisherId, false)
-				if (!pair) return
-				const [cid, pid] = pair
-				const name = (await parse(action.options.name)).trim()
-				if (!name) {
-					this.log('error', 'Stream: set name: name must not be empty')
-					return
-				}
-				await this.request('PUT', `/channels/${enc(cid)}/publishers/${enc(pid)}/name`, { query: { name } })
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['setPublisherEnabled'] = {
-			name: 'Stream: enable/disable',
-			description: 'Enables or disables the publisher (a disabled publisher is skipped by "start all")',
-			options: [
-				optPublisherOnly(),
-				{
-					type: 'dropdown',
-					id: 'enabled',
-					label: 'Enabled',
-					choices: CHOICES_ENABLE_DISABLE,
-					default: 'true',
-				},
-			],
-			callback: wrap('Stream: enable/disable', async (action) => {
-				if (!requireV2('Stream: enable/disable')) return
-				const pair = parsePublisher('Stream: enable/disable', action.options.channelIdpublisherId, false)
-				if (!pair) return
-				const [cid, pid] = pair
-				await this.request('PATCH', `/channels/${enc(cid)}/publishers/${enc(pid)}/settings`, {
-					body: { common: { enabled: isTrue(action.options.enabled) } },
-				})
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['setPublisherSingleTouch'] = {
-			name: 'Stream: include in single touch control',
-			description: 'Whether the publisher is started/stopped by the single touch (one touch) control',
-			options: [
-				optPublisherOnly(),
-				{
-					type: 'dropdown',
-					id: 'single_touch',
-					label: 'Single touch',
-					choices: CHOICES_ENABLE_DISABLE,
-					default: 'true',
-				},
-			],
-			callback: wrap('Stream: single touch', async (action) => {
-				if (!requireV2('Stream: single touch')) return
-				const pair = parsePublisher('Stream: single touch', action.options.channelIdpublisherId, false)
-				if (!pair) return
-				const [cid, pid] = pair
-				await this.request('PATCH', `/channels/${enc(cid)}/publishers/${enc(pid)}/settings`, {
-					body: { common: { single_touch: isTrue(action.options.single_touch) } },
-				})
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['setRtmpDestination'] = {
-			name: 'Stream: set RTMP destination',
-			description:
-				'Updates URL, stream key and credentials of an RTMP publisher. Blank fields are left unchanged.',
-			options: [
-				optPublisherOnly(),
-				optText('url', 'RTMP URL', { tooltip: 'e.g. rtmp://a.rtmp.youtube.com/live2 (blank = unchanged)' }),
-				optText('stream', 'Stream name / key', { tooltip: 'blank = unchanged' }),
-				optText('username', 'Username', { tooltip: 'blank = unchanged' }),
-				optText('password', 'Password', { tooltip: 'blank = unchanged' }),
-			],
-			callback: wrap('Stream: set RTMP destination', async (action) => {
-				if (!requireV2('Stream: set RTMP destination')) return
-				const pair = parsePublisher('Stream: set RTMP destination', action.options.channelIdpublisherId, false)
-				if (!pair) return
-				const [cid, pid] = pair
-				const rtmp = nonBlank({
-					url: await parse(action.options.url),
-					stream: await parse(action.options.stream),
-					username: await parse(action.options.username),
-					password: await parse(action.options.password),
-				})
-				if (Object.keys(rtmp).length === 0) {
-					this.log('warn', 'Stream: set RTMP destination: all fields blank, nothing to change')
-					return
-				}
-				await this.request('PATCH', `/channels/${enc(cid)}/publishers/${enc(pid)}/settings`, { body: { rtmp } })
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['setSrtDestination'] = {
-			name: 'Stream: set SRT destination',
-			description:
-				'Updates mode, URL/port, stream id and latency of an SRT publisher. Mode "Unchanged" keeps the current mode; blank fields are left unchanged.',
-			options: [
-				optPublisherOnly(),
-				{
-					type: 'dropdown',
-					id: 'mode',
-					label: 'Mode',
-					choices: CHOICES_SRT_MODE,
-					default: SRT_MODE_UNCHANGED,
-					tooltip:
-						'Unchanged keeps the mode configured on the device and only sends the non-blank fields below',
-				},
-				optText('url', 'SRT URL', {
-					tooltip: 'caller / rendezvous: e.g. srt://host:port (blank = unchanged)',
-					isVisible: (options) => options.mode !== 'listener',
-				}),
-				optText('stream_id', 'Stream id', {
-					tooltip: 'caller only (blank = unchanged)',
-					isVisible: (options) => options.mode === 'caller' || options.mode === 'unchanged',
-				}),
-				optText('port', 'Listen port', {
-					tooltip: 'listener only: 1024..65535 (blank = unchanged)',
-					isVisible: (options) => options.mode === 'listener' || options.mode === 'unchanged',
-				}),
-				optText('latency', 'Latency (ms)', { tooltip: '80..8000 (blank = unchanged)' }),
-			],
-			callback: wrap('Stream: set SRT destination', async (action) => {
-				if (!requireV2('Stream: set SRT destination')) return
-				const pair = parsePublisher('Stream: set SRT destination', action.options.channelIdpublisherId, false)
-				if (!pair) return
-				const [cid, pid] = pair
-				const mode = CHOICES_SRT_MODE.some((c) => c.id === action.options.mode)
-					? action.options.mode
-					: SRT_MODE_UNCHANGED
-				const keepMode = mode === SRT_MODE_UNCHANGED
-				const srt = {}
-				if (!keepMode) srt.mode = mode
-
-				if (keepMode || mode !== 'listener') {
-					const url = (await parse(action.options.url)).trim()
-					if (url) srt.url = url
-				}
-				if (keepMode || mode === 'caller') {
-					const streamId = (await parse(action.options.stream_id)).trim()
-					if (streamId) srt.stream_id = streamId
-				}
-				if (keepMode || mode === 'listener') {
-					const portText = (await parse(action.options.port)).trim()
-					if (portText) {
-						const port = toInt(portText, NaN)
-						if (!Number.isFinite(port) || port < 1024 || port > 65535) {
-							this.log('error', `Stream: set SRT destination: invalid port "${portText}" (1024..65535)`)
-							return
-						}
-						srt.port = port
-					}
-				}
-				const latencyText = (await parse(action.options.latency)).trim()
-				if (latencyText) {
-					const latency = toInt(latencyText, NaN)
-					if (!Number.isFinite(latency) || latency < 80 || latency > 8000) {
-						this.log('error', `Stream: set SRT destination: invalid latency "${latencyText}" (80..8000)`)
-						return
-					}
-					srt.latency = latency
-				}
-				if (Object.keys(srt).length === 0) {
-					this.log(
-						'warn',
-						'Stream: set SRT destination: mode unchanged and all fields blank, nothing to change',
-					)
-					return
-				}
-
-				await this.request('PATCH', `/channels/${enc(cid)}/publishers/${enc(pid)}/settings`, { body: { srt } })
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['patchPublisherSettings'] = {
-			name: 'Stream: patch settings (JSON)',
-			description: 'Partially updates the publisher settings with an arbitrary JSON object',
-			options: [
-				optPublisherOnly(),
-				optJson(
-					'json',
-					'Settings JSON',
-					'Partial PublisherSettings object, e.g. {"rtmp":{"url":"rtmp://..."},"common":{"enabled":true}}.',
-				),
-			],
-			callback: wrap('Stream: patch settings', async (action) => {
-				if (!requireV2('Stream: patch settings')) return
-				const pair = parsePublisher('Stream: patch settings', action.options.channelIdpublisherId, false)
-				if (!pair) return
-				const [cid, pid] = pair
-				const body = await parseJson('Stream: patch settings', 'Settings JSON', action.options.json)
-				if (!body) return
-				await this.request('PATCH', `/channels/${enc(cid)}/publishers/${enc(pid)}/settings`, { body })
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['addPublisher'] = {
-			name: 'Stream: add publisher',
-			description: 'Creates a new publisher (stream) on the channel from a PublisherSettings JSON object',
-			options: [
-				optChannel(),
-				optText('name', 'Name', { tooltip: 'Display name of the new publisher (optional)' }),
-				optJson(
-					'json',
-					'Settings JSON',
-					'PublisherSettings object; "type" is required, e.g. {"type":"rtmp","rtmp":{"url":"rtmp://...","stream":"key"},"common":{"enabled":true}}.',
-				),
-			],
-			callback: wrap('Stream: add publisher', async (action) => {
-				if (!requireV2('Stream: add publisher')) return
-				const cid = parseChannel('Stream: add publisher', action.options.channel)
-				if (!cid) return
-				const settings = await parseJson('Stream: add publisher', 'Settings JSON', action.options.json)
-				if (!settings) return
-				if (!settings.type) {
-					this.log(
-						'error',
-						'Stream: add publisher: settings JSON must contain a "type" (rtmp, srt, rtsp, hls, ndi, ...)',
-					)
-					return
-				}
-				// PublisherSettings requires common.enabled; a new publisher starts disabled unless told otherwise
-				if (!settings.common || typeof settings.common !== 'object' || Array.isArray(settings.common)) {
-					settings.common = { enabled: false, single_touch: false }
-				}
-				const name = (await parse(action.options.name)).trim()
-				const body = { settings }
-				if (name) body.name = name
-				const result = await this.request('POST', `/channels/${enc(cid)}/publishers`, { body })
-				this.log('info', `Publisher added on channel ${cid}: ${JSON.stringify(result)}`)
-				this.schedulePollSoon()
-			}),
-		}
-
-		// ------------------------------------------------------------------
-		// Outputs
-		// ------------------------------------------------------------------
-
-		actions['setOutputSource'] = {
-			name: 'Output: set source',
-			description:
-				'Selects what is shown on the output port: a channel, an input, the multi-viewer, device info or console',
+		actions['output'] = {
+			name: 'Output Source',
+			description: 'Switch the source shown on a Pearl HDMI/SDI output.',
 			options: [
 				{
 					type: 'dropdown',
-					id: 'output',
+					id: 'outputId',
 					label: 'Output',
 					choices: this.choicesOutputs(),
 					default: this.firstId(this.choicesOutputs()),
@@ -837,292 +443,49 @@ module.exports = {
 					type: 'dropdown',
 					id: 'source',
 					label: 'Source',
-					choices: [...this.choicesOutputSources(), { id: 'custom', label: 'Custom (enter below)' }],
+					choices: this.choicesOutputSources(),
 					default: this.firstId(this.choicesOutputSources()),
 				},
-				optText('customSource', 'Custom source', {
-					tooltip: 'Channel id, input id, multiview, deviceinfo or console',
-					isVisible: (options) => options.source === 'custom',
-				}),
 			],
-			callback: wrap('Output: set source', async (action) => {
-				if (!requireV2('Output: set source')) return
-				const did = String(action.options.output ?? '')
+			callback: wrap('Output Source', async (action) => {
+				const label = 'Output Source'
+				if (!requireV2(label)) return
+				const did = String(action.options.outputId ?? '')
 				if (!did) {
-					this.log('error', 'Output: set source: no output selected')
+					fail(label, 'no output selected')
 					return
 				}
-				let source = String(action.options.source ?? '')
-				if (source === 'custom') source = (await parse(action.options.customSource)).trim()
+				if (!this.state.outputs?.[did]) {
+					fail(label, `unknown output ${did}`)
+					return
+				}
+				const source = String(action.options.source ?? '').trim()
 				if (!source) {
-					this.log('error', 'Output: set source: no source given')
+					fail(label, 'no source selected')
 					return
 				}
 				await this.request('PUT', `/outputs/${enc(did)}/settings`, { query: { source } })
-				// optimistic update: the API has no way to read the current source back
-				if (this.state.outputs?.[did]) {
-					this.state.outputs[did].source = source
-					variables.updateVariables(this)
-					this.checkFeedbacks('outputSourceOptimistic')
-				}
+				// optimistic: the API has no way to read the current source back
+				this.state.outputs[did].source = source
+				this.state.outputs[did].setAt = Date.now()
+				refreshVariables()
+				this.checkFeedbacks('output_set')
 				this.schedulePollSoon()
 			}),
 		}
 
 		// ------------------------------------------------------------------
-		// Inputs
+		// Configuration preset
 		// ------------------------------------------------------------------
 
-		actions['inputAudioMute'] = {
-			name: 'Input: audio mute',
-			options: [
-				optInput(this.choicesInputsWithAudio()),
-				{
-					type: 'dropdown',
-					id: 'mute',
-					label: 'Mute',
-					choices: CHOICES_MUTE,
-					default: 'true',
-				},
-			],
-			callback: wrap('Input: audio mute', async (action) => {
-				if (!requireV2('Input: audio mute')) return
-				const sid = String(action.options.input ?? '')
-				if (!sid) {
-					this.log('error', 'Input: audio mute: no input selected')
-					return
-				}
-				await this.request('PATCH', `/inputs/${enc(sid)}/settings`, {
-					body: audioMuteBody(sid, isTrue(action.options.mute)),
-				})
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['inputAudioGain'] = {
-			name: 'Input: audio gain',
+		actions['preset'] = {
+			name: 'Apply Preset',
 			description:
-				'Sets the capture gain (dB or %, depending on the device). The current settings are read first: ' +
-				'Both sets the stereo pair gain, or both channels when the input already has individual channel settings. ' +
-				'Channel A/B switches the input to individual channel settings.',
-			options: [
-				optInput(this.choicesInputsWithAudio()),
-				{
-					type: 'number',
-					id: 'gain',
-					label: 'Gain',
-					default: 0,
-					min: GAIN_MIN,
-					max: GAIN_MAX,
-					step: 1,
-				},
-				{
-					type: 'dropdown',
-					id: 'channel',
-					label: 'Audio channel',
-					choices: [
-						{ id: 'both', label: 'Both (stereo pair)' },
-						{ id: 'A', label: 'Channel A only' },
-						{ id: 'B', label: 'Channel B only' },
-					],
-					default: 'both',
-				},
-			],
-			callback: wrap('Input: audio gain', async (action) => {
-				if (!requireV2('Input: audio gain')) return
-				const sid = String(action.options.input ?? '')
-				if (!sid) {
-					this.log('error', 'Input: audio gain: no input selected')
-					return
-				}
-				const gain = Math.min(GAIN_MAX, Math.max(GAIN_MIN, toInt(action.options.gain, 0)))
-				let body
-				if (action.options.channel === 'A' || action.options.channel === 'B') {
-					// Single channel: the body is built entirely from the option values, so no read is needed.
-					body = {
-						local_audio: {
-							stereo_pair: false,
-							channels: { [`channel${action.options.channel}`]: { gain } },
-						},
-					}
-				} else {
-					// Both: the existing settings decide whether this is a stereo pair or an unpaired input.
-					const settings = await this.request('GET', `/inputs/${enc(sid)}/settings`)
-					body = gainPatch(settings, gain)
-					if (!body) {
-						this.log('error', `Input: audio gain: input ${sid} has no gain setting`)
-						return
-					}
-				}
-				await this.request('PATCH', `/inputs/${enc(sid)}/settings`, { body })
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['inputAudioDelay'] = {
-			name: 'Input: audio delay',
-			description:
-				'Sets the audio delay in milliseconds. The current settings are read first and the delay is written where ' +
-				'the input keeps it (audio.delay, hdmi.audio.delay or sdi.audio.delay).',
-			options: [
-				optInput(this.choicesInputsWithAudio()),
-				{
-					type: 'number',
-					id: 'delay',
-					label: 'Delay (ms)',
-					default: 0,
-					min: DELAY_MIN,
-					max: DELAY_MAX,
-					step: 1,
-				},
-			],
-			callback: wrap('Input: audio delay', async (action) => {
-				if (!requireV2('Input: audio delay')) return
-				const sid = String(action.options.input ?? '')
-				if (!sid) {
-					this.log('error', 'Input: audio delay: no input selected')
-					return
-				}
-				const delay = Math.min(DELAY_MAX, Math.max(DELAY_MIN, toInt(action.options.delay, 0)))
-				const settings = await this.request('GET', `/inputs/${enc(sid)}/settings`)
-				const body = delayPatch(settings, delay)
-				if (!body) {
-					this.log('error', `Input: audio delay: input ${sid} has no audio delay setting`)
-					return
-				}
-				await this.request('PATCH', `/inputs/${enc(sid)}/settings`, { body })
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['inputPhantomPower'] = {
-			name: 'Input: phantom power (48V)',
-			description: 'Only supported on XLR analog audio inputs (Pearl Mini, Pearl Nexus)',
-			options: [
-				optInput(this.choicesInputsWithAudio()),
-				{
-					type: 'dropdown',
-					id: 'phantom_power',
-					label: 'Phantom power',
-					choices: CHOICES_ON_OFF,
-					default: 'true',
-				},
-			],
-			callback: wrap('Input: phantom power', async (action) => {
-				if (!requireV2('Input: phantom power')) return
-				const sid = String(action.options.input ?? '')
-				if (!sid) {
-					this.log('error', 'Input: phantom power: no input selected')
-					return
-				}
-				await this.request('PATCH', `/inputs/${enc(sid)}/settings`, {
-					body: { local_audio: { phantom_power: isTrue(action.options.phantom_power) } },
-				})
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['patchInputSettings'] = {
-			name: 'Input: patch settings (JSON)',
-			description: 'Partially updates the input settings with an arbitrary JSON object',
-			options: [
-				optInput(this.choicesInputs()),
-				optJson(
-					'json',
-					'Settings JSON',
-					'Partial InputSettings object, e.g. {"video":{"nosignal":{"timeout":5}},"srt":{"mode":"listener","port":1025}}.',
-				),
-			],
-			callback: wrap('Input: patch settings', async (action) => {
-				if (!requireV2('Input: patch settings')) return
-				const sid = String(action.options.input ?? '')
-				if (!sid) {
-					this.log('error', 'Input: patch settings: no input selected')
-					return
-				}
-				const body = await parseJson('Input: patch settings', 'Settings JSON', action.options.json)
-				if (!body) return
-				await this.request('PATCH', `/inputs/${enc(sid)}/settings`, { body })
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['createNetworkInput'] = {
-			name: 'Input: create network input',
-			description: 'Creates a new RTSP, SRT, NDI, web graphics or Dante input',
+				'Apply a Pearl configuration preset. This can interrupt recordings and streams and the device may reboot.',
 			options: [
 				{
 					type: 'dropdown',
-					id: 'type',
-					label: 'Type',
-					choices: CHOICES_NETWORK_INPUT_TYPE,
-					default: 'rtsp',
-				},
-				optText('name', 'Name'),
-				optJson(
-					'json',
-					'Settings JSON',
-					'NetworkInputSettings object, e.g. {"rtsp":{"url":"rtsp://10.0.0.1:8554/stream","transport":"udp"}}.',
-				),
-			],
-			callback: wrap('Input: create network input', async (action) => {
-				if (!requireV2('Input: create network input')) return
-				const type = action.options.type
-				if (!CHOICES_NETWORK_INPUT_TYPE.some((c) => c.id === type)) {
-					this.log('error', `Input: create network input: unknown type ${type}`)
-					return
-				}
-				const settings = await parseJson('Input: create network input', 'Settings JSON', action.options.json)
-				if (!settings) return
-				const name = (await parse(action.options.name)).trim()
-				const body = { type }
-				if (name) body.name = name
-				if (Object.keys(settings).length > 0) body.settings = settings
-				const result = await this.request('POST', '/inputs', { body })
-				this.log('info', `Network input created: ${JSON.stringify(result)}`)
-				this.schedulePollSoon()
-			}),
-		}
-
-		// ------------------------------------------------------------------
-		// Single touch control
-		// ------------------------------------------------------------------
-
-		actions['singleTouchToggle'] = {
-			name: 'Single touch: toggle',
-			description: 'Starts or stops all recorders and publishers included in the single touch control',
-			options: [
-				{
-					type: 'dropdown',
-					id: 'stc',
-					label: 'Single touch control',
-					choices: this.choicesSingleTouch(),
-					default: this.firstId(this.choicesSingleTouch()),
-				},
-			],
-			callback: wrap('Single touch: toggle', async (action) => {
-				if (!requireV2('Single touch: toggle')) return
-				const stcid = String(action.options.stc ?? '')
-				if (!stcid) {
-					this.log('error', 'Single touch: toggle: no single touch control selected')
-					return
-				}
-				await this.request('POST', `/system/singletouchcontrol/${enc(stcid)}/control/toggle`)
-				this.schedulePollSoon()
-			}),
-		}
-
-		// ------------------------------------------------------------------
-		// Configuration presets
-		// ------------------------------------------------------------------
-
-		actions['applyConfigPreset'] = {
-			name: 'Config preset: apply',
-			description: 'Applies a configuration preset stored on the device. The device may reboot.',
-			options: [
-				{
-					type: 'dropdown',
-					id: 'preset',
+					id: 'presetName',
 					label: 'Preset',
 					choices: this.choicesConfigPresets(),
 					default: this.firstId(this.choicesConfigPresets()),
@@ -1130,31 +493,262 @@ module.exports = {
 				{
 					type: 'multidropdown',
 					id: 'sections',
-					label: 'Sections (empty = all)',
+					label: 'Sections',
 					choices: CHOICES_PRESET_SECTIONS,
 					default: [],
+					tooltip: 'Leave empty to apply the whole preset.',
 				},
+				optConfirm(),
 			],
-			callback: wrap('Config preset: apply', async (action) => {
-				if (!requireV2('Config preset: apply')) return
-				const name = String(action.options.preset ?? '')
+			callback: wrap('Apply Preset', async (action) => {
+				const label = 'Apply Preset'
+				if (!requireV2(label)) return
+				const name = String(action.options.presetName ?? '')
 				if (!name) {
-					this.log('error', 'Config preset: apply: no preset selected')
+					fail(label, 'no preset selected')
 					return
 				}
-				const sections = Array.isArray(action.options.sections) ? action.options.sections.filter(Boolean) : []
+				if (action.options.confirm !== false && !this.confirmGate(action, label)) {
+					// a fresh confirm arm supersedes any status text left over from a previous apply, so
+					// confirm_hint and preset_status never render at the same time on the button (D2)
+					if (this.state.presetStatus) {
+						this.state.presetStatus = undefined
+						refreshVariables()
+					}
+					return
+				}
+
+				const sections = (Array.isArray(action.options.sections) ? action.options.sections : [])
+					.map((s) => String(s))
+					.filter((s) => SECTION_IDS.includes(s))
 				const opts = sections.length > 0 ? { body: { sections } } : {}
 				const result = await this.request('POST', `/system/presets/${enc(name)}/control/apply`, opts)
-				if (result && result.reboot) {
-					this.log('info', `Config preset "${name}" applied, the device is rebooting`)
-				} else {
-					this.log('info', `Config preset "${name}" applied`)
-				}
 				// optimistic: the API has no way to read back which preset the device currently matches
 				this.state.lastConfigPreset = { name, appliedAt: Date.now() }
-				variables.updateVariables(this)
-				this.checkFeedbacks('configPresetApplied')
+				if (result && result.reboot) {
+					this.state.presetStatus = { text: 'Rebooting…', until: Date.now() + PRESET_REBOOT_MS }
+					this.log('info', `Configuration preset "${name}" applied, the device is rebooting`)
+				} else {
+					this.state.presetStatus = undefined
+					this.log('info', `Configuration preset "${name}" applied`)
+				}
+				refreshVariables()
 				this.schedulePollSoon()
+			}),
+		}
+
+		// ------------------------------------------------------------------
+		// CMS event
+		// ------------------------------------------------------------------
+
+		actions['event'] = {
+			name: 'Event',
+			description:
+				'Start, pause, resume, stop or extend a scheduled CMS event. Toggle adapts to the event state; a fixed action that does not apply to the event is not sent.',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'eventRef',
+					label: 'Event',
+					choices: this.choicesEventRefs(),
+					default: 'ongoing',
+					allowCustom: true,
+					tooltip:
+						'"Ongoing" always targets the event that is currently running or paused, "Upcoming" the next scheduled one. Picking a specific event ties the button to it.',
+				},
+				{
+					type: 'dropdown',
+					id: 'op',
+					label: 'Action',
+					choices: CHOICES_EVENT_OPS,
+					default: 'toggle',
+				},
+				{
+					type: 'number',
+					id: 'extendSeconds',
+					label: 'Extend by',
+					default: EXTEND_DEFAULT,
+					min: EXTEND_MIN,
+					max: EXTEND_MAX,
+					step: 30,
+					tooltip: 'Seconds added to the finish time of the event.',
+					isVisible: (options) => options.op === 'extend',
+				},
+			],
+			callback: wrap('Event', async (action) => {
+				const label = 'Event'
+				if (!requireV2(label)) return
+				const op = String(action.options.op ?? 'toggle')
+				if (!EVENT_OP_IDS.includes(op)) {
+					fail(label, `unknown action ${op}`)
+					return
+				}
+				if (op === 'status') {
+					this.schedulePollSoon()
+					return
+				}
+				const ref = (await parse(action.options.eventRef)).trim() || 'ongoing'
+
+				// resolve live: an alias may point at a different event than the last poll saw
+				const event = await this.request('GET', `/schedule/events/${enc(ref)}`, {
+					optional: true,
+					silent: true,
+				})
+				if (!event || typeof event !== 'object' || event.id === undefined) {
+					this.log('warn', `${label}: no event matches "${ref}"`)
+					return
+				}
+				const status = event.status
+				const title = event.title || event.id
+
+				let command
+				if (op === 'toggle') {
+					command = eventToggleOp(status)
+					if (!command) {
+						this.log('warn', `${label}: "${title}" is ${status ?? 'unknown'} and cannot be toggled`)
+						return
+					}
+				} else {
+					if (!eventApplies(op, status)) {
+						this.log('warn', `${label}: cannot ${op}, "${title}" is ${status ?? 'unknown'}`)
+						return
+					}
+					command = op
+				}
+
+				// prefer the concrete id over the alias, which could resolve elsewhere by now
+				const id = String(event.id)
+				if (command === 'extend') {
+					const finish = Math.round(
+						clampNumber(action.options.extendSeconds, EXTEND_DEFAULT, EXTEND_MIN, EXTEND_MAX),
+					)
+					await this.request('POST', `/schedule/events/${enc(id)}/control/extend`, { body: { finish } })
+					this.log('info', `Event "${title}" extended by ${finish} s`)
+				} else {
+					await this.request('POST', `/schedule/events/${enc(id)}/control/${enc(command)}`)
+					this.log('info', `Event "${title}": ${command}`)
+				}
+				this.schedulePollSoon()
+			}),
+		}
+
+		// ------------------------------------------------------------------
+		// Power
+		// ------------------------------------------------------------------
+
+		actions['power'] = {
+			name: 'Reboot / Shutdown',
+			description:
+				'Reboot or shut down the Pearl. Shut down powers the Pearl off completely; it must be switched back on at the device.',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'op',
+					label: 'Action',
+					choices: CHOICES_POWER_OPS,
+					default: 'reboot',
+				},
+				optConfirm(),
+			],
+			callback: wrap('Reboot / Shutdown', async (action) => {
+				const label = 'Reboot / Shutdown'
+				const op = String(action.options.op ?? 'reboot')
+				if (!POWER_OP_IDS.includes(op)) {
+					fail(label, `unknown action ${op}`)
+					return
+				}
+				if (action.options.confirm !== false && !this.confirmGate(action, label)) {
+					// a fresh confirm arm supersedes any status text left over from a previous command, so
+					// confirm_hint and power_status never render at the same time on the button (D2)
+					if (this.state.powerStatus) {
+						this.state.powerStatus = undefined
+						refreshVariables()
+					}
+					return
+				}
+
+				await this.request('POST', `/system/control/${enc(op)}`)
+				this.state.powerStatus = { text: 'Command sent', until: Date.now() + POWER_STATUS_MS }
+				this.log('info', op === 'shutdown' ? 'Shutdown requested' : 'Reboot requested')
+				refreshVariables()
+				this.schedulePollSoon()
+			}),
+		}
+
+		// ------------------------------------------------------------------
+		// Audio
+		// ------------------------------------------------------------------
+
+		actions['audio'] = {
+			name: 'Audio',
+			description:
+				'Nudge the capture gain (dB) or the audio delay (ms) of an audio input. "Nothing" only re-reads the input. Rotary ticks arriving within 150 ms are combined into one step.',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'inputId',
+					label: 'Input',
+					choices: this.choicesInputsWithAudio(),
+					default: this.firstId(this.choicesInputsWithAudio()),
+				},
+				{
+					type: 'dropdown',
+					id: 'control',
+					label: 'Press adjusts',
+					choices: CHOICES_AUDIO_CONTROL,
+					default: 'none',
+				},
+				{
+					type: 'dropdown',
+					id: 'direction',
+					label: 'Direction',
+					choices: CHOICES_AUDIO_DIRECTION,
+					default: 'up',
+					isVisible: (options) => options.control !== 'none',
+				},
+				{
+					type: 'number',
+					id: 'step',
+					label: 'Step',
+					default: 1,
+					min: STEP_MIN,
+					max: STEP_MAX,
+					step: 1,
+					tooltip: 'Gain steps are in dB (0–100), delay steps in milliseconds (−300..300).',
+					isVisible: (options) => options.control !== 'none',
+				},
+			],
+			callback: wrap('Audio', async (action) => {
+				const label = 'Audio'
+				if (!requireV2(label)) return
+				const sid = String(action.options.inputId ?? '')
+				if (!sid) {
+					fail(label, 'no input selected')
+					return
+				}
+				if (!this.state.inputs?.[sid]) {
+					fail(label, `unknown input ${sid}`)
+					return
+				}
+				const control = String(action.options.control ?? 'none')
+				if (control === 'none') {
+					// push / "Nothing": re-read the input instead of changing anything
+					this.schedulePollSoon()
+					return
+				}
+				if (control !== 'gain' && control !== 'delay') {
+					fail(label, `unknown control ${control}`)
+					return
+				}
+				const step = Math.round(clampNumber(action.options.step, 1, STEP_MIN, STEP_MAX))
+				const delta = action.options.direction === 'down' ? -step : step
+				const key = `${action.controlId ?? ''} ${action.actionId ?? 'audio'} ${sid} ${control}`
+				this.coalesce(
+					key,
+					delta,
+					(total) => this.nudgeInputAudio(label, sid, control, total),
+					this.rotaryWindowMs,
+				)
 			}),
 		}
 
@@ -1162,195 +756,97 @@ module.exports = {
 		// Storage
 		// ------------------------------------------------------------------
 
-		actions['storageEject'] = {
-			name: 'Storage: eject',
-			description: 'Safely ejects a removable storage (SD card / USB). The main storage cannot be ejected.',
+		actions['storage'] = {
+			name: 'Storage',
+			description:
+				'Eject removable media (SD card / USB) from a Pearl storage device. The main storage cannot be ejected.',
 			options: [
 				{
 					type: 'dropdown',
-					id: 'storage',
+					id: 'storageId',
 					label: 'Storage',
 					choices: this.choicesStorages(),
-					default: this.firstId(this.choicesStorages()),
+					default: this.preferredId(this.choicesStorages(), 'main'),
 				},
+				optConfirm(),
 			],
-			callback: wrap('Storage: eject', async (action) => {
-				if (!requireV2('Storage: eject')) return
-				const stid = String(action.options.storage ?? '')
+			callback: wrap('Storage', async (action) => {
+				const label = 'Storage'
+				if (!requireV2(label)) return
+				const stid = String(action.options.storageId ?? '')
 				if (!stid) {
-					this.log('error', 'Storage: eject: no storage selected')
+					fail(label, 'no storage selected')
 					return
 				}
+				const storage = this.state.storages?.[stid]
+				if (!storage) {
+					fail(label, `unknown storage ${stid}`)
+					return
+				}
+				if (storage.status?.state === 'nodev') {
+					this.log('info', `Storage ${stid}: Nothing to eject`)
+					return
+				}
+				if (action.options.confirm !== false && !this.confirmGate(action, label)) {
+					// a fresh confirm arm supersedes any hint text left over from a previous eject, so
+					// confirm_hint and storage_<id>_hint never render at the same time on the button (D2)
+					if (storage.hint) {
+						storage.hint = undefined
+						refreshVariables()
+					}
+					return
+				}
+
 				await this.request('POST', `/system/storages/${enc(stid)}/control/eject`)
+				storage.hint = { text: 'Ejected', until: Date.now() + STORAGE_HINT_MS }
 				this.log('info', `Storage ${stid} ejected`)
+				refreshVariables()
 				this.schedulePollSoon()
-			}),
-		}
-
-		// ------------------------------------------------------------------
-		// Events (CMS schedule)
-		// ------------------------------------------------------------------
-
-		actions['eventControl'] = {
-			name: 'Event: start/stop/pause/resume',
-			description:
-				'Controls a scheduled CMS event. Aliases: upcoming = next scheduled, ongoing = running or paused.',
-			options: [
-				...optEvent(),
-				{
-					type: 'dropdown',
-					id: 'action',
-					label: 'Action',
-					choices: CHOICES_EVENT_ACTION,
-					default: 'start',
-				},
-			],
-			callback: wrap('Event: control', async (action) => {
-				if (!requireV2('Event: control')) return
-				const verb = action.options.action
-				if (!CHOICES_EVENT_ACTION.some((c) => c.id === verb)) {
-					this.log('error', `Event: control: unknown action ${verb}`)
-					return
-				}
-				const id = await resolveEventId('Event: control', action.options)
-				if (!id) return
-				await this.request('POST', `/schedule/events/${enc(id)}/control/${verb}`)
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['eventExtend'] = {
-			name: 'Event: extend',
-			description: 'Adds time to the finish of a running or paused event',
-			options: [
-				...optEvent(),
-				{
-					type: 'number',
-					id: 'seconds',
-					label: 'Extend by (seconds)',
-					default: 300,
-					min: 1,
-					max: 86400,
-					step: 60,
-				},
-			],
-			callback: wrap('Event: extend', async (action) => {
-				if (!requireV2('Event: extend')) return
-				const id = await resolveEventId('Event: extend', action.options)
-				if (!id) return
-				const finish = Math.max(1, toInt(action.options.seconds, 300))
-				await this.request('POST', `/schedule/events/${enc(id)}/control/extend`, { body: { finish } })
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['createAdhocEvent'] = {
-			name: 'Event: create ad-hoc event',
-			description: 'Creates an ad-hoc event for the configured CMS (Kaltura, Panopto or Opencast)',
-			options: [
-				optJson(
-					'json',
-					'Event JSON',
-					'AdhocEventKaltura / AdhocEventPanopto / AdhocEventOpencast object, e.g. {"title":"Ad-hoc","duration":3600}.',
-				),
-			],
-			callback: wrap('Event: create ad-hoc event', async (action) => {
-				if (!requireV2('Event: create ad-hoc event')) return
-				const body = await parseJson('Event: create ad-hoc event', 'Event JSON', action.options.json)
-				if (!body) return
-				const result = await this.request('POST', '/schedule/events', { body })
-				this.log('info', `Ad-hoc event created: ${result && result.id ? result.id : JSON.stringify(result)}`)
-				this.schedulePollSoon()
-			}),
-		}
-
-		actions['adhocSessionLogout'] = {
-			name: 'Event: ad-hoc session logout',
-			description: 'Deletes the current ad-hoc CMS login session',
-			options: [],
-			callback: wrap('Event: ad-hoc session logout', async () => {
-				if (!requireV2('Event: ad-hoc session logout')) return
-				await this.request('DELETE', '/schedule/events/adhoc/session')
-				this.log('info', 'Ad-hoc session logged out')
-			}),
-		}
-
-		// ------------------------------------------------------------------
-		// System
-		// ------------------------------------------------------------------
-
-		actions['refreshConnectivity'] = {
-			name: 'System: refresh connectivity details',
-			description: 'Reads the network connectivity test results into the connectivity_* variables',
-			options: [],
-			callback: wrap('System: refresh connectivity', async () => {
-				if (!requireV2('System: refresh connectivity')) return
-				const result = await this.request('GET', '/system/connectivity/details')
-				this.state.connectivity = result && typeof result === 'object' ? result : undefined
-				variables.updateVariables(this)
-			}),
-		}
-
-		actions['runSpeedTest'] = {
-			name: 'System: run speed test',
-			description: 'Runs a network speed test on the device and stores the result in the speedtest_* variables',
-			options: [
-				{
-					type: 'dropdown',
-					id: 'mode',
-					label: 'Direction',
-					choices: [
-						{ id: 'uplink', label: 'Uplink' },
-						{ id: 'downlink', label: 'Downlink' },
-					],
-					default: 'uplink',
-				},
-				{
-					type: 'dropdown',
-					id: 'protocol',
-					label: 'Protocol',
-					choices: [
-						{ id: 'tcp', label: 'TCP' },
-						{ id: 'udp', label: 'UDP' },
-					],
-					default: 'tcp',
-				},
-				{
-					type: 'number',
-					id: 'timeout',
-					label: 'Test duration (seconds)',
-					default: 10,
-					min: 1,
-					max: 300,
-					step: 1,
-				},
-			],
-			callback: wrap('System: run speed test', async (action) => {
-				if (!requireV2('System: run speed test')) return
-				const mode = action.options.mode === 'downlink' ? 'downlink' : 'uplink'
-				const protocol = action.options.protocol === 'udp' ? 'udp' : 'tcp'
-				const timeout = Math.max(1, toInt(action.options.timeout, 10))
-				const result = await this.request('GET', '/system/connectivity/tools/speedtest', {
-					query: { mode, protocol, timeout },
-					timeout: (timeout + 15) * 1000,
-				})
-				this.state.speedtest = result && typeof result === 'object' ? result : undefined
-				variables.updateVariables(this)
-				if (result && typeof result.bandwidth === 'number') {
-					this.log('info', `Speed test ${protocol} ${mode}: ${(result.bandwidth / 1e6).toFixed(1)} Mbps`)
-				}
-			}),
-		}
-
-		actions['refreshPoll'] = {
-			name: 'System: refresh state now',
-			description: 'Polls the device immediately instead of waiting for the next interval',
-			options: [],
-			callback: wrap('System: refresh state', async () => {
-				await this.pollAll()
 			}),
 		}
 
 		return actions
+	},
+
+	/**
+	 * INTERNAL: read an input's settings and write back gain or delay moved by `delta`.
+	 * Called from the coalesced rotary flush, so it handles its own failures.
+	 *
+	 * @param {string} label action name used in log lines
+	 * @param {string} sid input id
+	 * @param {'gain'|'delay'} control
+	 * @param {number} delta signed step
+	 */
+	async nudgeInputAudio(label, sid, control, delta) {
+		try {
+			const settings = await this.request('GET', `/inputs/${enc(sid)}/settings`)
+			let body
+			if (control === 'gain') {
+				const current = readGain(settings)
+				if (current === undefined) {
+					this.log('warn', `${label}: input ${sid} has no gain setting`)
+					return
+				}
+				body = gainPatch(settings, current + delta)
+			} else {
+				const current = readDelay(settings)
+				if (current === undefined) {
+					this.log('warn', `${label}: input ${sid} has no audio delay setting`)
+					return
+				}
+				body = delayPatch(settings, current.value + delta)
+			}
+			if (!body) {
+				this.log('warn', `${label}: input ${sid} has no ${control} setting`)
+				return
+			}
+			await this.request('PATCH', `/inputs/${enc(sid)}/settings`, { body })
+			this.log('debug', `Audio ${sid}: ${control} ${delta > 0 ? '+' : ''}${delta}`)
+			this.schedulePollSoon()
+		} catch (error) {
+			const message = errMsg(error)
+			if (this.state) this.state.lastError = message
+			this.log('error', `${label} failed: ${message}`)
+		}
 	},
 }

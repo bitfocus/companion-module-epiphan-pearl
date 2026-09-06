@@ -22,6 +22,37 @@ describe('utils', () => {
 		assert.equal(utils.formatClock('x'), '')
 	})
 
+	it('compactDuration is m:ss below one hour, h:mm:ss from one hour up (§3.3)', () => {
+		assert.equal(utils.compactDuration(0), '0:00')
+		assert.equal(utils.compactDuration(65), '1:05')
+		assert.equal(utils.compactDuration(300), '5:00')
+		assert.equal(utils.compactDuration(750), '12:30')
+		assert.equal(utils.compactDuration(3599), '59:59')
+		assert.equal(utils.compactDuration(3600), '1:00:00')
+		assert.equal(utils.compactDuration(3725), '1:02:05')
+		assert.equal(utils.compactDuration(-5), '0:00')
+		assert.equal(utils.compactDuration('x'), '0:00')
+	})
+
+	it('formatUptime reads "3d 4h" (days), "4h 05m" (hours), "12m" (§3.3)', () => {
+		assert.equal(utils.formatUptime(3 * 86400 + 4 * 3600), '3d 4h')
+		assert.equal(utils.formatUptime(4 * 3600 + 5 * 60), '4h 05m')
+		assert.equal(utils.formatUptime(12 * 60), '12m')
+		assert.equal(utils.formatUptime(0), '0m')
+		assert.equal(utils.formatUptime(-5), '0m')
+	})
+
+	it('bytesToHuman reads "1.5 GB" and friends (§3.3), base 1024', () => {
+		assert.equal(utils.bytesToHuman(0), '0 B')
+		assert.equal(utils.bytesToHuman(512), '512 B')
+		assert.equal(utils.bytesToHuman(1536), '1.5 KB')
+		assert.equal(utils.bytesToHuman(1.5 * 1024 ** 3), '1.5 GB')
+		assert.equal(utils.bytesToHuman(11 * 1024 ** 3), '11 GB')
+		assert.equal(utils.bytesToHuman(128 * 1024 ** 3), '128 GB')
+		assert.equal(utils.bytesToHuman(-5), '0 B')
+		assert.equal(utils.bytesToHuman(undefined), '0 B')
+	})
+
 	it('normaliseInputId strips the D2P<serial>. prefix and sameInputId compares without it', () => {
 		assert.equal(utils.normaliseInputId('D2P492324.analog-a'), 'analog-a')
 		assert.equal(utils.normaliseInputId('D2P0.SDI-B'), 'SDI-B')
@@ -91,15 +122,6 @@ describe('utils', () => {
 		)
 	})
 
-	it('parseKeyValueText parses get_params.cgi output', () => {
-		assert.deepEqual(utils.parseKeyValueText('title = Morning Show\nauthor = Epiphan\nrec_prefix=HDMI-A\n'), {
-			title: 'Morning Show',
-			author: 'Epiphan',
-			rec_prefix: 'HDMI-A',
-		})
-		assert.deepEqual(utils.parseKeyValueText(undefined), {})
-	})
-
 	it('firmwareVersionNumber converts version strings', () => {
 		assert.equal(utils.firmwareVersionNumber('4.24.1'), 42401)
 		assert.equal(utils.firmwareVersionNumber('4.20.0'), 42000)
@@ -117,54 +139,109 @@ describe('utils', () => {
 		assert.equal(utils.clampNumber(undefined, 10, 1, 300), 10)
 	})
 
-	it('byte and rounding helpers', () => {
+	it('round1 rounds to one decimal', () => {
 		assert.equal(utils.round1(1.26), 1.3)
 		assert.equal(utils.round1('x'), '')
-		assert.equal(utils.bytesToMb(407160404), 388.3)
-		assert.equal(utils.bytesToGb(15809413120), 14.7)
-		assert.equal(utils.bytesToGb(undefined), '')
 	})
 
-	it('metadataRetryDue backs off failed metadata fetches', () => {
-		const now = 10_000_000
-		assert.equal(utils.metadataRetryDue(undefined, now), true, 'never fetched')
-		assert.equal(utils.metadataRetryDue(null, now), true)
-		assert.equal(utils.metadataRetryDue({ title: 'x', author: '', rec_prefix: '' }, now), false, 'fetched fine')
-		const marker = (ageMs, attempts) => ({
-			title: '',
-			author: '',
-			rec_prefix: '',
-			_failedAt: now - ageMs,
-			_attempts: attempts,
-		})
-		assert.equal(utils.metadataRetryDue(marker(1000, 1), now), false)
-		assert.equal(utils.metadataRetryDue(marker(60_001, 1), now), true)
-		assert.equal(utils.metadataRetryDue(marker(60_001, 2), now), false)
-		assert.equal(utils.metadataRetryDue(marker(120_001, 2), now), true)
-		assert.equal(utils.metadataRetryDue(marker(600_000, 50), now), false, 'factor capped at 10')
-		assert.equal(utils.metadataRetryDue(marker(600_001, 50), now), true)
-		assert.equal(utils.metadataRetryDue({ _failedAt: now - 60_001 }, now), true, 'missing attempts counts as 1')
+	it('recorderToggleOp: stop while started/starting/paused, start otherwise (D14); "all" aggregates', () => {
+		const recorders = { a: { status: { state: 'stopped' } }, b: { status: { state: 'started' } } }
+		assert.equal(utils.recorderToggleOp(recorders, 'a'), 'start')
+		assert.equal(utils.recorderToggleOp(recorders, 'b'), 'stop')
+		assert.equal(utils.recorderToggleOp(recorders, 'all'), 'stop', 'any active recorder -> stop all')
+		assert.equal(
+			utils.recorderToggleOp({ a: { status: { state: 'stopped' } } }, 'all'),
+			'start',
+			'none active -> start all',
+		)
+		assert.equal(utils.recorderToggleOp(recorders, 'nope'), 'start', 'a missing recorder is treated as inactive')
+		for (const state of ['starting', 'paused']) {
+			assert.equal(utils.recorderToggleOp({ a: { status: { state } } }, 'a'), 'stop')
+		}
+		for (const state of ['error', 'disabled', undefined]) {
+			assert.equal(utils.recorderToggleOp({ a: { status: { state } } }, 'a'), 'start')
+		}
 	})
 
-	it('emptyState has the documented shape', () => {
+	it('publisherToggleOp: stop while started/starting/listening, start otherwise (D14); "all" aggregates', () => {
+		const publishers = { a: { status: { state: 'stopped' } }, b: { status: { state: 'listening' } } }
+		assert.equal(utils.publisherToggleOp(publishers, 'a'), 'start')
+		assert.equal(utils.publisherToggleOp(publishers, 'b'), 'stop')
+		assert.equal(utils.publisherToggleOp(publishers, 'all'), 'stop')
+		assert.equal(utils.publisherToggleOp({ a: { status: { state: 'stopped' } } }, 'all'), 'start')
+		for (const state of ['started', 'starting', 'listening']) {
+			assert.equal(utils.publisherToggleOp({ a: { status: { state } } }, 'a'), 'stop')
+		}
+		for (const state of ['error', 'stopped', undefined]) {
+			assert.equal(utils.publisherToggleOp({ a: { status: { state } } }, 'a'), 'start')
+		}
+	})
+
+	it('eventToggleOp: running->pause, paused->resume, scheduled->start, otherwise none applies', () => {
+		assert.equal(utils.eventToggleOp('running'), 'pause')
+		assert.equal(utils.eventToggleOp('paused'), 'resume')
+		assert.equal(utils.eventToggleOp('scheduled'), 'start')
+		assert.equal(utils.eventToggleOp('finished'), '')
+		assert.equal(utils.eventToggleOp(undefined), '')
+	})
+
+	it('eventApplies: start/scheduled, stop+extend/running+paused, pause/running, resume/paused', () => {
+		assert.equal(utils.eventApplies('start', 'scheduled'), true)
+		assert.equal(utils.eventApplies('start', 'running'), false)
+		assert.equal(utils.eventApplies('stop', 'running'), true)
+		assert.equal(utils.eventApplies('stop', 'paused'), true)
+		assert.equal(utils.eventApplies('stop', 'scheduled'), false)
+		assert.equal(utils.eventApplies('extend', 'running'), true)
+		assert.equal(utils.eventApplies('extend', 'finished'), false)
+		assert.equal(utils.eventApplies('pause', 'running'), true)
+		assert.equal(utils.eventApplies('pause', 'paused'), false)
+		assert.equal(utils.eventApplies('resume', 'paused'), true)
+		assert.equal(utils.eventApplies('resume', 'running'), false)
+		assert.equal(utils.eventApplies('bogus', 'running'), false)
+	})
+
+	it('localTimeHms formats a Date as local HH:MM:SS', () => {
+		const d = new Date(2025, 0, 1, 9, 5, 3)
+		assert.equal(utils.localTimeHms(d), '09:05:03')
+	})
+
+	it('bookmarkText trims, defaults to "Marker" and optionally appends the local time', () => {
+		const d = new Date(2025, 0, 1, 9, 5, 3)
+		assert.equal(utils.bookmarkText('Intro', false, d), 'Intro')
+		assert.equal(utils.bookmarkText('  Intro  ', false, d), 'Intro')
+		assert.equal(utils.bookmarkText('', false, d), 'Marker')
+		assert.equal(utils.bookmarkText(undefined, false, d), 'Marker')
+		assert.equal(utils.bookmarkText('Intro', true, d), 'Intro 09:05:03')
+		assert.equal(utils.bookmarkText('', true, d), 'Marker 09:05:03')
+	})
+
+	it('emptyState has the target 3.0.0 shape (doc/PARITY.md §1 state shape target)', () => {
 		const s = utils.emptyState()
 		assert.deepEqual(Object.keys(s).sort(), [
 			'afu',
 			'channels',
-			'connectivity',
 			'events',
 			'firmware',
 			'identity',
 			'inputs',
 			'lastConfigPreset',
+			'lastError',
 			'outputs',
+			'powerStatus',
+			'presetStatus',
 			'presets',
 			'recorders',
 			'singleTouch',
-			'speedtest',
 			'storages',
 			'systemStatus',
 		])
-		assert.deepEqual(s.events, { upcoming: null, ongoing: null })
+		assert.deepEqual(s.events, { upcoming: null, ongoing: null, list: [] })
+		assert.deepEqual(s.channels, {})
+		assert.deepEqual(s.presets, [])
+		assert.deepEqual(s.afu, [])
+		// connectivity, speedtest and per-entity encoders/metadata/lastFile are gone (removed with the
+		// features that read them; see doc/PARITY.md §2.6)
+		assert.equal('connectivity' in s, false)
+		assert.equal('speedtest' in s, false)
 	})
 })

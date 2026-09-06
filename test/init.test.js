@@ -10,6 +10,7 @@ const {
 	runFeedback,
 } = require('./harness')
 const { startMockPearl } = require('./mock-pearl')
+const { PRESET_CATEGORY_IDS } = require('../src/presets')
 
 const VARIABLE_ID_RE = /^[a-zA-Z0-9_-]+$/
 
@@ -43,7 +44,7 @@ describe('init against a v2.0 device', () => {
 		assert.equal(instance.currentStatus, InstanceStatus.Ok)
 	})
 
-	it('populates every state domain', () => {
+	it('populates every state domain (doc/PARITY.md §1 state shape target)', () => {
 		const s = instance.state
 		assert.deepEqual(Object.keys(s.channels).sort(), ['1', '2'])
 		assert.equal(s.channels['1'].name, 'HDMI-A')
@@ -54,13 +55,13 @@ describe('init against a v2.0 device', () => {
 		assert.deepEqual(Object.keys(s.channels['1'].publishers).sort(), ['0', '1'])
 		assert.equal(s.channels['1'].publishers['1'].status.state, 'started')
 		assert.equal(s.channels['1'].publishers['0'].type, 'rtmp')
-		assert.equal(s.channels['1'].encoders.length, 2)
+		assert.equal('encoders' in s.channels['1'], false, 'encoders were dropped from the state (§2.6)')
 		assert.deepEqual(Object.keys(s.channels['2'].publishers), [])
 
 		assert.deepEqual(Object.keys(s.recorders).sort(), ['1', '2', 'm1'])
 		assert.equal(s.recorders['1'].status.state, 'started')
 		assert.equal(s.recorders['m1'].multisource, true)
-		assert.equal(s.recorders['1'].lastFile.name, 'HDMI-A_Dec11_17-32-30')
+		assert.equal('lastFile' in s.recorders['1'], false, 'archive/lastFile was dropped (§2.6, poll_archive removed)')
 
 		assert.deepEqual(Object.keys(s.inputs).sort(), [
 			'SRT1',
@@ -74,6 +75,7 @@ describe('init against a v2.0 device', () => {
 		assert.equal(s.inputs['analog-a'].audio, true)
 		assert.deepEqual(Object.keys(s.inputs['analog-a'].levels).sort(), ['peak', 'rms'])
 		assert.equal(s.inputs['analog-a'].audioState, 'active')
+		assert.equal(s.inputs['analog-a'].settings.local_audio.gain, 27, 'audio settings cache for _gain/_delay')
 		assert.deepEqual(Object.keys(s.outputs), ['D1'])
 		assert.equal(s.outputs.D1.source, undefined)
 		assert.deepEqual(Object.keys(s.storages).sort(), ['external', 'main', 'maintenance'])
@@ -86,84 +88,31 @@ describe('init against a v2.0 device', () => {
 		)
 		assert.equal(s.events.upcoming.title, 'Example event')
 		assert.equal(s.events.ongoing, null)
+		assert.equal(s.events.list.length, 1, 'the polled event list (D5) feeds choicesEventRefs')
 		assert.equal(s.afu[0].status.state, 'idle')
 		assert.equal(s.systemStatus.cpuload, 25)
 		assert.equal(s.firmware.version, '4.24.1')
 		assert.equal(s.identity.name, 'Pearl Mini')
 	})
 
-	it('sends the v2 boolean flags to GET /channels', () => {
+	it('sends the v2 boolean flags to GET /channels (no "encoders" flag any more)', () => {
 		const req = mock.requests.find((r) => r.method === 'GET' && r.path === '/api/v2.0/channels')
 		assert.ok(req)
 		assert.deepEqual(req.query, {
 			publishers: 'true',
 			'publishers-status': 'true',
-			encoders: 'true',
 			active_layout: 'true',
 		})
 	})
 
-	it('fetches the legacy layouts and metadata per channel', () => {
+	it('fetches the legacy layouts per channel', () => {
 		assert.ok(mock.requests.some((r) => r.path === '/api/channels/1/layouts'))
 		assert.ok(mock.requests.some((r) => r.path === '/api/channels/2/layouts'))
-		assert.ok(mock.requests.some((r) => r.path === '/admin/channel1/get_params.cgi'))
-		assert.deepEqual(instance.metadata['1'], { title: 'Morning Show', author: 'Epiphan', rec_prefix: 'HDMI-A' })
 	})
 
-	it('exposes the expected variable values', () => {
-		const v = instance.variableValues
-		assert.equal(v.channel_1_name, 'HDMI-A')
-		assert.equal(v.channel_1_active_layout, 'Default')
-		assert.equal(v.channel_1_active_layout_id, '1')
-		assert.equal(v.channel_1_resolution, '1920x1080')
-		assert.equal(v.channel_1_publishers_count, 2)
-		assert.equal(v.channel_1_streaming_count, 1)
-		assert.equal(v.channel_1_metadata_title, 'Morning Show')
-		assert.equal(v.stream_1_1_state, 'started')
-		assert.equal(v.stream_1_1_bitrate, 3.61)
-		assert.equal(v.stream_1_1_type, 'srt')
-		assert.equal(v.stream_1_1_duration_hms, '00:03:08')
-		assert.equal(v.stream_1_0_state, 'stopped')
-		assert.equal(v.recorder_1_state, 'started')
-		assert.equal(v.recorder_1_duration, 58)
-		assert.equal(v.recorder_1_duration_hms, '00:00:58')
-		assert.equal(v.recorder_1_last_file_name, 'HDMI-A_Dec11_17-32-30.mp4')
-		assert.equal(v.recorder_1_last_file_size_mb, 388.3)
-		assert.equal(v.recorders_active_count, 1)
-		assert.equal(v.publishers_active_count, 1)
-		assert.equal(v['input_hdmi-a_name'], 'HDMI-A')
-		assert.equal(v['input_analog-a_type'], 'embedded')
-		assert.equal(typeof v['input_analog-a_peak_dbfs'], 'number')
-		assert.match(String(v['input_analog-a_level_text']), /^-\d+ dBFS$/)
-		assert.equal(v['input_sdi-a_level_text'], 'No signal')
-		assert.equal(v.output_D1_name, 'HDMI')
-		assert.equal(v.output_D1_source, '')
-		assert.equal(v.storage_main_state, 'ready')
-		assert.equal(v.storage_main_free_percent, 74.8)
-		assert.equal(v.storage_main_total_gb, 14.7)
-		assert.equal(v.storage_external_free_percent, '')
-		assert.equal(v.stc_0_pressed, false)
-		assert.equal(v.stc_0_status, true)
-		assert.equal(v.stc_0_recorders_total, 3)
-		assert.equal(v.event_upcoming_title, 'Example event')
-		assert.equal(v.event_upcoming_id, '782ec0f4bbcc48e2a42a44eea5e69dc5')
-		assert.match(String(v.event_upcoming_starts_in_hms), /^00:(59|60):\d\d$|^01:00:00$/)
-		assert.equal(v.event_ongoing_title, '')
-		assert.equal(v.afu_state, 'idle')
-		assert.equal(v.afu_protocol, 'webdav')
-		assert.equal(v.firmware_version, '4.24.1')
-		assert.equal(v.product_name, 'Pearl Mini')
-		assert.equal(v.product_id, 44)
-		assert.equal(v.identity_name, 'Pearl Mini')
-		assert.equal(v.system_status_cpuload, 25)
-		assert.equal(v.system_status_uptime_hms, '01:31:30')
-		assert.equal(v.config_presets, 'Default,Show A')
-		assert.equal(v.connectivity_external_ip, '')
-	})
-
-	it('every variable id is valid and has a defined value', () => {
+	it('every variable id is valid, unique and has a defined value', () => {
 		const defs = instance.definitions.variables
-		assert.ok(defs.length > 100, `expected >100 variables, got ${defs.length}`)
+		assert.ok(defs.length > 50, `expected >50 variables, got ${defs.length}`)
 		const ids = new Set()
 		for (const def of defs) {
 			assert.match(def.variableId, VARIABLE_ID_RE, def.variableId)
@@ -174,13 +123,13 @@ describe('init against a v2.0 device', () => {
 		}
 	})
 
-	it('defines all actions, feedbacks and presets consistently', () => {
+	it('defines all actions, feedbacks and presets consistently (D7 target set, D15 categories)', () => {
 		const actions = instance.definitions.actions
 		const feedbacks = instance.definitions.feedbacks
 		const presets = instance.definitions.presets
 
-		assert.equal(Object.keys(actions).length, 36)
-		assert.equal(Object.keys(feedbacks).length, 21)
+		assert.equal(Object.keys(actions).length, 11)
+		assert.equal(Object.keys(feedbacks).length, 13)
 		for (const [id, def] of Object.entries(actions)) {
 			assert.equal(typeof def.callback, 'function', `action ${id} callback`)
 			assert.ok(Array.isArray(def.options), `action ${id} options`)
@@ -199,12 +148,15 @@ describe('init against a v2.0 device', () => {
 			assert.equal(preset.type, 'button')
 			assert.ok(preset.name && !('label' in preset), `preset ${id} uses name`)
 			for (const step of preset.steps) {
-				for (const action of [...step.down, ...step.up]) {
-					const def = actions[action.actionId]
-					assert.ok(def, `preset ${id} references unknown action ${action.actionId}`)
-					const ids = optionIds(def)
-					for (const key of Object.keys(action.options)) {
-						assert.ok(ids.has(key), `preset ${id}: action ${action.actionId} has no option ${key}`)
+				for (const list of [step.down, step.up, step.rotate_left, step.rotate_right]) {
+					if (!Array.isArray(list)) continue
+					for (const action of list) {
+						const def = actions[action.actionId]
+						assert.ok(def, `preset ${id} references unknown action ${action.actionId}`)
+						const ids = optionIds(def)
+						for (const key of Object.keys(action.options)) {
+							assert.ok(ids.has(key), `preset ${id}: action ${action.actionId} has no option ${key}`)
+						}
 					}
 				}
 			}
@@ -223,12 +175,10 @@ describe('init against a v2.0 device', () => {
 			}
 		}
 		const categories = new Set(Object.values(presets).map((p) => p.category))
-		const { PRESET_CATEGORY_IDS } = require('../src/presets')
 		for (const cat of PRESET_CATEGORY_IDS) {
 			assert.ok(categories.has(cat), `missing preset category ${cat}`)
 		}
-		// Outputs was removed outright (see the preset_categories setting) - it is not a selectable category
-		assert.ok(!categories.has('Outputs'))
+		assert.equal(categories.size, PRESET_CATEGORY_IDS.length)
 	})
 
 	it('sends HTTP basic authentication on every request', () => {
@@ -261,7 +211,7 @@ describe('init against a legacy-only device (firmware 4.20.0)', () => {
 		assert.ok(instance.calls.log.some((l) => l.level === 'info' && /legacy API/.test(l.message)))
 	})
 
-	it('has channels, layouts, publishers and recorders', () => {
+	it('has channels, layouts, publishers and recorders; v2-only domains stay empty', () => {
 		const s = instance.state
 		assert.deepEqual(Object.keys(s.channels).sort(), ['1', '2'])
 		assert.equal(s.channels['1'].layouts['1'].active, true)
@@ -271,19 +221,18 @@ describe('init against a legacy-only device (firmware 4.20.0)', () => {
 		assert.equal(s.channels['1'].publishers['0'].name, 'Stream 1')
 		assert.deepEqual(Object.keys(s.recorders).sort(), ['1', '2', 'm1'])
 		assert.equal(s.recorders['1'].status.state, 'started')
-		// v2-only domains stay empty
 		assert.deepEqual(s.inputs, {})
 		assert.deepEqual(s.outputs, {})
 		assert.deepEqual(s.storages, {})
 		assert.equal(s.systemStatus, undefined)
-		assert.equal(instance.variableValues.stream_1_1_state, 'started')
-		assert.equal(instance.variableValues.firmware_version, '')
+		assert.equal(instance.variableValues.channel_1_publisher_1_state, 'started')
+		assert.equal(instance.variableValues.firmware, '')
 	})
 
 	it('uses the v1 flags and per-channel publisher endpoints', () => {
 		const channels = mock.requests.find((r) => r.method === 'GET' && r.path === '/api/channels')
 		assert.ok(channels)
-		assert.deepEqual(channels.query, { publishers: 'yes', encoders: 'yes' })
+		assert.deepEqual(channels.query, { publishers: 'yes' })
 		assert.ok(mock.requests.some((r) => r.path === '/api/channels/1/publishers/type'))
 		assert.ok(mock.requests.some((r) => r.path === '/api/channels/1/publishers/status'))
 		assert.ok(mock.requests.some((r) => r.path === '/api/recorders/status'))
@@ -332,13 +281,14 @@ describe('init edge cases', () => {
 		}
 	})
 
-	it('normaliseConfig defaults HTTPS off, accepts self-signed certificates and moves port 80 to 443 with HTTPS', () => {
+	it('normaliseConfig defaults HTTPS off, accepts self-signed certificates, moves port 80 to 443 with HTTPS, and clamps poll_interval (D8)', () => {
 		installStub()
 		const { normaliseConfig } = require('../src/instance')
 		const plain = normaliseConfig({ host: '1.2.3.4' })
 		assert.equal(plain.use_https, false)
 		assert.equal(plain.accept_self_signed, true)
 		assert.equal(plain.host_port, '80')
+		assert.equal(plain.poll_interval, 2000, 'default when absent')
 		assert.equal(normaliseConfig({ host: '1.2.3.4', use_https: true }).host_port, '443')
 		assert.equal(normaliseConfig({ host: '1.2.3.4', use_https: true, host_port: '80' }).host_port, '443')
 		assert.equal(normaliseConfig({ host: '1.2.3.4', use_https: true, host_port: 80 }).host_port, '443')
@@ -354,6 +304,9 @@ describe('init edge cases', () => {
 			false,
 			'only a real boolean enables HTTPS',
 		)
+		assert.equal(normaliseConfig({ host: 'x', poll_interval: 50 }).poll_interval, 500, 'D8 floor')
+		assert.equal(normaliseConfig({ host: 'x', poll_interval: 999999 }).poll_interval, 300000, 'D8 ceiling')
+		assert.equal(normaliseConfig({ host: 'x', poll_interval: 10000 }).poll_interval, 10000)
 	})
 
 	it('sets BadConfig for an invalid port', async () => {
@@ -371,10 +324,10 @@ describe('init edge cases', () => {
 		const mock = await startMockPearl()
 		const instance = await createInstance({
 			mock,
-			config: { pollfreq: 9999, timeout: 10, preview_width: 10, preview_interval: -1 },
+			config: { poll_interval: 999999, timeout: 10, preview_width: 10, preview_interval: -1 },
 		})
 		try {
-			assert.equal(instance.config.pollfreq, 300)
+			assert.equal(instance.config.poll_interval, 300000)
 			assert.equal(instance.config.timeout, 1000)
 			assert.equal(instance.config.preview_width, 72)
 			assert.equal(instance.config.preview_interval, 0)
@@ -399,8 +352,8 @@ describe('init edge cases', () => {
 		const instance = await createInstance({ mock, config: { host: 'not a host!' } })
 		try {
 			assert.equal(instance.currentStatus, InstanceStatus.BadConfig)
-			assert.ok(instance.definitions.actions.refreshPoll, 'actions defined')
-			assert.ok(instance.definitions.feedbacks.channelPreview, 'feedbacks defined')
+			assert.ok(instance.definitions.actions.power, 'actions defined')
+			assert.ok(instance.definitions.feedbacks.preview, 'feedbacks defined')
 			assert.equal(typeof instance.definitions.presets, 'object')
 			assert.equal(mock.requests.length, 0)
 		} finally {
@@ -415,10 +368,10 @@ describe('configUpdated', () => {
 		const mock = await startMockPearl()
 		const instance = await createInstance({ mock }) // DEFAULT_CONFIG has preview_interval 0
 		try {
-			await subscribeFeedback(instance, 'channelPreview', { channel: '1' })
+			await subscribeFeedback(instance, 'preview', { source: 'channel', sourceId: '1' })
 			assert.equal(instance.previewSubscriptions.get('channel:1'), 1)
 			assert.equal(instance.previewTimer, undefined)
-			assert.deepEqual(await runFeedback(instance, 'channelPreview', { channel: '1' }), {})
+			assert.deepEqual(await runFeedback(instance, 'preview', { source: 'channel', sourceId: '1' }), {})
 
 			mock.requests.length = 0
 			await instance.configUpdated({ ...DEFAULT_CONFIG, host_port: mock.port, preview_interval: 1 })
@@ -426,16 +379,11 @@ describe('configUpdated', () => {
 
 			assert.ok(instance.previewTimer, 'preview timer started')
 			assert.equal(instance.previewSubscriptions.get('channel:1'), 1, 'subscription preserved')
-			// Companion is asked to re-send subscribe() for the placed preview feedbacks
-			assert.deepEqual(instance.subscribeFeedbacksCalls.at(-1), [
-				'channelPreview',
-				'inputPreview',
-				'outputPreview',
-				'channelLayoutPreview',
-			])
+			// Companion is asked to re-send subscribe() for the placed preview feedbacks (the new ids)
+			assert.deepEqual(instance.subscribeFeedbacksCalls.at(-1), ['preview', 'layout_preview'])
 			await instance.pollPreviews()
 			assert.ok(mock.requests.some((r) => r.path === '/api/v2.0/channels/1/preview'))
-			const result = await runFeedback(instance, 'channelPreview', { channel: '1' })
+			const result = await runFeedback(instance, 'preview', { source: 'channel', sourceId: '1' })
 			assert.equal(typeof result.png64, 'string')
 		} finally {
 			await instance.destroy()
@@ -456,12 +404,12 @@ describe('configUpdated', () => {
 
 			const running = instance.pollAll()
 			assert.ok(instance.pollPromise)
-			const update = instance.configUpdated({ ...DEFAULT_CONFIG, host_port: mock.port, pollfreq: 200 })
+			const update = instance.configUpdated({ ...DEFAULT_CONFIG, host_port: mock.port, poll_interval: 200000 })
 			await update
 			assert.equal(instance.timer, undefined, 'configUpdated returned before the device was contacted')
 			await Promise.all([running, instance.startupPromise])
 
-			assert.equal(instance.config.pollfreq, 200)
+			assert.equal(instance.config.poll_interval, 200000)
 			assert.equal(instance.pollCounter, 1, 'the poll that was running during the change does not count')
 			assert.equal(Object.keys(instance.state.channels).length, 2)
 			assert.equal(instance.systemUpdateCount, 4, 'empty definitions plus the first poll of the new config')

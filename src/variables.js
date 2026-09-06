@@ -1,5 +1,6 @@
-const { safeId, formatHms, formatClock, bytesToMb, bytesToGb, round1 } = require('./utils')
-const { levelSummary } = require('./audio')
+const { safeId, formatHms, formatClock, compactDuration, bytesToHuman, formatUptime, round1 } = require('./utils')
+const { levelSummary, readGain, readDelay } = require('./audio')
+const { CONFIRM_HINT } = require('./confirm')
 
 /**
  * Normalise a value for a Companion variable: undefined/null become '' (never undefined),
@@ -24,89 +25,152 @@ function num(value) {
 	return Number.isFinite(n) ? n : undefined
 }
 
-/**
- * HH:MM:SS for a duration in seconds, '' when unknown.
- *
- * @param {*} seconds
- * @returns {string}
- */
+/** HH:MM:SS for a duration in seconds, '' when unknown */
 function hms(seconds) {
 	const n = num(seconds)
 	return n === undefined ? '' : val(formatHms(Math.max(0, n)))
 }
 
-/**
- * HH:MM local clock time for a unix timestamp in seconds, '' when unknown.
- *
- * @param {*} unixSeconds
- * @returns {string}
- */
+/** m:ss / h:mm:ss for a duration in seconds, '' when unknown */
+function compact(seconds) {
+	const n = num(seconds)
+	return n === undefined ? '' : val(compactDuration(Math.max(0, n)))
+}
+
+/** HH:MM local clock time for a unix timestamp in seconds, '' when unknown */
 function clock(unixSeconds) {
 	const n = num(unixSeconds)
 	return n === undefined ? '' : val(formatClock(n))
 }
 
-/**
- * Bytes -> megabytes (1 decimal), '' when unknown.
- *
- * @param {*} bytes
- * @returns {number|string}
- */
-function mb(bytes) {
-	const n = num(bytes)
-	return n === undefined ? '' : val(bytesToMb(n))
+/** text of a { text, until } marker (preset/power status, storage hint) while `until` is in the future */
+function activeText(marker) {
+	if (!marker || typeof marker !== 'object') return ''
+	const until = num(marker.until)
+	if (until === undefined || Date.now() >= until) return ''
+	return val(marker.text)
 }
 
-/**
- * Bytes -> gigabytes (1 decimal), '' when unknown.
- *
- * @param {*} bytes
- * @returns {number|string}
- */
-function gb(bytes) {
-	const n = num(bytes)
-	return n === undefined ? '' : val(bytesToGb(n))
-}
-
-/**
- * part / total * 100 rounded to 1 decimal, '' when total is unknown or zero.
- *
- * @param {*} part
- * @param {*} total
- * @returns {number|string}
- */
-function percent(part, total) {
-	const p = num(part)
-	const t = num(total)
-	if (p === undefined || t === undefined || t <= 0) return ''
-	return val(round1((p / t) * 100))
-}
-
-/**
- * Human readable label prefix like "Channel 1 (HDMI-A)"; falls back to "Channel 1" when no name is known.
- *
- * @param {string} kind
- * @param {string} id
- * @param {string} [name]
- * @returns {string}
- */
+/** Human readable label prefix like "Channel 1 (HDMI-A)"; falls back to "Channel 1" when no name is known. */
 function labelFor(kind, id, name) {
 	const base = `${kind} ${id}`
 	const n = typeof name === 'string' ? name.trim() : ''
 	return n !== '' && n !== String(id) && n !== base ? `${base} (${n})` : base
 }
 
+/** Badge word for a recorder status (§3.2): REC / PAUSED / ERR / OFF / ? */
+function recorderWord(state) {
+	switch (state) {
+		case 'started':
+		case 'starting':
+			return 'REC'
+		case 'paused':
+			return 'PAUSED'
+		case 'error':
+			return 'ERR'
+		case 'stopped':
+		case 'disabled':
+			return 'OFF'
+		default:
+			return '?'
+	}
+}
+
+/** Badge word for a publisher status (§3.2): LIVE / STARTING / LISTEN / ERR / OFF / ? */
+function publisherWord(state) {
+	switch (state) {
+		case 'started':
+			return 'LIVE'
+		case 'starting':
+			return 'STARTING'
+		case 'listening':
+			return 'LISTEN'
+		case 'error':
+			return 'ERR'
+		case 'stopped':
+			return 'OFF'
+		default:
+			return '?'
+	}
+}
+
+/**
+ * Aggregate status of a list of {status:{state}} entities: the first status of `order` found among
+ * them, or `fallback` when none matches (including an empty list). Mirrors the recorder_state /
+ * stream_state feedbacks' "all" aggregate so the *_all_state_word / *_publishers_state_word variables
+ * agree with the buttons that use those feedbacks.
+ *
+ * @param {Array<{status?: {state?: string}}>} entities
+ * @param {string[]} order states checked in priority order
+ * @param {string} fallback
+ * @returns {string}
+ */
+function aggregateState(entities, order, fallback) {
+	const states = new Set(entities.map((e) => e?.status?.state))
+	for (const candidate of order) {
+		if (states.has(candidate)) return candidate
+	}
+	return fallback
+}
+const RECORDER_AGGREGATE_ORDER = ['started', 'starting', 'paused', 'error']
+const PUBLISHER_AGGREGATE_ORDER = ['started', 'starting', 'listening', 'error']
+
+/** Command a toggle would send for an event in `status`, or '' when nothing applies (see utils.eventToggleOp). */
+function toggleWord(status) {
+	switch (status) {
+		case 'running':
+			return 'PAUSE'
+		case 'paused':
+			return 'RESUME'
+		case 'scheduled':
+			return 'START'
+		default:
+			return ''
+	}
+}
+
+/** "12:30 left" / "in 5:00" / "Starting…" text for an event that is running, paused or scheduled. */
+function ongoingTimeText(ongoing, nowSeconds) {
+	if (!ongoing) return 'No ongoing event'
+	const remaining = compact(Math.max(0, num(ongoing.finish) - nowSeconds))
+	return `${remaining} left`
+}
+function upcomingTimeText(upcoming, nowSeconds) {
+	if (!upcoming) return 'Nothing scheduled'
+	const untilStart = num(upcoming.start) - nowSeconds
+	return untilStart > 0 ? `in ${compact(untilStart)}` : 'Starting…'
+}
+
+/** "Uploading" / "Idle" / "Paused" / "Error" / "AFU off" for the active AFU entry (or none). */
+function pickAfu(afuList) {
+	const list = Array.isArray(afuList) ? afuList : []
+	if (list.length === 0) return undefined
+	return list.find((a) => a?.status?.state !== 'disabled') ?? list[0]
+}
+function afuWord(afu) {
+	switch (afu?.status?.state) {
+		case 'uploading':
+			return 'Uploading'
+		case 'paused':
+			return 'Paused'
+		case 'error':
+			return 'Error'
+		case 'idle':
+			return 'Idle'
+		default:
+			return 'AFU off'
+	}
+}
+
 /**
  * Build the complete set of variable definitions and values from the instance state.
- * Pure function of self.state, self.metadata and self.config; never throws on partial state.
+ * Pure function of self.state and self.confirmPending; never throws on partial state.
  *
- * @param {object} self instance (only state, metadata and config are read)
+ * @param {object} self instance (only state and confirmPending are read)
  * @returns {{ definitions: Array<{variableId: string, name: string}>, values: object }}
  */
 function buildVariables(self) {
 	const state = (self && self.state) || {}
-	const metadata = (self && self.metadata) || {}
-	const config = (self && self.config) || {}
 
 	const definitions = []
 	const values = {}
@@ -122,138 +186,233 @@ function buildVariables(self) {
 
 	const nowSeconds = Math.floor((self?.deviceNow?.() ?? Date.now()) / 1000)
 
+	// ---------------------------------------------------------------- system / identity / firmware / AFU
+	const sys = state.systemStatus || {}
+	const cpuLoad = num(sys.cpuload)
+	const cpuTemp = num(sys.cputemp)
+	const uptimeSeconds = num(sys.uptime)
+	add('cpu_load', 'CPU Load (%)', cpuLoad)
+	add('cpu_temp', 'CPU Temperature (C)', cpuTemp)
+	add('uptime_seconds', 'Uptime (s)', uptimeSeconds)
+	add('uptime', 'Uptime', uptimeSeconds === undefined ? '' : formatUptime(uptimeSeconds))
+	const statusParts = []
+	if (cpuTemp !== undefined) statusParts.push(`${Math.round(cpuTemp)}°C`)
+	if (uptimeSeconds !== undefined && uptimeSeconds > 0) statusParts.push(`up ${formatUptime(uptimeSeconds)}`)
+	add('system_status_text', 'System Status', statusParts.join(' · '))
+
+	const afuList = Array.isArray(state.afu) ? state.afu : []
+	const afuActive = pickAfu(afuList)
+	add(
+		'afu_state',
+		'AFU State',
+		afuList.map((a) => (a && a.status && a.status.state !== undefined ? a.status.state : '')).join(','),
+	)
+	add('afu_text', 'AFU Text', afuWord(afuActive))
+	add('afu_protocol', 'AFU Protocol', afuActive?.status?.protocol)
+	add('afu_queue_files', 'AFU Queue Files', num(afuActive?.status?.queue?.files))
+	add('afu_error', 'AFU Error', afuActive?.status?.error?.message)
+
+	const fw = state.firmware || {}
+	add('product_name', 'Product Name', fw.product_name)
+	add('firmware', 'Firmware Version', fw.version)
+	add('device_name', 'Device Name', state.identity?.name)
+
+	// ---------------------------------------------------------------- storages
+	const storages = state.storages || {}
+	for (const rawStid of Object.keys(storages)) {
+		const storage = storages[rawStid] || {}
+		const stid = safeId(rawStid)
+		const status = storage.status || {}
+		const state_ = status.state
+		const total = num(status.total)
+		const free = num(status.free)
+		const usedPct =
+			total !== undefined && total > 0 && free !== undefined ? ((total - free) / total) * 100 : undefined
+
+		add(`storage_${stid}_state`, `Storage ${rawStid} State`, state_)
+		add(`storage_${stid}_free`, `Storage ${rawStid} Free`, free === undefined ? '' : bytesToHuman(free))
+		add(`storage_${stid}_total`, `Storage ${rawStid} Total`, total === undefined ? '' : bytesToHuman(total))
+		add(`storage_${stid}_used_pct`, `Storage ${rawStid} Used (%)`, usedPct === undefined ? '' : round1(usedPct))
+
+		let text
+		let levelWord = ''
+		switch (state_) {
+			case 'ready':
+				text = total === undefined ? 'No data' : `free of ${bytesToHuman(total)}`
+				if (usedPct !== undefined && usedPct >= 97) levelWord = 'FULL'
+				else if (usedPct !== undefined && usedPct >= 90) levelWord = 'LOW'
+				break
+			case 'devro':
+				text = total === undefined ? 'No data' : `free of ${bytesToHuman(total)}`
+				levelWord = 'RO'
+				break
+			case 'nodev':
+				text = 'No media'
+				break
+			case 'dev':
+				text = 'Not ready'
+				break
+			case 'formatting':
+				text = 'Formatting…'
+				break
+			default:
+				text = 'No data'
+		}
+		add(`storage_${stid}_text`, `Storage ${rawStid} Text`, text)
+		add(`storage_${stid}_level_word`, `Storage ${rawStid} Level Word`, levelWord)
+		add(`storage_${stid}_hint`, `Storage ${rawStid} Hint`, activeText(storage.hint))
+	}
+
+	// ---------------------------------------------------------------- recorders
+	const recorders = state.recorders || {}
+	let recordersActive = 0
+	for (const rawRid of Object.keys(recorders)) {
+		const rec = recorders[rawRid] || {}
+		const rid = safeId(rawRid)
+		const status = rec.status || {}
+		const recLabel = labelFor('Recorder', rawRid, rec.name)
+		if (status.state === 'started') recordersActive++
+
+		add(`recorder_${rid}_name`, `${recLabel} Name`, rec.name)
+		add(`recorder_${rid}_state`, `${recLabel} State`, status.state)
+		add(`recorder_${rid}_state_word`, `${recLabel} State Word`, recorderWord(status.state))
+		add(`recorder_${rid}_duration`, `${recLabel} Duration (s)`, num(status.duration) ?? 0)
+		add(`recorder_${rid}_duration_text`, `${recLabel} Duration`, compact(status.duration ?? 0))
+		add(`recorder_${rid}_duration_hms`, `${recLabel} Duration (HH:MM:SS)`, hms(status.duration ?? 0))
+	}
+	add(
+		'recorder_all_state_word',
+		'All Recorders State Word',
+		recorderWord(aggregateState(Object.values(recorders), RECORDER_AGGREGATE_ORDER, 'stopped')),
+	)
+	add('recorders_active_count', 'Recorders Active Count', recordersActive)
+
 	// ---------------------------------------------------------------- channels + publishers
 	const channels = state.channels || {}
-	let publishersActive = 0
-
 	for (const rawCid of Object.keys(channels)) {
 		const channel = channels[rawCid] || {}
 		const cid = safeId(rawCid)
 		const chLabel = labelFor('Channel', rawCid, channel.name)
 
 		add(`channel_${cid}_name`, `${chLabel} Name`, channel.name)
-
-		const layouts = Object.values(channel.layouts || {})
-		const legacyActive = layouts.find((l) => l && l.active)
-		const activeLayout = channel.active_layout || legacyActive
+		const activeLayout = channel.active_layout
 		add(`channel_${cid}_active_layout`, `${chLabel} Active Layout`, activeLayout ? activeLayout.name : '')
 		add(`channel_${cid}_active_layout_id`, `${chLabel} Active Layout ID`, activeLayout ? activeLayout.id : '')
 
-		const videoEncoder = (Array.isArray(channel.encoders) ? channel.encoders : []).find(
-			(e) => e && e.type === 'video',
-		)
-		const encStatus = (videoEncoder && videoEncoder.status) || {}
-		add(
-			`channel_${cid}_resolution`,
-			`${chLabel} Resolution`,
-			videoEncoder ? (encStatus.resolution ?? videoEncoder.resolution) : '',
-		)
-		add(`channel_${cid}_fps`, `${chLabel} FPS`, videoEncoder ? (encStatus.framerate ?? videoEncoder.framerate) : '')
-		add(
-			`channel_${cid}_bitrate`,
-			`${chLabel} Bitrate`,
-			videoEncoder ? (encStatus.bitrate ?? videoEncoder.bitrate) : '',
-		)
-
 		const publishers = channel.publishers || {}
-		const pids = Object.keys(publishers)
-		let streamingCount = 0
-
-		for (const rawPid of pids) {
+		for (const rawPid of Object.keys(publishers)) {
 			const pub = publishers[rawPid] || {}
 			const pid = safeId(rawPid)
 			const status = pub.status || {}
-			const pubName = typeof pub.name === 'string' ? pub.name.trim() : ''
-			const pubLabel = pubName !== '' ? `Stream ${rawCid}-${rawPid} (${pubName})` : `Stream ${rawCid}-${rawPid}`
+			const pubLabel = labelFor('Publisher', `${rawCid}-${rawPid}`, pub.name)
 
-			if (status.state === 'started') streamingCount++
-
-			add(`stream_${cid}_${pid}_name`, `${pubLabel} Name`, pub.name)
-			add(`stream_${cid}_${pid}_state`, `${pubLabel} State`, status.state)
-			add(`stream_${cid}_${pid}_bitrate`, `${pubLabel} Bitrate`, status.statistics?.current?.send_rate)
-			add(`stream_${cid}_${pid}_type`, `${pubLabel} Type`, pub.type)
-			add(`stream_${cid}_${pid}_duration`, `${pubLabel} Duration (s)`, num(status.duration))
-			add(`stream_${cid}_${pid}_duration_hms`, `${pubLabel} Duration (HH:MM:SS)`, hms(status.duration))
-			add(
-				`stream_${cid}_${pid}_configured`,
-				`${pubLabel} Configured`,
-				typeof status.is_configured === 'boolean' ? status.is_configured : '',
-			)
+			add(`channel_${cid}_publisher_${pid}_name`, `${pubLabel} Name`, pub.name)
+			add(`channel_${cid}_publisher_${pid}_type`, `${pubLabel} Type`, pub.type)
+			add(`channel_${cid}_publisher_${pid}_state`, `${pubLabel} State`, status.state)
+			add(`channel_${cid}_publisher_${pid}_state_word`, `${pubLabel} State Word`, publisherWord(status.state))
+			add(`channel_${cid}_publisher_${pid}_error`, `${pubLabel} Error`, status.description)
 		}
-
-		publishersActive += streamingCount
-		add(`channel_${cid}_publishers_count`, `${chLabel} Publishers Count`, pids.length)
-		add(`channel_${cid}_streaming_count`, `${chLabel} Streaming Count`, streamingCount)
-
-		// legacy content metadata (title/author/rec_prefix)
-		const md = metadata[rawCid]
-		if (md) {
-			add(`channel_${cid}_metadata_title`, `${chLabel} Metadata Title`, md.title)
-			add(`channel_${cid}_metadata_author`, `${chLabel} Metadata Author`, md.author)
-			add(`channel_${cid}_metadata_rec_prefix`, `${chLabel} Filename Prefix`, md.rec_prefix)
-		}
+		add(
+			`channel_${cid}_publishers_state_word`,
+			`${chLabel} Publishers State Word`,
+			publisherWord(aggregateState(Object.values(publishers), PUBLISHER_AGGREGATE_ORDER, 'stopped')),
+		)
 	}
 
-	// metadata for channels that are not (yet / anymore) in state
-	for (const rawCid of Object.keys(metadata)) {
-		if (channels[rawCid]) continue
-		const md = metadata[rawCid] || {}
-		const cid = safeId(rawCid)
-		const chLabel = labelFor('Channel', rawCid)
-		add(`channel_${cid}_metadata_title`, `${chLabel} Metadata Title`, md.title)
-		add(`channel_${cid}_metadata_author`, `${chLabel} Metadata Author`, md.author)
-		add(`channel_${cid}_metadata_rec_prefix`, `${chLabel} Filename Prefix`, md.rec_prefix)
+	// ---------------------------------------------------------------- single touch control
+	const singleTouch = state.singleTouch || {}
+	for (const rawStcid of Object.keys(singleTouch)) {
+		const stc = singleTouch[rawStcid] || {}
+		const stcid = safeId(rawStcid)
+		const st = stc.state || {}
+		const stcLabel = `Single Touch ${rawStcid}`
+		const pressed = typeof st.pressed === 'boolean' ? st.pressed : undefined
+		const statusOk = typeof st.status === 'boolean' ? st.status : undefined
+
+		add(`singletouch_${stcid}_active`, `${stcLabel} Active`, pressed)
+		add(`singletouch_${stcid}_status_ok`, `${stcLabel} Status OK`, statusOk)
+		const recA = num(st.recorders?.active)
+		const recT = num(st.recorders?.total)
+		const pubA = num(st.publishers?.active)
+		const pubT = num(st.publishers?.total)
+		add(
+			`singletouch_${stcid}_summary`,
+			`${stcLabel} Summary`,
+			recT === undefined && pubT === undefined
+				? ''
+				: `rec ${recA ?? 0}/${recT ?? 0} · str ${pubA ?? 0}/${pubT ?? 0}`,
+		)
+		add(
+			`singletouch_${stcid}_state_word`,
+			`${stcLabel} State Word`,
+			statusOk === false ? 'ERR' : pressed === true ? 'ON' : '',
+		)
 	}
 
-	// ---------------------------------------------------------------- recorders
-	const recorders = state.recorders || {}
-	let recordersActive = 0
+	// ---------------------------------------------------------------- events (CMS schedule)
+	const events = state.events || {}
+	const upcoming = events.upcoming || null
+	const ongoing = events.ongoing || null
 
-	for (const rawRid of Object.keys(recorders)) {
-		const rec = recorders[rawRid] || {}
-		const rid = safeId(rawRid)
-		const status = rec.status || {}
-		const recLabel = labelFor('Recorder', rawRid, rec.name)
+	add('event_upcoming_id', 'Upcoming Event ID', upcoming ? upcoming.id : '')
+	add('event_upcoming_title', 'Upcoming Event Title', upcoming ? upcoming.title : '')
+	add('event_upcoming_start', 'Upcoming Event Start (unix)', upcoming ? num(upcoming.start) : '')
+	add('event_upcoming_start_time', 'Upcoming Event Start Time', upcoming ? clock(upcoming.start) : '')
+	add(
+		'event_upcoming_starts_in_hms',
+		'Upcoming Event Starts In (HH:MM:SS)',
+		upcoming ? hms(num(upcoming.start) - nowSeconds) : '',
+	)
+	add('event_upcoming_time_text', 'Upcoming Event Time', upcomingTimeText(upcoming, nowSeconds))
+	add('event_upcoming_state_word', 'Upcoming Event State Word', upcoming ? 'SCHED' : '—')
 
-		if (status.state === 'started') recordersActive++
+	add('event_ongoing_id', 'Ongoing Event ID', ongoing ? ongoing.id : '')
+	add('event_ongoing_title', 'Ongoing Event Title', ongoing ? ongoing.title : '')
+	add('event_ongoing_status', 'Ongoing Event Status', ongoing ? ongoing.status : '')
+	add('event_ongoing_finish', 'Ongoing Event Finish (unix)', ongoing ? num(ongoing.finish) : '')
+	add('event_ongoing_finish_time', 'Ongoing Event Finish Time', ongoing ? clock(ongoing.finish) : '')
+	add(
+		'event_ongoing_remaining_hms',
+		'Ongoing Event Remaining (HH:MM:SS)',
+		ongoing ? hms(num(ongoing.finish) - nowSeconds) : '',
+	)
+	add('event_ongoing_time_text', 'Ongoing Event Time', ongoingTimeText(ongoing, nowSeconds))
+	add(
+		'event_ongoing_state_word',
+		'Ongoing Event State Word',
+		ongoing?.status === 'running' ? 'LIVE' : ongoing?.status === 'paused' ? 'PAUSED' : '—',
+	)
+	// PAUSE/RESUME for the ongoing event; falls back to the upcoming event's START when nothing is
+	// ongoing, so a single "toggle" preset button always shows the one sensible next command.
+	add(
+		'event_ongoing_toggle_command',
+		'Ongoing Event Toggle Command',
+		toggleWord(ongoing?.status) || toggleWord(upcoming?.status),
+	)
 
-		add(`recorder_${rid}_name`, `${recLabel} Name`, rec.name)
-		add(`recorder_${rid}_state`, `${recLabel} State`, status.state)
-		add(`recorder_${rid}_duration`, `${recLabel} Duration (s)`, num(status.duration) ?? 0)
-		add(`recorder_${rid}_duration_hms`, `${recLabel} Duration (HH:MM:SS)`, hms(status.duration ?? 0))
-		add(`recorder_${rid}_active`, `${recLabel} Active`, status.active)
-		add(`recorder_${rid}_total`, `${recLabel} Total`, status.total)
+	// aliases of the ongoing event (COMPANION-PARITY.md §9)
+	add('event_title', 'Event Title', ongoing ? ongoing.title : '')
+	add('event_state', 'Event State', ongoing ? ongoing.status : '')
+	add('event_remaining', 'Event Remaining (HH:MM:SS)', ongoing ? hms(num(ongoing.finish) - nowSeconds) : '')
 
-		if (config.poll_archive) {
-			const file = rec.lastFile || {}
-			let fileName = val(file.name)
-			if (fileName !== '' && file.extension && !String(fileName).endsWith(`.${file.extension}`)) {
-				fileName = `${fileName}.${file.extension}`
-			}
-			add(`recorder_${rid}_last_file_name`, `${recLabel} Last File Name`, fileName)
-			add(`recorder_${rid}_last_file_size_mb`, `${recLabel} Last File Size (MB)`, mb(file.size))
-			add(`recorder_${rid}_last_file_created`, `${recLabel} Last File Created`, file.created)
-		}
-	}
-
-	add('recorders_active_count', 'Recorders Active Count', recordersActive)
-	add('publishers_active_count', 'Publishers Active Count', publishersActive)
-
-	// ---------------------------------------------------------------- inputs
+	// ---------------------------------------------------------------- inputs (name always; audio-only fields gated)
 	const inputs = state.inputs || {}
 	for (const rawSid of Object.keys(inputs)) {
 		const input = inputs[rawSid] || {}
 		const sid = safeId(rawSid)
 		const inLabel = labelFor('Input', rawSid, input.name)
+		// _name exists for every input (video-only included - the Previews preset text needs it for a
+		// video-capable input that carries no audio); only the level/gain/delay fields are audio-only
 		add(`input_${sid}_name`, `${inLabel} Name`, input.name)
-		add(`input_${sid}_type`, `${inLabel} Type`, input.type)
-		if (input.audio === true) {
-			const level = levelSummary(input)
-			add(`input_${sid}_peak_dbfs`, `${inLabel} Peak (dBFS)`, level.peak)
-			add(`input_${sid}_peak_left`, `${inLabel} Peak Left (dBFS)`, level.left)
-			add(`input_${sid}_peak_right`, `${inLabel} Peak Right (dBFS)`, level.right)
-			add(`input_${sid}_level_text`, `${inLabel} Level Text`, level.text)
-		}
+		if (input.audio !== true) continue
+		const level = levelSummary(input)
+		add(`input_${sid}_peak_dbfs`, `${inLabel} Peak (dBFS)`, level.peak)
+		add(`input_${sid}_peak_left`, `${inLabel} Peak Left (dBFS)`, level.left)
+		add(`input_${sid}_peak_right`, `${inLabel} Peak Right (dBFS)`, level.right)
+		add(`input_${sid}_level_text`, `${inLabel} Level`, level.text)
+		const settings = input.settings
+		add(`input_${sid}_gain`, `${inLabel} Gain`, settings ? readGain(settings) : undefined)
+		add(`input_${sid}_delay`, `${inLabel} Delay (ms)`, settings ? readDelay(settings)?.value : undefined)
 	}
 
 	// ---------------------------------------------------------------- outputs
@@ -266,138 +425,25 @@ function buildVariables(self) {
 		add(`output_${did}_source`, `${outLabel} Source`, output.source)
 	}
 
-	// ---------------------------------------------------------------- storages
-	const storages = state.storages || {}
-	for (const rawStid of Object.keys(storages)) {
-		const storage = storages[rawStid] || {}
-		const stid = safeId(rawStid)
-		const status = storage.status || {}
-		const stLabel = `Storage ${rawStid}`
-		add(`storage_${stid}_state`, `${stLabel} State`, status.state)
-		add(`storage_${stid}_media_type`, `${stLabel} Media Type`, status.media_type)
-		add(`storage_${stid}_total_gb`, `${stLabel} Total (GB)`, gb(status.total))
-		add(`storage_${stid}_free_gb`, `${stLabel} Free (GB)`, gb(status.free))
-		add(`storage_${stid}_free_percent`, `${stLabel} Free (%)`, percent(status.free, status.total))
-	}
-
-	// ---------------------------------------------------------------- single touch control
-	const singleTouch = state.singleTouch || {}
-	for (const rawStcid of Object.keys(singleTouch)) {
-		const stc = singleTouch[rawStcid] || {}
-		const stcid = safeId(rawStcid)
-		const st = stc.state || {}
-		const stcLabel = `Single Touch ${rawStcid}`
-		add(`stc_${stcid}_pressed`, `${stcLabel} Pressed`, typeof st.pressed === 'boolean' ? st.pressed : '')
-		add(`stc_${stcid}_status`, `${stcLabel} Status OK`, typeof st.status === 'boolean' ? st.status : '')
-		add(`stc_${stcid}_recorders_active`, `${stcLabel} Recorders Active`, num(st.recorders?.active))
-		add(`stc_${stcid}_recorders_total`, `${stcLabel} Recorders Total`, num(st.recorders?.total))
-		add(`stc_${stcid}_publishers_active`, `${stcLabel} Publishers Active`, num(st.publishers?.active))
-		add(`stc_${stcid}_publishers_total`, `${stcLabel} Publishers Total`, num(st.publishers?.total))
-	}
-
-	// ---------------------------------------------------------------- AFU
-	const afuList = Array.isArray(state.afu) ? state.afu : []
-	const afuFirst = (afuList[0] && afuList[0].status) || {}
-	add(
-		'afu_state',
-		'AFU State',
-		afuList.map((a) => (a && a.status && a.status.state !== undefined ? a.status.state : '')).join(','),
-	)
-	add('afu_protocol', 'AFU Protocol', afuFirst.protocol)
-	add('afu_queue_files', 'AFU Queue Files', num(afuFirst.queue?.files))
-	add('afu_queue_size_mb', 'AFU Queue Size (MB)', mb(afuFirst.queue?.size))
-	add('afu_file_name', 'AFU Uploading File Name', afuFirst.file?.id)
-	add(
-		'afu_file_progress_percent',
-		'AFU Uploading File Progress (%)',
-		percent(afuFirst.file?.uploaded, afuFirst.file?.size),
-	)
-	add('afu_error', 'AFU Error', afuFirst.error?.message)
-
-	// ---------------------------------------------------------------- system status / firmware / identity
-	const sys = state.systemStatus || {}
-	add('system_status_date', 'System Status Date', sys.date)
-	add('system_status_uptime', 'System Status Uptime (s)', num(sys.uptime))
-	add('system_status_uptime_hms', 'System Status Uptime (HH:MM:SS)', hms(sys.uptime))
-	add('system_status_cpuload', 'System CPU Load (%)', num(sys.cpuload))
-	add('system_cpuload_high', 'System CPU Load High', typeof sys.cpuload_high === 'boolean' ? sys.cpuload_high : '')
-	add('system_status_cputemp', 'System CPU Temp (C)', num(sys.cputemp))
-	add('system_cputemp_threshold', 'System CPU Temp Threshold (C)', num(sys.cputemp_threshold))
-
-	const fw = state.firmware || {}
-	add('firmware_version', 'Firmware Version', fw.version)
-	add('firmware_revision', 'Firmware Revision', fw.revision)
-	add('product_name', 'Product Name', fw.product_name)
-	add('product_id', 'Product ID', num(fw.product_id))
-
-	const ident = state.identity || {}
-	add('identity_name', 'Identity Name', ident.name)
-	add('identity_location', 'Identity Location', ident.location)
-	add('identity_description', 'Identity Description', ident.description)
-
-	// ---------------------------------------------------------------- events
-	const events = state.events || {}
-	const upcoming = events.upcoming || null
-	const ongoing = events.ongoing || null
-
-	add('event_upcoming_id', 'Upcoming Event ID', upcoming ? upcoming.id : '')
-	add('event_upcoming_title', 'Upcoming Event Title', upcoming ? upcoming.title : '')
-	add('event_upcoming_start', 'Upcoming Event Start (unix)', upcoming ? num(upcoming.start) : '')
-	add('event_upcoming_start_time', 'Upcoming Event Start Time (HH:MM)', upcoming ? clock(upcoming.start) : '')
-	add(
-		'event_upcoming_starts_in_hms',
-		'Upcoming Event Starts In (HH:MM:SS)',
-		upcoming && num(upcoming.start) !== undefined ? hms(num(upcoming.start) - nowSeconds) : '',
-	)
-
-	add('event_ongoing_id', 'Ongoing Event ID', ongoing ? ongoing.id : '')
-	add('event_ongoing_title', 'Ongoing Event Title', ongoing ? ongoing.title : '')
-	add('event_ongoing_status', 'Ongoing Event Status', ongoing ? ongoing.status : '')
-	add('event_ongoing_finish', 'Ongoing Event Finish (unix)', ongoing ? num(ongoing.finish) : '')
-	add('event_ongoing_finish_time', 'Ongoing Event Finish Time (HH:MM)', ongoing ? clock(ongoing.finish) : '')
-	add(
-		'event_ongoing_remaining_hms',
-		'Ongoing Event Remaining (HH:MM:SS)',
-		ongoing && num(ongoing.finish) !== undefined ? hms(num(ongoing.finish) - nowSeconds) : '',
-	)
-
-	// ---------------------------------------------------------------- connectivity
-	const conn = state.connectivity || {}
-	add('connectivity_external_ip', 'Connectivity External IP', conn.external_ip)
-	add('connectivity_mdns', 'Connectivity mDNS Name', conn.mdns)
-	add('connectivity_dns', 'Connectivity DNS', conn.dns)
-	add('connectivity_http', 'Connectivity HTTP', conn.http)
-	add('connectivity_https', 'Connectivity HTTPS', conn.https)
-	add('connectivity_captive_portal', 'Connectivity Captive Portal', conn.captive_portal)
-	add('connectivity_icmp', 'Connectivity ICMP', conn.icmp)
-	add('connectivity_epiphan_edge', 'Connectivity Epiphan Edge', conn.epiphan_edge)
-	add('connectivity_vtun', 'Connectivity VTUN', conn.vtun)
-
-	// ---------------------------------------------------------------- speed test
-	const speed = state.speedtest || {}
-	const bandwidth = num(speed.bandwidth)
-	add(
-		'speedtest_bandwidth_mbps',
-		'Speed Test Bandwidth (Mbps)',
-		bandwidth === undefined ? '' : round1(bandwidth / 1000000),
-	)
-	add('speedtest_protocol', 'Speed Test Protocol', speed.protocol)
-	add('speedtest_mode', 'Speed Test Mode', speed.mode)
-	add('speedtest_duration', 'Speed Test Duration (s)', num(speed.duration))
-	add('speedtest_udp_loss', 'Speed Test UDP Loss', num(speed.udp?.loss))
-
 	// ---------------------------------------------------------------- configuration presets
 	const presets = Array.isArray(state.presets) ? state.presets : []
 	add(
-		'config_presets',
-		'Configuration Presets',
+		'preset_names',
+		'Configuration Preset Names',
 		presets
 			.map((p) => (p && p.name !== undefined ? String(p.name) : ''))
 			.filter((n) => n !== '')
 			.join(','),
 	)
 	// optimistic: last preset applied through this connection, not confirmed by the device (no read endpoint)
-	add('last_config_preset', 'Last Applied Configuration Preset', state.lastConfigPreset?.name)
+	add('preset_last_applied', 'Last Applied Configuration Preset', state.lastConfigPreset?.name)
+	add('preset_status', 'Configuration Preset Status', activeText(state.presetStatus))
+
+	// ---------------------------------------------------------------- power / confirm / errors
+	add('power_status', 'Power Status', activeText(state.powerStatus))
+	const pending = self?.confirmPending
+	add('confirm_hint', 'Confirm Hint', pending && Date.now() < pending.until ? CONFIRM_HINT : '')
+	add('last_error', 'Last Error', state.lastError)
 
 	return { definitions, values }
 }

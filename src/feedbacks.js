@@ -1,57 +1,73 @@
-const { combineRgb } = require('@companion-module/base')
-const { splitPair } = require('./utils')
-
-const WHITE = combineRgb(255, 255, 255)
-const RED = combineRgb(255, 0, 0)
-const GREEN = combineRgb(0, 204, 0)
-const BLUE = combineRgb(0, 102, 204)
-const ORANGE = combineRgb(255, 128, 0)
-const PURPLE = combineRgb(102, 0, 204)
-
-const PUBLISHER_STATES = [
-	{ id: 'started', label: 'Started' },
-	{ id: 'stopped', label: 'Stopped' },
-	{ id: 'starting', label: 'Starting' },
-	{ id: 'listening', label: 'Listening' },
-	{ id: 'error', label: 'Error' },
-]
+const { splitPair, eventApplies } = require('./utils')
+const { colors, stateStyle } = require('./style')
 
 const RECORDER_STATES = [
 	{ id: 'started', label: 'Started' },
-	{ id: 'stopped', label: 'Stopped' },
-	{ id: 'paused', label: 'Paused' },
 	{ id: 'starting', label: 'Starting' },
-	{ id: 'error', label: 'Error' },
-	{ id: 'disabled', label: 'Disabled' },
-]
-
-const STORAGE_STATES = [
-	{ id: 'ready', label: 'Ready' },
-	{ id: 'nodev', label: 'No device' },
-	{ id: 'dev', label: 'Device present (not mounted)' },
-	{ id: 'devro', label: 'Device read-only' },
-	{ id: 'formatting', label: 'Formatting' },
-]
-
-const AFU_STATES = [
-	{ id: 'idle', label: 'Idle' },
 	{ id: 'paused', label: 'Paused' },
-	{ id: 'uploading', label: 'Uploading' },
 	{ id: 'error', label: 'Error' },
+	{ id: 'stopped', label: 'Stopped' },
 	{ id: 'disabled', label: 'Disabled' },
 ]
+/** aggregate order for recorderId 'all': the first of these found among the recorders wins */
+const RECORDER_AGGREGATE_ORDER = ['started', 'starting', 'paused', 'error']
 
-const EVENT_WHICH = [
-	{ id: 'upcoming', label: 'An upcoming event is scheduled' },
-	{ id: 'running', label: 'Ongoing event is running' },
-	{ id: 'paused', label: 'Ongoing event is paused' },
-	{ id: 'ongoing', label: 'An event is ongoing (running or paused)' },
+const PUBLISHER_STATES = [
+	{ id: 'started', label: 'Started' },
+	{ id: 'starting', label: 'Starting' },
+	{ id: 'listening', label: 'Listening' },
+	{ id: 'error', label: 'Error' },
+	{ id: 'stopped', label: 'Stopped' },
+]
+/** aggregate order for publisherId '<cid>-all': the first of these found among the channel's publishers wins */
+const PUBLISHER_AGGREGATE_ORDER = ['started', 'starting', 'listening', 'error']
+
+const SINGLETOUCH_STATES = [
+	{ id: 'on', label: 'On (pressed)' },
+	{ id: 'error', label: 'Error' },
+]
+
+const EVENT_STATES = [
+	{ id: 'running', label: 'Running' },
+	{ id: 'paused', label: 'Paused' },
+	{ id: 'ongoing', label: 'Ongoing (running or paused)' },
+	{ id: 'scheduled', label: 'Scheduled' },
+	{ id: 'finished', label: 'Finished' },
+	{ id: 'none', label: 'None' },
+]
+
+const EVENT_APPLIES_OPS = [
+	{ id: 'start', label: 'Start' },
+	{ id: 'stop', label: 'Stop' },
+	{ id: 'pause', label: 'Pause' },
+	{ id: 'resume', label: 'Resume' },
+	{ id: 'extend', label: 'Extend' },
+]
+
+const SYSTEM_CONDITIONS = [
+	{ id: 'cpu_high', label: 'CPU load high' },
+	{ id: 'cpu_hot', label: 'CPU temperature high' },
+	{ id: 'afu_uploading', label: 'AFU uploading' },
+	{ id: 'afu_paused', label: 'AFU paused' },
+	{ id: 'afu_error', label: 'AFU error' },
+	{ id: 'afu_idle', label: 'AFU idle' },
+	{ id: 'afu_off', label: 'AFU off (disabled or none)' },
+]
+
+const STORAGE_LEVELS = [
+	{ id: 'low', label: 'Low (90% or more used)' },
+	{ id: 'full', label: 'Full (97% or more used)' },
+	{ id: 'ro', label: 'Read-only' },
+	{ id: 'nomedia', label: 'No media' },
+	{ id: 'notready', label: 'Not ready' },
+	{ id: 'formatting', label: 'Formatting' },
+	{ id: 'ok', label: 'OK' },
 ]
 
 /**
- * Build the preview cache key for a preview feedback, or null when the option is missing.
+ * Build the preview cache key for the preview / layout preview feedbacks, or null when the id is missing.
  *
- * @param {'channel'|'input'|'output'} kind
+ * @param {string} kind 'channel' | 'input' | 'output' | 'layout'
  * @param {unknown} id
  * @returns {string|null}
  */
@@ -61,7 +77,7 @@ function previewKey(kind, id) {
 }
 
 /**
- * Preview feedbacks are enabled only when the preview interval is > 0.
+ * Preview feedbacks (and the audio meter) are enabled only when the preview interval is > 0.
  *
  * @param {object} self instance
  * @returns {boolean}
@@ -72,11 +88,10 @@ function previewsEnabled(self) {
 }
 
 /**
- * Register interest in a preview image. Increments the subscription counter and
- * triggers one immediate preview poll so the first image appears without waiting.
- * The key is registered even while previews are disabled (preview_interval 0): Companion calls
- * subscribe only once per feedback, so the subscription has to survive a later config change that
- * enables previews. pollPreviews() itself is a no-op while previews are disabled.
+ * Register interest in a preview image. Increments the subscription counter and triggers one
+ * immediate preview poll so the first image appears without waiting. The key is registered even
+ * while previews are disabled (preview_interval 0): Companion calls subscribe only once per feedback,
+ * so the subscription has to survive a later config change that enables previews.
  *
  * @param {object} self instance
  * @param {string|null} key
@@ -117,45 +132,89 @@ function unsubscribePreview(self, key) {
 }
 
 /**
- * Build an advanced preview feedback definition for a channel, input or output.
+ * Register interest in an input's level meter (Phase 3 draws the bars; for now this only tracks
+ * ref-counts so the poller/render code arriving in Phase 3 has somewhere to read subscriptions from).
  *
  * @param {object} self instance
- * @param {'channel'|'input'|'output'} kind
- * @param {string} label
- * @param {Array<{id: string, label: string}>} choices
- * @returns {object} feedback definition
+ * @param {string} key input id
  */
-function previewFeedback(self, kind, label, choices) {
-	return {
-		type: 'advanced',
-		name: `${label} preview image`,
-		description: `Show a live preview image of the selected ${kind} on the button (requires preview interval > 0 in the connection settings)`,
-		options: [
-			{
-				type: 'dropdown',
-				label,
-				id: kind,
-				choices,
-				default: self.firstId(choices),
-			},
-		],
-		callback: (feedback) => {
-			try {
-				if (!previewsEnabled(self)) return {}
-				const key = previewKey(kind, feedback.options[kind])
-				const png64 = key ? self.previews?.[key]?.png64 : undefined
-				return typeof png64 === 'string' && png64.length > 0 ? { png64 } : {}
-			} catch (err) {
-				self.log('error', `preview feedback failed: ${err?.message ?? err}`)
-				return {}
-			}
-		},
-		subscribe: (feedback) => {
-			subscribePreview(self, previewKey(kind, feedback.options[kind]))
-		},
-		unsubscribe: (feedback) => {
-			unsubscribePreview(self, previewKey(kind, feedback.options[kind]))
-		},
+function subscribeMeter(self, key) {
+	try {
+		if (!key) return
+		if (!(self.meterSubscriptions instanceof Map)) self.meterSubscriptions = new Map()
+		self.meterSubscriptions.set(key, (self.meterSubscriptions.get(key) || 0) + 1)
+	} catch (err) {
+		self.log('error', `audio meter subscribe failed for ${key}: ${err?.message ?? err}`)
+	}
+}
+
+/**
+ * Drop interest in an input's level meter.
+ *
+ * @param {object} self instance
+ * @param {string} key input id
+ */
+function unsubscribeMeter(self, key) {
+	try {
+		if (!key || !(self.meterSubscriptions instanceof Map)) return
+		const count = (self.meterSubscriptions.get(key) || 0) - 1
+		if (count > 0) self.meterSubscriptions.set(key, count)
+		else self.meterSubscriptions.delete(key)
+	} catch (err) {
+		self.log('error', `audio meter unsubscribe failed for ${key}: ${err?.message ?? err}`)
+	}
+}
+
+/**
+ * Aggregate status of a list of {status:{state}} entities: the first status of `order` found among
+ * them, or `fallback` when none matches (including an empty list).
+ *
+ * @param {Array<{status?: {state?: string}}>} entities
+ * @param {string[]} order states checked in priority order
+ * @param {string} fallback
+ * @returns {string}
+ */
+function aggregateState(entities, order, fallback) {
+	const states = new Set(entities.map((e) => e?.status?.state))
+	for (const candidate of order) {
+		if (states.has(candidate)) return candidate
+	}
+	return fallback
+}
+
+/**
+ * Resolve an event alias or a specific event id against the polled event snapshot, the same way the
+ * `event` action resolves it live against the device (utils.eventApplies mirrors the device's own rule
+ * for which fixed commands apply once resolved).
+ *
+ * @param {object} state instance state
+ * @param {string} ref alias (upcoming/ongoing/running/paused/completed) or a specific event id
+ * @returns {object|null} the event, or null when nothing matches
+ */
+function resolveEventRef(state, ref) {
+	const events = state?.events || {}
+	const list = Array.isArray(events.list) ? events.list : []
+	switch (ref) {
+		case 'upcoming':
+			return events.upcoming ?? null
+		case 'ongoing':
+			return events.ongoing ?? null
+		case 'running':
+			return events.ongoing?.status === 'running' ? events.ongoing : null
+		case 'paused':
+			return events.ongoing?.status === 'paused' ? events.ongoing : null
+		case 'completed': {
+			const finished = list.filter((e) => e && e.status === 'finished')
+			if (finished.length === 0) return null
+			return finished.reduce((a, b) => ((Number(b.finish) || 0) > (Number(a.finish) || 0) ? b : a))
+		}
+		default: {
+			const found = list.find((e) => e && String(e.id) === String(ref))
+			if (found) return found
+			if (events.upcoming && String(events.upcoming.id) === String(ref)) return events.upcoming
+			if (events.ongoing && String(events.ongoing.id) === String(ref)) return events.ongoing
+			return null
+		}
 	}
 }
 
@@ -164,602 +223,521 @@ module.exports = {
 	 * INTERNAL: Get the available feedbacks.
 	 *
 	 * @access protected
-	 * @since 1.0.0
-	 * @returns {Object} - the available feedbacks
+	 * @returns {Object} the available feedbacks
 	 */
 	getFeedbacks() {
 		const feedbacks = {}
 
-		// ---------------------------------------------------------------------
-		// Existing feedbacks (ids and option ids unchanged)
-		// ---------------------------------------------------------------------
+		// ------------------------------------------------------------------
+		// Recorder / stream
+		// ------------------------------------------------------------------
 
-		feedbacks['channelLayout'] = {
-			name: 'Change style on channel layout change',
+		feedbacks['recorder_state'] = {
 			type: 'boolean',
-			description: 'Change style if the specified layout is active',
-			defaultStyle: {
-				color: WHITE,
-				bgcolor: RED,
-			},
-			options: [
-				{
-					type: 'dropdown',
-					label: 'Channel',
-					id: 'channelIdlayoutId',
-					choices: this.choicesChannelLayout(),
-					default: this.firstId(this.choicesChannelLayout()),
-				},
-			],
-			callback: (feedback) => {
-				const pair = splitPair(feedback.options.channelIdlayoutId)
-				if (!pair) return false
-				const [channelId, layoutId] = pair
-
-				try {
-					return this.state.channels?.[channelId]?.layouts?.[layoutId]?.active === true
-				} catch (error) {
-					this.log(
-						'error',
-						`trying to read feedback for a non-existing layout (Channel ${channelId}, Layout ${layoutId}): ${error?.message ?? error}`,
-					)
-					return false
-				}
-			},
-		}
-
-		feedbacks['channelLayoutPreview'] = {
-			type: 'advanced',
-			name: 'Channel: layout preview',
-			description:
-				'Show a live preview image of this specific layout on its switch button, whether or not it is ' +
-				"currently active. Uses an undocumented endpoint (not in Epiphan's published REST API v2.0 " +
-				'specification, confirmed working by Epiphan) that renders a given layout directly; if a future ' +
-				'firmware removes it, this simply stops producing an image rather than erroring. ' +
-				'Requires preview interval > 0 in the connection settings.',
-			options: [
-				{
-					type: 'dropdown',
-					label: 'Channel / layout',
-					id: 'channelIdlayoutId',
-					choices: this.choicesChannelLayout(),
-					default: this.firstId(this.choicesChannelLayout()),
-				},
-			],
-			callback: (feedback) => {
-				try {
-					if (!previewsEnabled(this)) return {}
-					const pair = splitPair(feedback.options.channelIdlayoutId)
-					if (!pair) return {}
-					const png64 = this.previews?.[previewKey('layout', feedback.options.channelIdlayoutId)]?.png64
-					return typeof png64 === 'string' && png64.length > 0 ? { png64 } : {}
-				} catch (error) {
-					this.log('error', `layout preview feedback failed: ${error?.message ?? error}`)
-					return {}
-				}
-			},
-			subscribe: (feedback) => {
-				const pair = splitPair(feedback.options.channelIdlayoutId)
-				if (pair) subscribePreview(this, previewKey('layout', feedback.options.channelIdlayoutId))
-			},
-			unsubscribe: (feedback) => {
-				const pair = splitPair(feedback.options.channelIdlayoutId)
-				if (pair) unsubscribePreview(this, previewKey('layout', feedback.options.channelIdlayoutId))
-			},
-		}
-
-		feedbacks['streamingState'] = {
-			name: 'Change style if streaming',
-			type: 'boolean',
-			description: 'Change style if specified channel is streaming',
-			defaultStyle: {
-				color: WHITE,
-				bgcolor: GREEN,
-			},
-			options: [
-				{
-					type: 'dropdown',
-					label: 'Channel publisher',
-					id: 'channelIdpublisherId',
-					choices: this.choicesChannelPublishers(),
-					default: this.firstId(this.choicesChannelPublishers()),
-				},
-			],
-			callback: (feedback) => {
-				const pair = splitPair(feedback.options.channelIdpublisherId)
-				if (!pair) return false
-				const [channelId, publisherId] = pair
-
-				try {
-					const publishers = this.state.channels?.[channelId]?.publishers
-					if (!publishers) return false
-					if (publisherId === 'all') {
-						const states = Object.values(publishers).map((pub) => pub?.status?.state)
-						return states.length > 0 && !states.some((state) => state !== 'started')
-					}
-					return publishers[publisherId]?.status?.state === 'started'
-				} catch (error) {
-					this.log(
-						'error',
-						`trying to read feedback for a non-existing publisher (Channel ${channelId}, Publisher ${publisherId}): ${error?.message ?? error}`,
-					)
-					return false
-				}
-			},
-		}
-
-		feedbacks['recorderRecording'] = {
-			name: 'Change style if recording',
-			type: 'boolean',
-			description: 'Change style if channel/recorder is recording',
-			defaultStyle: {
-				color: WHITE,
-				bgcolor: GREEN,
-			},
-			options: [
-				{
-					type: 'dropdown',
-					label: 'Recorders',
-					id: 'recorderId',
-					choices: this.choicesRecorders(),
-					default: this.firstId(this.choicesRecorders()),
-				},
-			],
-			callback: (feedback) => {
-				try {
-					return this.state.recorders?.[feedback.options.recorderId]?.status?.state === 'started'
-				} catch (error) {
-					this.log(
-						'error',
-						`trying to read feedback for a non-existing recorder (${feedback.options.recorderId}): ${error?.message ?? error}`,
-					)
-					return false
-				}
-			},
-		}
-
-		// ---------------------------------------------------------------------
-		// Publishers / recorders
-		// ---------------------------------------------------------------------
-
-		feedbacks['publisherState'] = {
-			name: 'Publisher state',
-			type: 'boolean',
-			description: 'Change style if the selected publisher (stream) is in the selected state',
-			defaultStyle: {
-				color: WHITE,
-				bgcolor: GREEN,
-			},
-			options: [
-				{
-					type: 'dropdown',
-					label: 'Publisher',
-					id: 'channelIdpublisherId',
-					choices: this.choicesChannelPublishersOnly(),
-					default: this.firstId(this.choicesChannelPublishersOnly()),
-				},
-				{
-					type: 'dropdown',
-					label: 'State',
-					id: 'state',
-					choices: PUBLISHER_STATES,
-					default: 'started',
-				},
-			],
-			callback: (feedback) => {
-				try {
-					const pair = splitPair(feedback.options.channelIdpublisherId)
-					if (!pair) return false
-					const [channelId, publisherId] = pair
-					const state = this.state.channels?.[channelId]?.publishers?.[publisherId]?.status?.state
-					return state !== undefined && state === feedback.options.state
-				} catch (error) {
-					this.log('error', `publisherState feedback failed: ${error?.message ?? error}`)
-					return false
-				}
-			},
-		}
-
-		feedbacks['recorderState'] = {
 			name: 'Recorder state',
-			type: 'boolean',
-			description: 'Change style if the selected recorder is in the selected state',
-			defaultStyle: {
-				color: WHITE,
-				bgcolor: RED,
-			},
+			description:
+				'True while the selected recorder (or, for "All recorders", the aggregate of every recorder) is in the selected state.',
+			defaultStyle: stateStyle(colors.red),
 			options: [
 				{
 					type: 'dropdown',
-					label: 'Recorder',
 					id: 'recorderId',
-					choices: this.choicesRecorders(),
-					default: this.firstId(this.choicesRecorders()),
+					label: 'Recorder',
+					choices: this.choicesRecordersWithAll(),
+					default: 'all',
 				},
 				{
 					type: 'dropdown',
-					label: 'State',
 					id: 'state',
+					label: 'State',
 					choices: RECORDER_STATES,
 					default: 'started',
 				},
 			],
 			callback: (feedback) => {
 				try {
-					const state = this.state.recorders?.[feedback.options.recorderId]?.status?.state
-					return state !== undefined && state === feedback.options.state
-				} catch (error) {
-					this.log('error', `recorderState feedback failed: ${error?.message ?? error}`)
-					return false
-				}
-			},
-		}
-
-		feedbacks['anyRecording'] = {
-			name: 'Any recorder recording',
-			type: 'boolean',
-			description: 'Change style if at least one recorder is recording',
-			defaultStyle: {
-				color: WHITE,
-				bgcolor: RED,
-			},
-			options: [],
-			callback: () => {
-				try {
-					return Object.values(this.state.recorders ?? {}).some((rec) => rec?.status?.state === 'started')
-				} catch (error) {
-					this.log('error', `anyRecording feedback failed: ${error?.message ?? error}`)
-					return false
-				}
-			},
-		}
-
-		feedbacks['anyStreaming'] = {
-			name: 'Any publisher streaming',
-			type: 'boolean',
-			description: 'Change style if at least one publisher (stream) on any channel is started',
-			defaultStyle: {
-				color: WHITE,
-				bgcolor: GREEN,
-			},
-			options: [],
-			callback: () => {
-				try {
-					return Object.values(this.state.channels ?? {}).some((channel) =>
-						Object.values(channel?.publishers ?? {}).some((pub) => pub?.status?.state === 'started'),
-					)
-				} catch (error) {
-					this.log('error', `anyStreaming feedback failed: ${error?.message ?? error}`)
-					return false
-				}
-			},
-		}
-
-		// ---------------------------------------------------------------------
-		// Single touch control
-		// ---------------------------------------------------------------------
-
-		feedbacks['singleTouchPressed'] = {
-			name: 'Single touch control active',
-			type: 'boolean',
-			description: 'Change style if the selected single touch control is currently activated (pressed)',
-			defaultStyle: {
-				color: WHITE,
-				bgcolor: GREEN,
-			},
-			options: [
-				{
-					type: 'dropdown',
-					label: 'Single touch control',
-					id: 'stcId',
-					choices: this.choicesSingleTouch(),
-					default: this.firstId(this.choicesSingleTouch()),
-				},
-			],
-			callback: (feedback) => {
-				try {
-					return this.state.singleTouch?.[feedback.options.stcId]?.state?.pressed === true
-				} catch (error) {
-					this.log('error', `singleTouchPressed feedback failed: ${error?.message ?? error}`)
-					return false
-				}
-			},
-		}
-
-		feedbacks['singleTouchOk'] = {
-			name: 'Single touch control OK',
-			type: 'boolean',
-			description:
-				'Change style if all recorders and publishers of the selected single touch control started successfully',
-			defaultStyle: {
-				color: WHITE,
-				bgcolor: GREEN,
-			},
-			options: [
-				{
-					type: 'dropdown',
-					label: 'Single touch control',
-					id: 'stcId',
-					choices: this.choicesSingleTouch(),
-					default: this.firstId(this.choicesSingleTouch()),
-				},
-			],
-			callback: (feedback) => {
-				try {
-					return this.state.singleTouch?.[feedback.options.stcId]?.state?.status === true
-				} catch (error) {
-					this.log('error', `singleTouchOk feedback failed: ${error?.message ?? error}`)
-					return false
-				}
-			},
-		}
-
-		// ---------------------------------------------------------------------
-		// Storage
-		// ---------------------------------------------------------------------
-
-		feedbacks['storageState'] = {
-			name: 'Storage state',
-			type: 'boolean',
-			description: 'Change style if the selected storage is in the selected state',
-			defaultStyle: {
-				color: WHITE,
-				bgcolor: BLUE,
-			},
-			options: [
-				{
-					type: 'dropdown',
-					label: 'Storage',
-					id: 'storageId',
-					choices: this.choicesStorages(),
-					default: this.firstId(this.choicesStorages()),
-				},
-				{
-					type: 'dropdown',
-					label: 'State',
-					id: 'state',
-					choices: STORAGE_STATES,
-					default: 'ready',
-				},
-			],
-			callback: (feedback) => {
-				try {
-					const state = this.state.storages?.[feedback.options.storageId]?.status?.state
-					return state !== undefined && state === feedback.options.state
-				} catch (error) {
-					this.log('error', `storageState feedback failed: ${error?.message ?? error}`)
-					return false
-				}
-			},
-		}
-
-		feedbacks['storageFreeBelow'] = {
-			name: 'Storage free space below',
-			type: 'boolean',
-			description: 'Change style if the free space of the selected storage is below the given percentage',
-			defaultStyle: {
-				color: WHITE,
-				bgcolor: RED,
-			},
-			options: [
-				{
-					type: 'dropdown',
-					label: 'Storage',
-					id: 'storageId',
-					choices: this.choicesStorages(),
-					default: this.firstId(this.choicesStorages()),
-				},
-				{
-					type: 'number',
-					label: 'Free space below (%)',
-					id: 'percent',
-					default: 10,
-					min: 0,
-					max: 100,
-					step: 1,
-				},
-			],
-			callback: (feedback) => {
-				try {
-					const status = this.state.storages?.[feedback.options.storageId]?.status
-					const total = Number(status?.total)
-					const free = Number(status?.free)
-					const percent = Number(feedback.options.percent)
-					if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(free) || !Number.isFinite(percent)) {
-						return false
+					const rid = String(feedback.options.recorderId ?? 'all')
+					const state = feedback.options.state
+					const recorders = this.state.recorders || {}
+					if (rid === 'all') {
+						const agg = aggregateState(Object.values(recorders), RECORDER_AGGREGATE_ORDER, 'stopped')
+						return agg === state
 					}
-					return (free / total) * 100 < percent
+					return recorders[rid]?.status?.state === state
 				} catch (error) {
-					this.log('error', `storageFreeBelow feedback failed: ${error?.message ?? error}`)
+					this.log('error', `recorder_state feedback failed: ${error?.message ?? error}`)
 					return false
 				}
 			},
 		}
 
-		// ---------------------------------------------------------------------
-		// AFU / system
-		// ---------------------------------------------------------------------
-
-		feedbacks['afuState'] = {
-			name: 'Automatic file upload state',
+		feedbacks['stream_state'] = {
 			type: 'boolean',
-			description: 'Change style if any automatic file upload (AFU) destination is in the selected state',
-			defaultStyle: {
-				color: WHITE,
-				bgcolor: BLUE,
-			},
-			options: [
-				{
-					type: 'dropdown',
-					label: 'State',
-					id: 'state',
-					choices: AFU_STATES,
-					default: 'uploading',
-				},
-			],
-			callback: (feedback) => {
-				try {
-					const afu = this.state.afu
-					if (!Array.isArray(afu) || afu.length === 0) return false
-					return afu.some((entry) => entry?.status?.state === feedback.options.state)
-				} catch (error) {
-					this.log('error', `afuState feedback failed: ${error?.message ?? error}`)
-					return false
-				}
-			},
-		}
-
-		feedbacks['cpuLoadHigh'] = {
-			name: 'CPU load high',
-			type: 'boolean',
-			description: 'Change style if the device reports a high CPU load',
-			defaultStyle: {
-				color: WHITE,
-				bgcolor: RED,
-			},
-			options: [],
-			callback: () => {
-				try {
-					return this.state.systemStatus?.cpuload_high === true
-				} catch (error) {
-					this.log('error', `cpuLoadHigh feedback failed: ${error?.message ?? error}`)
-					return false
-				}
-			},
-		}
-
-		feedbacks['cpuTempHigh'] = {
-			name: 'CPU temperature high',
-			type: 'boolean',
-			description: 'Change style if the CPU temperature is at or above the device threshold',
-			defaultStyle: {
-				color: WHITE,
-				bgcolor: ORANGE,
-			},
-			options: [],
-			callback: () => {
-				try {
-					const temp = Number(this.state.systemStatus?.cputemp)
-					const threshold = Number(this.state.systemStatus?.cputemp_threshold)
-					if (!Number.isFinite(temp) || !Number.isFinite(threshold)) return false
-					return temp >= threshold
-				} catch (error) {
-					this.log('error', `cpuTempHigh feedback failed: ${error?.message ?? error}`)
-					return false
-				}
-			},
-		}
-
-		// ---------------------------------------------------------------------
-		// Events (CMS schedule)
-		// ---------------------------------------------------------------------
-
-		feedbacks['eventStatus'] = {
-			name: 'Event status',
-			type: 'boolean',
-			description: 'Change style depending on the scheduled (CMS) event status',
-			defaultStyle: {
-				color: WHITE,
-				bgcolor: PURPLE,
-			},
-			options: [
-				{
-					type: 'dropdown',
-					label: 'Condition',
-					id: 'which',
-					choices: EVENT_WHICH,
-					default: 'running',
-				},
-			],
-			callback: (feedback) => {
-				try {
-					const events = this.state.events ?? {}
-					switch (feedback.options.which) {
-						case 'upcoming':
-							return events.upcoming !== null && events.upcoming !== undefined
-						case 'ongoing':
-							return events.ongoing !== null && events.ongoing !== undefined
-						case 'running':
-							return events.ongoing?.status === 'running'
-						case 'paused':
-							return events.ongoing?.status === 'paused'
-						default:
-							return false
-					}
-				} catch (error) {
-					this.log('error', `eventStatus feedback failed: ${error?.message ?? error}`)
-					return false
-				}
-			},
-		}
-
-		// ---------------------------------------------------------------------
-		// Preview images (advanced)
-		// ---------------------------------------------------------------------
-
-		feedbacks['channelPreview'] = previewFeedback(this, 'channel', 'Channel', this.choicesChannel())
-		// audio-only inputs have no picture to preview (no VU meter feedback exists yet either)
-		feedbacks['inputPreview'] = previewFeedback(this, 'input', 'Input', this.choicesInputsWithVideo())
-		feedbacks['outputPreview'] = previewFeedback(this, 'output', 'Output', this.choicesOutputs())
-
-		// ---------------------------------------------------------------------
-		// Optimistic feedbacks: the Pearl API has no read endpoint for these, so they only reflect
-		// the last value this Companion connection itself set, not a value confirmed by the device.
-		// ---------------------------------------------------------------------
-
-		feedbacks['outputSourceOptimistic'] = {
-			type: 'boolean',
-			name: 'Output: source matches (optimistic)',
+			name: 'Stream state',
 			description:
-				'Highlights the source last selected for this output through this connection. The API has no way ' +
-				'to read the output source back, so this is not verified against the device — it goes stale if the ' +
-				'source is changed from the Pearl web UI or another controller.',
-			defaultStyle: { color: WHITE, bgcolor: BLUE },
+				'True while the selected publisher (or, for "All publishers", the aggregate of the channel\'s publishers) is in the selected state.',
+			defaultStyle: stateStyle(colors.green),
 			options: [
 				{
 					type: 'dropdown',
+					id: 'publisherId',
+					label: 'Publisher',
+					choices: this.choicesPublishers(),
+					default: this.firstId(this.choicesPublishers()),
+				},
+				{
+					type: 'dropdown',
+					id: 'state',
+					label: 'State',
+					choices: PUBLISHER_STATES,
+					default: 'started',
+				},
+			],
+			callback: (feedback) => {
+				try {
+					const pair = splitPair(String(feedback.options.publisherId ?? ''))
+					if (!pair) return false
+					const [cid, pid] = pair
+					const publishers = this.state.channels?.[cid]?.publishers
+					if (!publishers) return false
+					const state = feedback.options.state
+					if (pid === 'all') {
+						const agg = aggregateState(Object.values(publishers), PUBLISHER_AGGREGATE_ORDER, 'stopped')
+						return agg === state
+					}
+					return publishers[pid]?.status?.state === state
+				} catch (error) {
+					this.log('error', `stream_state feedback failed: ${error?.message ?? error}`)
+					return false
+				}
+			},
+		}
+
+		// ------------------------------------------------------------------
+		// Layout
+		// ------------------------------------------------------------------
+
+		feedbacks['layout_active'] = {
+			type: 'boolean',
+			name: 'Layout active',
+			description: 'True while the selected layout is the active layout of its channel.',
+			defaultStyle: stateStyle(colors.amber),
+			options: [
+				{
+					type: 'dropdown',
+					id: 'layoutId',
+					label: 'Layout',
+					choices: this.choicesLayouts(),
+					default: this.firstId(this.choicesLayouts()),
+				},
+			],
+			callback: (feedback) => {
+				try {
+					const pair = splitPair(String(feedback.options.layoutId ?? ''))
+					if (!pair) return false
+					const [cid, lid] = pair
+					return this.state.channels?.[cid]?.layouts?.[lid]?.active === true
+				} catch (error) {
+					this.log('error', `layout_active feedback failed: ${error?.message ?? error}`)
+					return false
+				}
+			},
+		}
+
+		feedbacks['layout_preview'] = {
+			type: 'advanced',
+			name: 'Layout preview',
+			description:
+				'Show a live preview image of this specific layout on its switch button, whether or not it is ' +
+				"currently active. Uses an undocumented endpoint (not in Epiphan's published REST API v2.0 " +
+				'specification, confirmed working by Epiphan) that renders a given layout directly. Requires ' +
+				'preview interval > 0 in the connection settings.',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'layoutId',
+					label: 'Layout',
+					choices: this.choicesLayouts(),
+					default: this.firstId(this.choicesLayouts()),
+				},
+			],
+			callback: (feedback) => {
+				try {
+					if (!previewsEnabled(this)) return {}
+					const pair = splitPair(String(feedback.options.layoutId ?? ''))
+					if (!pair) return {}
+					const png64 = this.previews?.[previewKey('layout', feedback.options.layoutId)]?.png64
+					return typeof png64 === 'string' && png64.length > 0 ? { png64 } : {}
+				} catch (error) {
+					this.log('error', `layout_preview feedback failed: ${error?.message ?? error}`)
+					return {}
+				}
+			},
+			subscribe: (feedback) => {
+				const pair = splitPair(String(feedback.options.layoutId ?? ''))
+				if (pair) subscribePreview(this, previewKey('layout', feedback.options.layoutId))
+			},
+			unsubscribe: (feedback) => {
+				const pair = splitPair(String(feedback.options.layoutId ?? ''))
+				if (pair) unsubscribePreview(this, previewKey('layout', feedback.options.layoutId))
+			},
+		}
+
+		// ------------------------------------------------------------------
+		// Single touch
+		// ------------------------------------------------------------------
+
+		feedbacks['singletouch_active'] = {
+			type: 'boolean',
+			name: 'Single touch state',
+			description: '"On" is true while pressed; "Error" is true while the control reports a failed start.',
+			defaultStyle: stateStyle(colors.green),
+			options: [
+				{
+					type: 'dropdown',
+					id: 'stcId',
+					label: 'Single touch control',
+					choices: this.choicesSingleTouch(),
+					default: this.preferredId(this.choicesSingleTouch(), '0'),
+				},
+				{
+					type: 'dropdown',
+					id: 'state',
+					label: 'State',
+					choices: SINGLETOUCH_STATES,
+					default: 'on',
+				},
+			],
+			callback: (feedback) => {
+				try {
+					const stc = this.state.singleTouch?.[feedback.options.stcId]
+					if (feedback.options.state === 'error') return stc?.state?.status === false
+					return stc?.state?.pressed === true
+				} catch (error) {
+					this.log('error', `singletouch_active feedback failed: ${error?.message ?? error}`)
+					return false
+				}
+			},
+		}
+
+		// ------------------------------------------------------------------
+		// Preview (channel / input / output)
+		// ------------------------------------------------------------------
+
+		feedbacks['preview'] = {
+			type: 'advanced',
+			name: 'Preview',
+			description:
+				'Show a live preview image of a channel, video input or output on the button (requires preview ' +
+				'interval > 0 in the connection settings). "Source" lists channels, inputs and outputs together; ' +
+				'pick the one matching "Source type".',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'source',
+					label: 'Source type',
+					choices: [
+						{ id: 'channel', label: 'Channel' },
+						{ id: 'input', label: 'Input' },
+						{ id: 'output', label: 'Output' },
+					],
+					default: 'channel',
+				},
+				{
+					type: 'dropdown',
+					id: 'sourceId',
+					label: 'Source',
+					choices: this.choicesPreviewSources(),
+					default: this.firstId(this.choicesPreviewSources()),
+				},
+			],
+			callback: (feedback) => {
+				try {
+					if (!previewsEnabled(this)) return {}
+					const key = previewKey(String(feedback.options.source ?? 'channel'), feedback.options.sourceId)
+					const png64 = key ? this.previews?.[key]?.png64 : undefined
+					return typeof png64 === 'string' && png64.length > 0 ? { png64 } : {}
+				} catch (error) {
+					this.log('error', `preview feedback failed: ${error?.message ?? error}`)
+					return {}
+				}
+			},
+			subscribe: (feedback) => {
+				subscribePreview(
+					this,
+					previewKey(String(feedback.options.source ?? 'channel'), feedback.options.sourceId),
+				)
+			},
+			unsubscribe: (feedback) => {
+				unsubscribePreview(
+					this,
+					previewKey(String(feedback.options.source ?? 'channel'), feedback.options.sourceId),
+				)
+			},
+		}
+
+		// ------------------------------------------------------------------
+		// Output
+		// ------------------------------------------------------------------
+
+		feedbacks['output_set'] = {
+			type: 'boolean',
+			name: 'Output source recently set',
+			description:
+				'True while this connection set the selected source on the selected output within the last 5 seconds. ' +
+				'The API has no way to read the output source back, so this only reflects what this connection itself ' +
+				'last sent, not a value confirmed by the device.',
+			defaultStyle: stateStyle(colors.green),
+			options: [
+				{
+					type: 'dropdown',
+					id: 'outputId',
 					label: 'Output',
-					id: 'output',
 					choices: this.choicesOutputs(),
 					default: this.firstId(this.choicesOutputs()),
 				},
 				{
 					type: 'dropdown',
-					label: 'Source',
 					id: 'source',
+					label: 'Source',
 					choices: this.choicesOutputSources(),
 					default: this.firstId(this.choicesOutputSources()),
 				},
 			],
 			callback: (feedback) => {
-				const did = String(feedback.options.output ?? '')
-				const source = String(feedback.options.source ?? '')
-				if (!did || !source) return false
-				return this.state.outputs?.[did]?.source === source
+				try {
+					const did = String(feedback.options.outputId ?? '')
+					const source = String(feedback.options.source ?? '')
+					if (!did || !source) return false
+					const output = this.state.outputs?.[did]
+					if (!output || output.source !== source) return false
+					const setAt = Number(output.setAt)
+					return Number.isFinite(setAt) && Date.now() - setAt < 5000
+				} catch (error) {
+					this.log('error', `output_set feedback failed: ${error?.message ?? error}`)
+					return false
+				}
 			},
 		}
 
-		feedbacks['configPresetApplied'] = {
+		// ------------------------------------------------------------------
+		// Event (CMS schedule)
+		// ------------------------------------------------------------------
+
+		feedbacks['event_state'] = {
 			type: 'boolean',
-			name: 'Config preset: last applied (optimistic)',
-			description:
-				'Highlights the configuration preset last applied through this connection. The API has no way to ' +
-				'read which preset (if any) currently matches the device configuration, so this only reflects the ' +
-				'most recent "Config preset: apply" action run from Companion, not a value confirmed by the device.',
-			defaultStyle: { color: WHITE, bgcolor: BLUE },
+			name: 'Event state',
+			description: 'True while the resolved event (alias or specific id) is in the selected state.',
+			defaultStyle: stateStyle(colors.green),
 			options: [
 				{
 					type: 'dropdown',
-					label: 'Preset',
-					id: 'preset',
-					choices: this.choicesConfigPresets(),
-					default: this.firstId(this.choicesConfigPresets()),
+					id: 'eventRef',
+					label: 'Event',
+					choices: this.choicesEventRefs(),
+					default: 'ongoing',
+					allowCustom: true,
+				},
+				{
+					type: 'dropdown',
+					id: 'state',
+					label: 'State',
+					choices: EVENT_STATES,
+					default: 'running',
 				},
 			],
 			callback: (feedback) => {
-				const preset = String(feedback.options.preset ?? '')
-				if (!preset) return false
-				return this.state.lastConfigPreset?.name === preset
+				try {
+					const ref = String(feedback.options.eventRef ?? 'ongoing')
+					const wanted = feedback.options.state
+					const event = resolveEventRef(this.state, ref)
+					if (wanted === 'none') return event === null
+					if (wanted === 'ongoing') return event?.status === 'running' || event?.status === 'paused'
+					return event?.status === wanted
+				} catch (error) {
+					this.log('error', `event_state feedback failed: ${error?.message ?? error}`)
+					return false
+				}
+			},
+		}
+
+		feedbacks['event_applies'] = {
+			type: 'boolean',
+			name: 'Event command applies',
+			description:
+				"True while the selected command would be sent for the resolved event's current status (the same " +
+				'rule the "Event" action itself uses to decide whether a fixed command applies).',
+			defaultStyle: stateStyle(colors.cms),
+			options: [
+				{
+					type: 'dropdown',
+					id: 'eventRef',
+					label: 'Event',
+					choices: this.choicesEventRefs(),
+					default: 'ongoing',
+					allowCustom: true,
+				},
+				{
+					type: 'dropdown',
+					id: 'op',
+					label: 'Action',
+					choices: EVENT_APPLIES_OPS,
+					default: 'start',
+				},
+			],
+			callback: (feedback) => {
+				try {
+					const ref = String(feedback.options.eventRef ?? 'ongoing')
+					const op = String(feedback.options.op ?? 'start')
+					const event = resolveEventRef(this.state, ref)
+					return eventApplies(op, event?.status)
+				} catch (error) {
+					this.log('error', `event_applies feedback failed: ${error?.message ?? error}`)
+					return false
+				}
+			},
+		}
+
+		// ------------------------------------------------------------------
+		// System / AFU
+		// ------------------------------------------------------------------
+
+		feedbacks['system'] = {
+			type: 'boolean',
+			name: 'System condition',
+			description: 'True while the selected system or AFU condition holds.',
+			defaultStyle: stateStyle(colors.amber),
+			options: [
+				{
+					type: 'dropdown',
+					id: 'condition',
+					label: 'Condition',
+					choices: SYSTEM_CONDITIONS,
+					default: 'cpu_high',
+				},
+			],
+			callback: (feedback) => {
+				try {
+					const condition = String(feedback.options.condition ?? '')
+					if (condition === 'cpu_high') return this.state.systemStatus?.cpuload_high === true
+					if (condition === 'cpu_hot') {
+						const temp = Number(this.state.systemStatus?.cputemp)
+						const threshold = Number(this.state.systemStatus?.cputemp_threshold)
+						return Number.isFinite(temp) && Number.isFinite(threshold) && temp >= threshold
+					}
+					const afu = Array.isArray(this.state.afu) ? this.state.afu : []
+					const key = condition.replace(/^afu_/, '')
+					if (key === 'off') return afu.length === 0 || afu.some((e) => e?.status?.state === 'disabled')
+					return afu.some((e) => e?.status?.state === key)
+				} catch (error) {
+					this.log('error', `system feedback failed: ${error?.message ?? error}`)
+					return false
+				}
+			},
+		}
+
+		// ------------------------------------------------------------------
+		// Storage
+		// ------------------------------------------------------------------
+
+		feedbacks['storage_level'] = {
+			type: 'boolean',
+			name: 'Storage level',
+			description: 'True while the selected storage is in the selected condition.',
+			defaultStyle: stateStyle(colors.amber),
+			options: [
+				{
+					type: 'dropdown',
+					id: 'storageId',
+					label: 'Storage',
+					choices: this.choicesStorages(),
+					default: this.preferredId(this.choicesStorages(), 'main'),
+				},
+				{
+					type: 'dropdown',
+					id: 'level',
+					label: 'Level',
+					choices: STORAGE_LEVELS,
+					default: 'low',
+				},
+			],
+			callback: (feedback) => {
+				try {
+					const status = this.state.storages?.[feedback.options.storageId]?.status
+					const state = status?.state
+					const total = Number(status?.total)
+					const free = Number(status?.free)
+					const usedPct =
+						Number.isFinite(total) && total > 0 && Number.isFinite(free)
+							? ((total - free) / total) * 100
+							: undefined
+					switch (feedback.options.level) {
+						case 'low':
+							return state === 'ready' && usedPct !== undefined && usedPct >= 90 && usedPct < 97
+						case 'full':
+							return state === 'ready' && usedPct !== undefined && usedPct >= 97
+						case 'ro':
+							return state === 'devro'
+						case 'nomedia':
+							return state === 'nodev'
+						case 'notready':
+							return state === 'dev'
+						case 'formatting':
+							return state === 'formatting'
+						case 'ok':
+							return state === 'ready' && (usedPct === undefined || usedPct < 90)
+						default:
+							return false
+					}
+				} catch (error) {
+					this.log('error', `storage_level feedback failed: ${error?.message ?? error}`)
+					return false
+				}
+			},
+		}
+
+		// ------------------------------------------------------------------
+		// Audio (advanced; Phase 3 draws the meter)
+		// ------------------------------------------------------------------
+
+		feedbacks['audio'] = {
+			type: 'advanced',
+			name: 'Audio meter',
+			description:
+				'Stereo level meter for an audio input. Not yet drawn (a later release adds it); use the ' +
+				'input_<id>_level_text variable in the meantime. Subscribing still tracks interest so the future ' +
+				'poller has ref counts to work from.',
+			options: [
+				{
+					type: 'dropdown',
+					id: 'inputId',
+					label: 'Input',
+					choices: this.choicesInputsWithAudio(),
+					default: this.firstId(this.choicesInputsWithAudio()),
+				},
+			],
+			callback: () => ({}),
+			subscribe: (feedback) => subscribeMeter(this, String(feedback.options.inputId ?? '')),
+			unsubscribe: (feedback) => unsubscribeMeter(this, String(feedback.options.inputId ?? '')),
+		}
+
+		// ------------------------------------------------------------------
+		// Confirm (D2)
+		// ------------------------------------------------------------------
+
+		feedbacks['confirm_pending'] = {
+			type: 'boolean',
+			name: 'Confirm pending',
+			description: 'True while a confirm-gated action on this button is armed, waiting for a second press.',
+			defaultStyle: stateStyle(colors.red),
+			options: [],
+			callback: (feedback) => {
+				try {
+					return this.isConfirmPending(feedback.controlId)
+				} catch (error) {
+					this.log('error', `confirm_pending feedback failed: ${error?.message ?? error}`)
+					return false
+				}
 			},
 		}
 

@@ -1,12 +1,16 @@
+/**
+ * The target 3.0.0 action set (doc/PARITY.md §1): one action per Stream Deck action, D14 toggle
+ * semantics, the D2 confirm gate, the D4 rotary coalescing and the D5 composite ids.
+ */
 const { describe, it, before, after, beforeEach } = require('node:test')
 const assert = require('node:assert/strict')
 
-const { createInstance, runAction, runFeedback } = require('./harness')
+const { createInstance, runAction, runRotate, runFeedback } = require('./harness')
 const { startMockPearl } = require('./mock-pearl')
 
 const V2 = '/api/v2.0'
 
-/** requests recorded since the last mark() */
+/** every recorded request matching method and path */
 function recorded(mock, method, path) {
 	return mock.requests.filter((r) => (!method || r.method === method) && (!path || r.path === path))
 }
@@ -17,8 +21,21 @@ function one(mock, method, path) {
 	return list[0]
 }
 
-function errors(instance) {
-	return instance.calls.log.filter((l) => l.level === 'error').map((l) => l.message)
+function none(mock, method, path) {
+	assert.equal(recorded(mock, method, path).length, 0, `expected no ${method} ${path}`)
+}
+
+function logged(instance, level) {
+	return instance.calls.log.filter((l) => l.level === level).map((l) => l.message)
+}
+
+async function waitFor(predicate, timeoutMs = 2000) {
+	const deadline = Date.now() + timeoutMs
+	for (;;) {
+		if (predicate()) return
+		if (Date.now() > deadline) throw new Error('timed out waiting for a condition')
+		await new Promise((resolve) => setTimeout(resolve, 5))
+	}
 }
 
 describe('actions against a v2.0 device', () => {
@@ -38,799 +55,662 @@ describe('actions against a v2.0 device', () => {
 	beforeEach(() => {
 		mock.requests.length = 0
 		instance.calls.log.length = 0
+		instance.checkedFeedbacks.length = 0
+		instance.clearConfirm()
+		instance.clearRotaryTimers()
+		instance.confirmWindowMs = undefined
+		instance.rotaryWindowMs = undefined
 	})
 
-	it('channelChangeLayout sends the id as query and body', async () => {
-		await runAction(instance, 'channelChangeLayout', { channelIdlayoutId: '1-2' })
-		const req = one(mock, 'PUT', `${V2}/channels/1/layouts/active`)
-		assert.deepEqual(req.query, { id: '2' })
-		assert.deepEqual(req.body, { id: 2 })
-		assert.equal(mock.state.channels['1'].layouts.find((l) => l.id === '2').active, true)
-		assert.ok(instance.pollSoonTimer, 'poll nudged')
-	})
-
-	it('channelChangeLayout with an unknown layout logs an error and sends nothing', async () => {
-		await runAction(instance, 'channelChangeLayout', { channelIdlayoutId: '1-9' })
-		assert.equal(recorded(mock, 'PUT').length, 0)
-		assert.ok(errors(instance).some((m) => /non existing layout/.test(m)))
-	})
-
-	it('controlStreaming start/stop a single publisher and all publishers', async () => {
-		await runAction(instance, 'controlStreaming', { channelIdpublisherId: '1-0', startStopAction: 1 })
-		one(mock, 'POST', `${V2}/channels/1/publishers/0/control/start`)
-		assert.equal(mock.state.channels['1'].publishers['0'].status.state, 'started')
-
-		await runAction(instance, 'controlStreaming', { channelIdpublisherId: '1-all', startStopAction: 0 })
-		one(mock, 'POST', `${V2}/channels/1/publishers/control/stop`)
-		assert.equal(mock.state.channels['1'].publishers['1'].status.state, 'stopped')
-
-		await runAction(instance, 'controlStreaming', { channelIdpublisherId: '1-all', startStopAction: 99 })
-		assert.equal(recorded(mock, 'POST').length, 2)
-		mock.reset()
-	})
-
-	it('controlStreaming toggle on a started publisher sends stop, on a stopped one start', async () => {
-		await instance.pollAll()
-		mock.requests.length = 0
-		assert.equal(instance.state.channels['1'].publishers['1'].status.state, 'started')
-		await runAction(instance, 'controlStreaming', { channelIdpublisherId: '1-1', startStopAction: 3 })
-		one(mock, 'POST', `${V2}/channels/1/publishers/1/control/stop`)
-
-		assert.equal(instance.state.channels['1'].publishers['0'].status.state, 'stopped')
-		await runAction(instance, 'controlStreaming', { channelIdpublisherId: '1-0', startStopAction: 3 })
-		one(mock, 'POST', `${V2}/channels/1/publishers/0/control/start`)
-
-		// toggle all: at least one stopped -> start all
-		await instance.pollAll()
-		mock.requests.length = 0
-		await runAction(instance, 'controlStreaming', { channelIdpublisherId: '1-all', startStopAction: 3 })
-		one(mock, 'POST', `${V2}/channels/1/publishers/control/start`)
-		mock.reset()
-		await instance.pollAll()
-	})
-
-	it('recorderRecording start/stop/toggle/reset', async () => {
-		assert.equal(instance.state.recorders['2'].status.state, 'stopped')
-		await runAction(instance, 'recorderRecording', { recorderId: '2', startStopAction: 3 })
-		one(mock, 'POST', `${V2}/recorders/2/control/start`)
-
-		await runAction(instance, 'recorderRecording', { recorderId: '1', startStopAction: 0 })
-		one(mock, 'POST', `${V2}/recorders/1/control/stop`)
-
-		await runAction(instance, 'recorderRecording', { recorderId: 'm1', startStopAction: 1 })
-		one(mock, 'POST', `${V2}/recorders/m1/control/start`)
-
-		// reset only exists in the legacy API
-		await runAction(instance, 'recorderRecording', { recorderId: '1', startStopAction: 2 })
-		one(mock, 'POST', '/api/recorders/1/control/reset')
-
-		await runAction(instance, 'recorderRecording', { recorderId: '99', startStopAction: 1 })
-		assert.equal(recorded(mock, 'POST').length, 4)
-		mock.reset()
-		await instance.pollAll()
-	})
-
-	it('insertMarker sends the text as query and body', async () => {
-		await runAction(instance, 'insertMarker', { channel: '1', markertext: 'Hello marker' })
-		const req = one(mock, 'POST', `${V2}/channels/1/bookmarks`)
-		assert.deepEqual(req.query, { text: 'Hello marker' })
-		assert.deepEqual(req.body, { text: 'Hello marker' })
-		assert.equal(mock.state.channels['1'].bookmarks.length, 1)
-		assert.ok(instance.calls.log.some((l) => l.level === 'info' && /Marker successfully sent/.test(l.message)))
-	})
-
-	it('insertMarker on a channel that is not recording logs the device error', async () => {
-		await runAction(instance, 'insertMarker', { channel: '2', markertext: 'x' })
-		one(mock, 'POST', `${V2}/channels/2/bookmarks`)
-		assert.ok(errors(instance).some((m) => /409/.test(m) && /not being recorded/.test(m)))
-	})
-
-	it('channel actions validate the selected channel against the device state', async () => {
-		await runAction(instance, 'insertMarker', { channel: '99', markertext: 'x' })
-		assert.equal(recorded(mock, 'POST').length, 0)
-		assert.ok(errors(instance).some((m) => /insert marker: unknown channel 99/.test(m)))
-
-		await runAction(instance, 'getContentMetadata', { channel: '' })
-		await runAction(instance, 'setContentMetadata', { channel: undefined, title: 't', author: 'a', prefix: 'p' })
-		await runAction(instance, 'setChannelName', { channel: '../etc', name: 'x' })
-		assert.equal(recorded(mock).length, 0)
-		assert.ok(errors(instance).some((m) => /get content metadata: no channel selected/.test(m)))
-		assert.ok(errors(instance).some((m) => /set content metadata: no channel selected/.test(m)))
-		assert.ok(errors(instance).some((m) => /set name: unknown channel \.\.\/etc/.test(m)))
-	})
-
-	it('getLayoutData stores the legacy layout JSON in a custom variable', async () => {
-		await runAction(instance, 'getLayoutData', { channelIdlayoutId: '1-1', destination: 'layout1' })
-		one(mock, 'GET', '/api/channels/1/layouts/1/settings')
-		const stored = JSON.parse(instance.customVariables.layout1)
-		assert.equal(stored.name, 'Default')
-		assert.equal(stored.video[0].source, 'hdmi-a')
-	})
-
-	it('setLayoutData PUTs the JSON to the legacy layout endpoint', async () => {
-		await runAction(instance, 'setLayoutData', {
-			channelIdlayoutId: '1-2',
-			source: '{"name":"PiP renamed","video":[],"audio":[]}',
-		})
-		const req = one(mock, 'PUT', '/api/channels/1/layouts/2/settings')
-		assert.equal(req.body.name, 'PiP renamed')
-		assert.equal(mock.state.channels['1'].layouts.find((l) => l.id === '2').name, 'PiP renamed')
-		mock.reset()
-	})
-
-	it('setLayoutData with invalid JSON logs an error and sends nothing', async () => {
-		await runAction(instance, 'setLayoutData', { channelIdlayoutId: '1-2', source: '{not json' })
-		assert.equal(recorded(mock, 'PUT').length, 0)
-		assert.ok(errors(instance).some((m) => /not valid JSON/.test(m)))
-	})
-
-	it('systemReboot and systemShutdown', async () => {
-		await runAction(instance, 'systemReboot', {})
-		one(mock, 'POST', `${V2}/system/control/reboot`)
-		assert.equal(mock.state.control.lastCommand, 'reboot')
-		await runAction(instance, 'systemShutdown', {})
-		one(mock, 'POST', `${V2}/system/control/shutdown`)
-		assert.equal(mock.state.control.lastCommand, 'shutdown')
-	})
-
-	it('getContentMetadata refreshes the metadata variables', async () => {
-		mock.state.channels['1'].metadata.title = 'Evening Show'
-		await runAction(instance, 'getContentMetadata', { channel: '1' })
-		const req = one(mock, 'GET', '/admin/channel1/get_params.cgi')
-		assert.deepEqual(Object.keys(req.query).sort(), ['author', 'rec_prefix', 'title'])
-		assert.equal(instance.metadata['1'].title, 'Evening Show')
-		assert.equal(instance.variableValues.channel_1_metadata_title, 'Evening Show')
-		mock.state.channels['1'].metadata.title = 'Morning Show'
-	})
-
-	it('setContentMetadata calls set_params.cgi and updates variables', async () => {
-		await runAction(instance, 'setContentMetadata', {
-			channel: '2',
-			title: 'Title 2',
-			author: 'Author 2',
-			prefix: 'PFX',
-		})
-		const req = one(mock, 'GET', '/admin/channel2/set_params.cgi')
-		assert.deepEqual(req.query, { title: 'Title 2', author: 'Author 2', rec_prefix: 'PFX' })
-		assert.deepEqual(mock.state.channels['2'].metadata, { title: 'Title 2', author: 'Author 2', rec_prefix: 'PFX' })
-		assert.equal(instance.variableValues.channel_2_metadata_title, 'Title 2')
-		assert.equal(instance.variableValues.channel_2_metadata_rec_prefix, 'PFX')
-		assert.deepEqual(errors(instance), [])
-	})
-
-	it('recorderControlAll', async () => {
-		await runAction(instance, 'recorderControlAll', { action: 'stop' })
-		one(mock, 'POST', `${V2}/recorders/control/stop`)
-		assert.equal(mock.state.recorders['1'].status.state, 'stopped')
-		await runAction(instance, 'recorderControlAll', { action: 'start' })
-		one(mock, 'POST', `${V2}/recorders/control/start`)
-		assert.equal(mock.state.recorders['2'].status.state, 'started')
-		mock.reset()
-	})
-
-	it('setChannelName', async () => {
-		await runAction(instance, 'setChannelName', { channel: '1', name: 'Main cam' })
-		const req = one(mock, 'PUT', `${V2}/channels/1/name`)
-		assert.deepEqual(req.query, { name: 'Main cam' })
-		assert.equal(mock.state.channels['1'].name, 'Main cam')
-
-		await runAction(instance, 'setChannelName', { channel: '1', name: '   ' })
-		assert.equal(recorded(mock, 'PUT').length, 1)
-		assert.ok(errors(instance).some((m) => /must not be empty/.test(m)))
-		mock.reset()
-	})
-
-	it('setPublisherName', async () => {
-		await runAction(instance, 'setPublisherName', { channelIdpublisherId: '1-0', name: 'YouTube' })
-		const req = one(mock, 'PUT', `${V2}/channels/1/publishers/0/name`)
-		assert.deepEqual(req.query, { name: 'YouTube' })
-		assert.equal(mock.state.channels['1'].publishers['0'].name, 'YouTube')
-
-		await runAction(instance, 'setPublisherName', { channelIdpublisherId: '1-all', name: 'x' })
-		assert.equal(recorded(mock, 'PUT').length, 1)
-		assert.ok(errors(instance).some((m) => /all publishers/.test(m)))
-		mock.reset()
-	})
-
-	it('setPublisherEnabled and setPublisherSingleTouch PATCH common settings', async () => {
-		await runAction(instance, 'setPublisherEnabled', { channelIdpublisherId: '1-0', enabled: 'false' })
-		let req = one(mock, 'PATCH', `${V2}/channels/1/publishers/0/settings`)
-		assert.deepEqual(req.body, { common: { enabled: false } })
-		assert.equal(mock.state.channels['1'].publishers['0'].settings.common.enabled, false)
-		assert.equal(mock.state.channels['1'].publishers['0'].settings.common.single_touch, false)
-
-		mock.requests.length = 0
-		await runAction(instance, 'setPublisherSingleTouch', { channelIdpublisherId: '1-0', single_touch: 'true' })
-		req = one(mock, 'PATCH', `${V2}/channels/1/publishers/0/settings`)
-		assert.deepEqual(req.body, { common: { single_touch: true } })
-		assert.equal(mock.state.channels['1'].publishers['0'].settings.common.single_touch, true)
-		assert.equal(mock.state.channels['1'].publishers['0'].settings.rtmp.url, 'rtmp://192.168.86.51')
-		mock.reset()
-	})
-
-	it('setRtmpDestination only sends non-blank fields', async () => {
-		await runAction(instance, 'setRtmpDestination', {
-			channelIdpublisherId: '1-0',
-			url: 'rtmp://a.rtmp.youtube.com/live2',
-			stream: 'key-123',
-			username: '',
-			password: '',
-		})
-		const req = one(mock, 'PATCH', `${V2}/channels/1/publishers/0/settings`)
-		assert.deepEqual(req.body, { rtmp: { url: 'rtmp://a.rtmp.youtube.com/live2', stream: 'key-123' } })
-		const settings = mock.state.channels['1'].publishers['0'].settings
-		assert.equal(settings.rtmp.stream, 'key-123')
-		assert.equal(settings.rtmp.username, '')
-		assert.equal(settings.type, 'rtmp')
-
-		mock.requests.length = 0
-		await runAction(instance, 'setRtmpDestination', {
-			channelIdpublisherId: '1-0',
-			url: '',
-			stream: '',
-			username: '',
-			password: '',
-		})
-		assert.equal(recorded(mock, 'PATCH').length, 0)
-		assert.ok(instance.calls.log.some((l) => l.level === 'warn' && /all fields blank/.test(l.message)))
-		mock.reset()
-	})
-
-	it('setSrtDestination builds the srt object per mode and validates ranges', async () => {
-		await runAction(instance, 'setSrtDestination', {
-			channelIdpublisherId: '1-1',
-			mode: 'listener',
-			url: 'srt://ignored',
-			stream_id: 'ignored',
-			port: '1030',
-			latency: '200',
-		})
-		let req = one(mock, 'PATCH', `${V2}/channels/1/publishers/1/settings`)
-		assert.deepEqual(req.body, { srt: { mode: 'listener', port: 1030, latency: 200 } })
-
-		mock.requests.length = 0
-		await runAction(instance, 'setSrtDestination', {
-			channelIdpublisherId: '1-1',
-			mode: 'caller',
-			url: 'srt://host:9000',
-			stream_id: 'abc',
-			port: '',
-			latency: '',
-		})
-		req = one(mock, 'PATCH', `${V2}/channels/1/publishers/1/settings`)
-		assert.deepEqual(req.body, { srt: { mode: 'caller', url: 'srt://host:9000', stream_id: 'abc' } })
-
-		mock.requests.length = 0
-		await runAction(instance, 'setSrtDestination', {
-			channelIdpublisherId: '1-1',
-			mode: 'rendezvous',
-			url: 'srt://host:9000',
-			stream_id: 'abc',
-			port: '',
-			latency: '',
-		})
-		req = one(mock, 'PATCH', `${V2}/channels/1/publishers/1/settings`)
-		assert.deepEqual(req.body, { srt: { mode: 'rendezvous', url: 'srt://host:9000' } })
-
-		mock.requests.length = 0
-		await runAction(instance, 'setSrtDestination', {
-			channelIdpublisherId: '1-1',
-			mode: 'listener',
-			url: '',
-			stream_id: '',
-			port: '80',
-			latency: '',
-		})
-		assert.equal(recorded(mock, 'PATCH').length, 0)
-		assert.ok(errors(instance).some((m) => /invalid port/.test(m)))
-
-		await runAction(instance, 'setSrtDestination', {
-			channelIdpublisherId: '1-1',
-			mode: 'caller',
-			url: '',
-			stream_id: '',
-			port: '',
-			latency: '10',
-		})
-		assert.equal(recorded(mock, 'PATCH').length, 0)
-		assert.ok(errors(instance).some((m) => /invalid latency/.test(m)))
-		mock.reset()
-	})
-
-	it('setSrtDestination mode "unchanged" is the default and sends only the non-blank fields', async () => {
-		const options = Object.fromEntries(instance.definitions.actions.setSrtDestination.options.map((o) => [o.id, o]))
-		assert.equal(options.mode.default, 'unchanged')
-		assert.equal(options.mode.choices[0].id, 'unchanged')
-		// url / stream id / port are all offered while the mode is kept, otherwise only where applicable
-		assert.ok(options.url.isVisible({ mode: 'unchanged' }))
-		assert.ok(options.stream_id.isVisible({ mode: 'unchanged' }))
-		assert.ok(options.port.isVisible({ mode: 'unchanged' }))
-		assert.ok(!options.port.isVisible({ mode: 'caller' }))
-		assert.ok(!options.stream_id.isVisible({ mode: 'listener' }))
-		assert.ok(!options.url.isVisible({ mode: 'listener' }))
-
-		await runAction(instance, 'setSrtDestination', {
-			channelIdpublisherId: '1-1',
-			mode: 'unchanged',
-			url: 'srt://host:9000',
-			stream_id: 'abc',
-			port: '1030',
-			latency: '120',
-		})
-		const req = one(mock, 'PATCH', `${V2}/channels/1/publishers/1/settings`)
-		assert.deepEqual(req.body, { srt: { url: 'srt://host:9000', stream_id: 'abc', port: 1030, latency: 120 } })
-		assert.equal('mode' in req.body.srt, false)
-
-		mock.requests.length = 0
-		await runAction(instance, 'setSrtDestination', {
-			channelIdpublisherId: '1-1',
-			mode: 'unchanged',
-			url: '',
-			stream_id: '',
-			port: '',
-			latency: '',
-		})
-		assert.equal(recorded(mock, 'PATCH').length, 0)
-		assert.ok(instance.calls.log.some((l) => l.level === 'warn' && /nothing to change/.test(l.message)))
-
-		// an unknown / missing mode option (old button config) behaves like "unchanged"
-		mock.requests.length = 0
-		await runAction(instance, 'setSrtDestination', { channelIdpublisherId: '1-1', latency: '300' })
-		assert.deepEqual(one(mock, 'PATCH', `${V2}/channels/1/publishers/1/settings`).body, { srt: { latency: 300 } })
-		mock.reset()
-	})
-
-	it('patchPublisherSettings sends the JSON verbatim, rejects invalid JSON', async () => {
-		await runAction(instance, 'patchPublisherSettings', {
-			channelIdpublisherId: '1-0',
-			json: '{"common":{"enabled":true},"rtmp":{"url":"rtmp://x"}}',
-		})
-		const req = one(mock, 'PATCH', `${V2}/channels/1/publishers/0/settings`)
-		assert.deepEqual(req.body, { common: { enabled: true }, rtmp: { url: 'rtmp://x' } })
-
-		mock.requests.length = 0
-		await runAction(instance, 'patchPublisherSettings', { channelIdpublisherId: '1-0', json: '{oops' })
-		assert.equal(recorded(mock, 'PATCH').length, 0)
-		assert.ok(errors(instance).some((m) => /not valid JSON/.test(m)))
-		mock.reset()
-	})
-
-	it('addPublisher POSTs name and settings, requires a type', async () => {
-		await runAction(instance, 'addPublisher', {
-			channel: '1',
-			name: 'New RTMP',
-			json: '{"type":"rtmp","rtmp":{"url":"rtmp://a","stream":"b"},"common":{"enabled":true}}',
-		})
-		const req = one(mock, 'POST', `${V2}/channels/1/publishers`)
-		assert.equal(req.body.name, 'New RTMP')
-		assert.equal(req.body.settings.type, 'rtmp')
-		assert.equal(req.body.settings.rtmp.url, 'rtmp://a')
-		assert.equal(mock.state.channels['1'].publishers['2'].name, 'New RTMP')
-		assert.ok(instance.calls.log.some((l) => l.level === 'info' && /Publisher added/.test(l.message)))
-
-		// PublisherSettings requires common.enabled: a missing "common" block is defaulted
-		mock.requests.length = 0
-		await runAction(instance, 'addPublisher', {
-			channel: '1',
-			name: 'SRT out',
-			json: '{"type":"srt","srt":{"mode":"listener","port":1040}}',
-		})
-		const req2 = one(mock, 'POST', `${V2}/channels/1/publishers`)
-		assert.deepEqual(req2.body.settings.common, { enabled: false, single_touch: false })
-		assert.deepEqual(req2.body.settings.srt, { mode: 'listener', port: 1040 })
-
-		mock.requests.length = 0
-		await runAction(instance, 'addPublisher', { channel: '1', name: '', json: '{"rtmp":{"url":"rtmp://a"}}' })
-		assert.equal(recorded(mock, 'POST').length, 0)
-		assert.ok(errors(instance).some((m) => /"type"/.test(m)))
-
-		await runAction(instance, 'addPublisher', { channel: '42', name: '', json: '{"type":"rtmp"}' })
-		assert.equal(recorded(mock, 'POST').length, 0)
-		assert.ok(errors(instance).some((m) => /add publisher: unknown channel 42/.test(m)))
-		mock.reset()
-		await instance.pollAll()
-	})
-
-	it('setOutputSource PUTs the source as query and updates the optimistic state', async () => {
-		await runAction(instance, 'setOutputSource', { output: 'D1', source: '2', customSource: '' })
-		let req = one(mock, 'PUT', `${V2}/outputs/D1/settings`)
-		assert.deepEqual(req.query, { source: '2' })
-		assert.equal(req.body, null)
-		assert.equal(mock.state.outputs.D1.source, '2')
-		assert.equal(instance.state.outputs.D1.source, '2')
-		assert.equal(instance.variableValues.output_D1_source, '2')
-		// the optimistic feedback (no read endpoint exists for the real source) matches the value just set
-		assert.equal(await runFeedback(instance, 'outputSourceOptimistic', { output: 'D1', source: '2' }), true)
-		assert.equal(await runFeedback(instance, 'outputSourceOptimistic', { output: 'D1', source: 'console' }), false)
-		assert.ok(instance.checkedFeedbacks.some((ids) => ids.includes('outputSourceOptimistic')))
-
-		mock.requests.length = 0
-		await runAction(instance, 'setOutputSource', { output: 'D1', source: 'custom', customSource: ' console ' })
-		req = one(mock, 'PUT', `${V2}/outputs/D1/settings`)
-		assert.deepEqual(req.query, { source: 'console' })
-		assert.equal(await runFeedback(instance, 'outputSourceOptimistic', { output: 'D1', source: 'console' }), true)
-		assert.equal(await runFeedback(instance, 'outputSourceOptimistic', { output: 'D1', source: '2' }), false)
-
-		// the optimistic value survives a poll (the API cannot read it back)
-		await instance.pollAll()
-		assert.equal(instance.state.outputs.D1.source, 'console')
-		assert.equal(instance.variableValues.output_D1_source, 'console')
-
-		mock.requests.length = 0
-		await runAction(instance, 'setOutputSource', { output: 'D1', source: 'custom', customSource: '' })
-		assert.equal(recorded(mock, 'PUT').length, 0)
-		assert.ok(errors(instance).some((m) => /no source given/.test(m)))
-	})
-
-	it('inputAudioMute PATCHes local_audio.mute', async () => {
-		await runAction(instance, 'inputAudioMute', { input: 'analog-a', mute: 'true' })
-		let req = one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`)
-		assert.deepEqual(req.body, { local_audio: { mute: true } })
-		assert.equal(mock.state.inputs['analog-a'].settings.local_audio.mute, true)
-		assert.equal(mock.state.inputs['analog-a'].settings.local_audio.gain, 27)
-
-		mock.requests.length = 0
-		await runAction(instance, 'inputAudioMute', { input: 'analog-a', mute: 'false' })
-		req = one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`)
-		assert.deepEqual(req.body, { local_audio: { mute: false } })
-	})
-
-	it('inputAudioMute on an input without settings logs the 405 from the device', async () => {
-		await runAction(instance, 'inputAudioMute', { input: 'hdmi-a', mute: 'true' })
-		one(mock, 'PATCH', `${V2}/inputs/hdmi-a/settings`)
-		assert.ok(errors(instance).some((m) => /405/.test(m)))
-	})
-
-	it('inputAudioMute nests HDMI and SDI audio under hdmi.audio / sdi.audio (derived from the id)', async () => {
-		// HdmiInputSettings / SdiInputSettings in doc/pearl-api-v2.0.yaml
-		await runAction(instance, 'inputAudioMute', { input: 'hdmi-a', mute: 'true' })
-		let req = one(mock, 'PATCH', `${V2}/inputs/hdmi-a/settings`)
-		assert.deepEqual(req.body, { hdmi: { audio: { mute: true } } })
-
-		mock.requests.length = 0
-		await runAction(instance, 'inputAudioMute', { input: 'D2P0.SDI-B', mute: 'false' })
-		req = one(mock, 'PATCH', `${V2}/inputs/D2P0.SDI-B/settings`)
-		assert.deepEqual(req.body, { sdi: { audio: { mute: false } } })
-
-		// analog inputs keep the flat shape
-		mock.requests.length = 0
-		await runAction(instance, 'inputAudioMute', { input: 'analog-a', mute: 'true' })
-		assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`).body, { local_audio: { mute: true } })
-		mock.reset()
-	})
-
-	it('inputAudioDelay reads the settings first and writes the delay where the input keeps it', async () => {
-		// hdmi-b keeps it in hdmi.audio.delay (HdmiInputSettings)
-		await runAction(instance, 'inputAudioDelay', { input: 'hdmi-b', delay: 20 })
-		assert.deepEqual(
-			mock.requests.map((r) => `${r.method} ${r.path}`),
-			[`GET ${V2}/inputs/hdmi-b/settings`, `PATCH ${V2}/inputs/hdmi-b/settings`],
+	it('defines exactly the target action set with the Stream Deck names', () => {
+		assert.deepEqual(Object.keys(instance.definitions.actions).sort(), [
+			'audio',
+			'bookmark',
+			'event',
+			'layout',
+			'output',
+			'power',
+			'preset',
+			'recorder',
+			'singletouch',
+			'storage',
+			'stream',
+		])
+		const names = Object.fromEntries(
+			Object.entries(instance.definitions.actions).map(([id, def]) => [id, def.name]),
 		)
-		assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/hdmi-b/settings`).body, { hdmi: { audio: { delay: 20 } } })
-		assert.equal(mock.state.inputs['hdmi-b'].settings.hdmi.audio.delay, 20)
-
-		// sdi-a keeps it in sdi.audio.delay (SdiInputSettings)
-		mock.requests.length = 0
-		await runAction(instance, 'inputAudioDelay', { input: 'sdi-a', delay: -20 })
-		assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/sdi-a/settings`).body, { sdi: { audio: { delay: -20 } } })
-		assert.equal(mock.state.inputs['sdi-a'].settings.sdi.audio.delay, -20)
-
-		// analog-a keeps it in audio.delay
-		mock.requests.length = 0
-		await runAction(instance, 'inputAudioDelay', { input: 'analog-a', delay: 5 })
-		assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`).body, { audio: { delay: 5 } })
-		assert.equal(mock.state.inputs['analog-a'].settings.audio.delay, 5)
-		assert.ok(instance.pollSoonTimer, 'poll nudged')
-		mock.reset()
-	})
-
-	it('inputAudioDelay / inputAudioGain send nothing when the settings cannot be read or lack the value', async () => {
-		// hdmi-a: the device answers GET .../settings with 405 "Input settings are not supported"
-		await runAction(instance, 'inputAudioDelay', { input: 'hdmi-a', delay: 20 })
-		assert.equal(recorded(mock, 'PATCH').length, 0)
-		assert.ok(errors(instance).some((m) => /405/.test(m)))
-
-		// USBA with settings that carry no delay at all
-		mock.state.inputs.USBA.settings = { local_audio: { gain: 50, mute: false } }
-		mock.requests.length = 0
-		instance.calls.log.length = 0
-		await runAction(instance, 'inputAudioDelay', { input: 'USBA', delay: 20 })
-		assert.equal(recorded(mock, 'PATCH').length, 0)
-		assert.ok(errors(instance).some((m) => /no audio delay setting/.test(m)))
-
-		// SRT1 has settings but no local_audio, so no gain
-		mock.requests.length = 0
-		instance.calls.log.length = 0
-		await runAction(instance, 'inputAudioGain', { input: 'SRT1', gain: 10, channel: 'both' })
-		assert.equal(recorded(mock, 'PATCH').length, 0)
-		assert.ok(errors(instance).some((m) => /no gain setting/.test(m)))
-		mock.reset()
-	})
-
-	it('inputAudioGain reads the settings first and moves both channels of an unpaired input', async () => {
-		// analog-b has stereo_pair: false with channel A 20 / channel B 24
-		await runAction(instance, 'inputAudioGain', { input: 'analog-b', gain: 40, channel: 'both' })
-		assert.deepEqual(
-			mock.requests.map((r) => `${r.method} ${r.path}`),
-			[`GET ${V2}/inputs/analog-b/settings`, `PATCH ${V2}/inputs/analog-b/settings`],
-		)
-		assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/analog-b/settings`).body, {
-			local_audio: { channels: { channelA: { gain: 40 }, channelB: { gain: 40 } } },
+		assert.deepEqual(names, {
+			recorder: 'Recorder',
+			stream: 'Stream',
+			layout: 'Layout',
+			singletouch: 'Single Touch',
+			bookmark: 'Bookmark',
+			output: 'Output Source',
+			preset: 'Apply Preset',
+			event: 'Event',
+			power: 'Reboot / Shutdown',
+			audio: 'Audio',
+			storage: 'Storage',
 		})
-		const la = mock.state.inputs['analog-b'].settings.local_audio
-		assert.equal(la.channels.channelA.gain, 40)
-		assert.equal(la.channels.channelB.gain, 40)
-		assert.equal(la.stereo_pair, false, 'the input stays unpaired')
-		assert.equal(la.gain, undefined, 'no stereo pair gain is invented')
-
-		// out-of-range values are clamped to 0..100
-		mock.requests.length = 0
-		await runAction(instance, 'inputAudioGain', { input: 'analog-a', gain: 150, channel: 'both' })
-		assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`).body, { local_audio: { gain: 100 } })
-		mock.reset()
-	})
-
-	it('inputAudioGain for both channels and for a single channel', async () => {
-		await runAction(instance, 'inputAudioGain', { input: 'analog-a', gain: 40, channel: 'both' })
-		let req = one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`)
-		assert.deepEqual(req.body, { local_audio: { gain: 40 } })
-
-		mock.requests.length = 0
-		await runAction(instance, 'inputAudioGain', { input: 'analog-a', gain: 12, channel: 'B' })
-		// a single-channel gain set is a blind write: no settings GET, just the PATCH
-		assert.deepEqual(
-			mock.requests.map((r) => `${r.method} ${r.path}`),
-			[`PATCH ${V2}/inputs/analog-a/settings`],
-		)
-		req = one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`)
-		assert.deepEqual(req.body, { local_audio: { stereo_pair: false, channels: { channelB: { gain: 12 } } } })
-		assert.equal(mock.state.inputs['analog-a'].settings.local_audio.channels.channelB.gain, 12)
-		assert.equal(mock.state.inputs['analog-a'].settings.local_audio.channels.channelA.gain, 27)
-		mock.reset()
-	})
-
-	it('inputAudioGain channel A/B write succeeds even when the settings GET would fail', async () => {
-		// A channel A/B gain set never reads settings at all, so a GET failure that would abort
-		// the "both" path (network hiccup, timeout, 405, ...) cannot affect it. Simulate that by
-		// making only GET throw; the PATCH must still reach the device unharmed.
-		const realRequest = instance.request.bind(instance)
-		instance.request = async (method, path, opts) => {
-			if (method === 'GET' && path === `/inputs/analog-a/settings`) {
-				throw new Error('simulated transient GET failure')
-			}
-			return realRequest(method, path, opts)
+		for (const [id, def] of Object.entries(instance.definitions.actions)) {
+			assert.ok(def.name.length <= 30, `${id}: name longer than 30 characters`)
+			assert.equal(typeof def.description, 'string')
+			assert.ok(def.description.length > 0)
 		}
-		try {
-			await runAction(instance, 'inputAudioGain', { input: 'analog-a', gain: 33, channel: 'A' })
-		} finally {
-			instance.request = realRequest
-		}
+	})
+
+	it('offers the D5 composite/aliased choices (layout, publisher, event, output source)', () => {
+		const layout = instance.definitions.actions.layout.options.find((o) => o.id === 'layoutId')
+		assert.deepEqual(layout.choices, [
+			{ id: '1-1', label: 'HDMI-A – Default' },
+			{ id: '1-2', label: 'HDMI-A – Picture in picture' },
+			{ id: '2-1', label: 'Multi – Default' },
+		])
+		const publisher = instance.definitions.actions.stream.options.find((o) => o.id === 'publisherId')
+		assert.deepEqual(publisher.choices, [
+			{ id: '1-all', label: 'HDMI-A – All publishers' },
+			{ id: '1-0', label: 'HDMI-A – Stream 1 (rtmp)' },
+			{ id: '1-1', label: 'HDMI-A – Stream 2 (srt)' },
+		])
+		const recorder = instance.definitions.actions.recorder.options.find((o) => o.id === 'recorderId')
+		assert.equal(recorder.default, 'all')
+		assert.deepEqual(recorder.choices[0], { id: 'all', label: 'All recorders' })
+		const eventRef = instance.definitions.actions.event.options.find((o) => o.id === 'eventRef')
+		assert.equal(eventRef.default, 'ongoing')
+		assert.equal(eventRef.allowCustom, true)
 		assert.deepEqual(
-			mock.requests.map((r) => `${r.method} ${r.path}`),
-			[`PATCH ${V2}/inputs/analog-a/settings`],
+			eventRef.choices.map((c) => c.label),
+			[
+				'Upcoming (next scheduled)',
+				'Ongoing (running or paused)',
+				'Running',
+				'Paused',
+				'Completed (most recent)',
+				'Example event (scheduled)',
+			],
 		)
-		const req = one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`)
-		assert.deepEqual(req.body, { local_audio: { stereo_pair: false, channels: { channelA: { gain: 33 } } } })
-		assert.equal(errors(instance).length, 0)
-		mock.reset()
+		const source = instance.definitions.actions.output.options.find((o) => o.id === 'source')
+		assert.deepEqual(source.choices.slice(0, 3), [
+			{ id: 'multiview', label: 'Built-in: Multiview' },
+			{ id: 'deviceinfo', label: 'Built-in: Device info' },
+			{ id: 'console', label: 'Built-in: Console' },
+		])
 	})
 
-	it('inputAudioDelay and inputPhantomPower', async () => {
-		await runAction(instance, 'inputAudioDelay', { input: 'USBA', delay: -50 })
-		let req = one(mock, 'PATCH', `${V2}/inputs/USBA/settings`)
-		assert.deepEqual(req.body, { audio: { delay: -50 } })
+	// ------------------------------------------------------------------
+	// Recorder (D14 toggle: start when stopped/disabled/error/unknown, stop when started/starting/paused)
+	// ------------------------------------------------------------------
 
-		mock.requests.length = 0
-		await runAction(instance, 'inputAudioDelay', { input: 'USBA', delay: 900 })
-		req = one(mock, 'PATCH', `${V2}/inputs/USBA/settings`)
-		assert.deepEqual(req.body, { audio: { delay: 300 } })
-
-		mock.requests.length = 0
-		await runAction(instance, 'inputPhantomPower', { input: 'analog-a', phantom_power: 'true' })
-		req = one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`)
-		assert.deepEqual(req.body, { local_audio: { phantom_power: true } })
-		assert.equal(mock.state.inputs['analog-a'].settings.local_audio.phantom_power, true)
-		mock.reset()
-	})
-
-	it('patchInputSettings sends JSON, rejects invalid JSON', async () => {
-		await runAction(instance, 'patchInputSettings', {
-			input: 'SRT1',
-			json: '{"srt":{"mode":"listener","port":1025}}',
+	describe('recorder', () => {
+		it('start on a stopped recorder', async () => {
+			instance.state.recorders['2'].status = { state: 'stopped' }
+			await runAction(instance, 'recorder', { recorderId: '2', op: 'start' })
+			one(mock, 'POST', `${V2}/recorders/2/control/start`)
+			assert.equal(mock.state.recorders['2'].status.state, 'started')
 		})
-		const req = one(mock, 'PATCH', `${V2}/inputs/SRT1/settings`)
-		assert.deepEqual(req.body, { srt: { mode: 'listener', port: 1025 } })
-		assert.equal(mock.state.inputs.SRT1.settings.srt.port, 1025)
-		assert.equal(mock.state.inputs.SRT1.settings.srt.latency, 80)
 
-		mock.requests.length = 0
-		await runAction(instance, 'patchInputSettings', { input: 'SRT1', json: '[1]' })
-		assert.equal(recorded(mock, 'PATCH').length, 0)
-		assert.ok(errors(instance).some((m) => /not valid JSON/.test(m)))
-		mock.reset()
-	})
-
-	it('createNetworkInput POSTs type, name and settings', async () => {
-		await runAction(instance, 'createNetworkInput', {
-			type: 'rtsp',
-			name: 'Cam 3',
-			json: '{"rtsp":{"url":"rtsp://10.0.0.1:8554/stream","transport":"udp"}}',
+		it('stop on a started recorder', async () => {
+			mock.state.recorders['1'].status = { state: 'started', duration: 30 }
+			await runAction(instance, 'recorder', { recorderId: '1', op: 'stop' })
+			one(mock, 'POST', `${V2}/recorders/1/control/stop`)
+			assert.equal(mock.state.recorders['1'].status.state, 'stopped')
 		})
-		let req = one(mock, 'POST', `${V2}/inputs`)
-		assert.deepEqual(req.body, {
-			type: 'rtsp',
-			name: 'Cam 3',
-			settings: { rtsp: { url: 'rtsp://10.0.0.1:8554/stream', transport: 'udp' } },
+
+		it('pause on a started recorder, resume on a paused one', async () => {
+			mock.state.recorders['1'].status = { state: 'started', duration: 30 }
+			await runAction(instance, 'recorder', { recorderId: '1', op: 'pause' })
+			one(mock, 'POST', `${V2}/recorders/1/control/pause`)
+			assert.equal(mock.state.recorders['1'].status.state, 'paused')
+
+			await runAction(instance, 'recorder', { recorderId: '1', op: 'resume' })
+			one(mock, 'POST', `${V2}/recorders/1/control/resume`)
+			assert.equal(mock.state.recorders['1'].status.state, 'started')
 		})
-		assert.equal(mock.state.inputs.RTSP1.name, 'Cam 3')
 
-		mock.requests.length = 0
-		await runAction(instance, 'createNetworkInput', { type: 'ndi', name: '', json: '{}' })
-		req = one(mock, 'POST', `${V2}/inputs`)
-		assert.deepEqual(req.body, { type: 'ndi' })
+		it('reset falls back to the legacy base (recorder reset is legacy-only)', async () => {
+			await runAction(instance, 'recorder', { recorderId: '1', op: 'reset' })
+			one(mock, 'POST', `${V2}/recorders/1/control/reset`) // the silent v2.0 attempt that 404s
+			one(mock, 'POST', `/api/recorders/1/control/reset`) // the fallback that succeeds
+		})
 
-		mock.requests.length = 0
-		await runAction(instance, 'createNetworkInput', { type: 'hdmi', name: '', json: '{}' })
-		assert.equal(recorded(mock, 'POST').length, 0)
-		assert.ok(errors(instance).some((m) => /unknown type/.test(m)))
-		mock.reset()
-		await instance.pollAll()
+		it('toggle: a stopped recorder starts, a started/paused one stops (D14 both directions)', async () => {
+			instance.state.recorders['2'].status = { state: 'stopped' }
+			await runAction(instance, 'recorder', { recorderId: '2', op: 'toggle' })
+			one(mock, 'POST', `${V2}/recorders/2/control/start`)
+
+			mock.requests.length = 0
+			instance.state.recorders['2'].status = { state: 'started' }
+			await runAction(instance, 'recorder', { recorderId: '2', op: 'toggle' })
+			one(mock, 'POST', `${V2}/recorders/2/control/stop`)
+
+			mock.requests.length = 0
+			instance.state.recorders['2'].status = { state: 'paused' }
+			await runAction(instance, 'recorder', { recorderId: '2', op: 'toggle' })
+			one(mock, 'POST', `${V2}/recorders/2/control/stop`)
+		})
+
+		it('toggle "all" stops when any recorder is active, starts when none are (D14 aggregate)', async () => {
+			instance.state.recorders['1'].status = { state: 'started' }
+			instance.state.recorders['2'].status = { state: 'stopped' }
+			instance.state.recorders['m1'].status = { state: 'stopped' }
+			await runAction(instance, 'recorder', { recorderId: 'all', op: 'toggle' })
+			one(mock, 'POST', `${V2}/recorders/control/stop`)
+
+			mock.requests.length = 0
+			instance.state.recorders['1'].status = { state: 'stopped' }
+			instance.state.recorders['2'].status = { state: 'stopped' }
+			instance.state.recorders['m1'].status = { state: 'stopped' }
+			await runAction(instance, 'recorder', { recorderId: 'all', op: 'toggle' })
+			one(mock, 'POST', `${V2}/recorders/control/start`)
+		})
+
+		it('reset "all" also falls back to the legacy base', async () => {
+			await runAction(instance, 'recorder', { recorderId: 'all', op: 'reset' })
+			one(mock, 'POST', `${V2}/recorders/control/reset`)
+			one(mock, 'POST', `/api/recorders/control/reset`)
+		})
+
+		it('an unknown recorder is reported, nothing is sent', async () => {
+			await runAction(instance, 'recorder', { recorderId: 'nope', op: 'start' })
+			assert.equal(mock.requests.length, 0)
+			assert.match(logged(instance, 'error').join('\n'), /unknown recorder nope/)
+			assert.match(instance.state.lastError, /unknown recorder nope/)
+		})
+
+		it('an unrecognised op logs an error and sends nothing', async () => {
+			await runAction(instance, 'recorder', { recorderId: '2', op: 'explode' })
+			assert.equal(mock.requests.length, 0)
+			assert.match(logged(instance, 'error').join('\n'), /unknown action explode/)
+		})
 	})
 
-	it('singleTouchToggle', async () => {
-		await runAction(instance, 'singleTouchToggle', { stc: '0' })
-		one(mock, 'POST', `${V2}/system/singletouchcontrol/0/control/toggle`)
-		assert.equal(mock.state.singleTouch['0'].pressed, true)
-		mock.reset()
+	// ------------------------------------------------------------------
+	// Stream (D14 toggle: start when stopped/error/unknown, otherwise stop)
+	// ------------------------------------------------------------------
+
+	describe('stream', () => {
+		it('start a single publisher', async () => {
+			await runAction(instance, 'stream', { channelId: '1', publisherId: '1-0', op: 'start' })
+			one(mock, 'POST', `${V2}/channels/1/publishers/0/control/start`)
+			assert.equal(mock.state.channels['1'].publishers['0'].status.state, 'started')
+		})
+
+		it('stop a single publisher', async () => {
+			mock.state.channels['1'].publishers['1'].status = { is_configured: true, started: true, state: 'started' }
+			await runAction(instance, 'stream', { channelId: '1', publisherId: '1-1', op: 'stop' })
+			one(mock, 'POST', `${V2}/channels/1/publishers/1/control/stop`)
+			assert.equal(mock.state.channels['1'].publishers['1'].status.state, 'stopped')
+		})
+
+		it('toggle: stopped starts, started/listening stops (both directions)', async () => {
+			instance.state.channels['1'].publishers['0'].status = { state: 'stopped' }
+			await runAction(instance, 'stream', { channelId: '1', publisherId: '1-0', op: 'toggle' })
+			one(mock, 'POST', `${V2}/channels/1/publishers/0/control/start`)
+
+			mock.requests.length = 0
+			instance.state.channels['1'].publishers['0'].status = { state: 'started' }
+			await runAction(instance, 'stream', { channelId: '1', publisherId: '1-0', op: 'toggle' })
+			one(mock, 'POST', `${V2}/channels/1/publishers/0/control/stop`)
+
+			mock.requests.length = 0
+			instance.state.channels['1'].publishers['0'].status = { state: 'listening' }
+			await runAction(instance, 'stream', { channelId: '1', publisherId: '1-0', op: 'toggle' })
+			one(mock, 'POST', `${V2}/channels/1/publishers/0/control/stop`)
+		})
+
+		it('toggle "all publishers" stops while one is live, starts when none are (D14 aggregate)', async () => {
+			instance.state.channels['1'].publishers['0'].status = { state: 'stopped' }
+			instance.state.channels['1'].publishers['1'].status = { state: 'started' }
+			await runAction(instance, 'stream', { channelId: '1', publisherId: '1-all', op: 'toggle' })
+			one(mock, 'POST', `${V2}/channels/1/publishers/control/stop`)
+
+			mock.requests.length = 0
+			instance.state.channels['1'].publishers['0'].status = { state: 'stopped' }
+			instance.state.channels['1'].publishers['1'].status = { state: 'stopped' }
+			await runAction(instance, 'stream', { channelId: '1', publisherId: '1-all', op: 'toggle' })
+			one(mock, 'POST', `${V2}/channels/1/publishers/control/start`)
+		})
+
+		it('an unknown channel or publisher is reported, nothing is sent', async () => {
+			await runAction(instance, 'stream', { channelId: '99', publisherId: '', op: 'start' })
+			assert.match(logged(instance, 'error').join('\n'), /unknown channel 99/)
+
+			instance.calls.log.length = 0
+			await runAction(instance, 'stream', { channelId: '1', publisherId: '1-9', op: 'start' })
+			assert.match(logged(instance, 'error').join('\n'), /unknown publisher 9/)
+			assert.equal(mock.requests.length, 0)
+		})
 	})
 
-	it('applyConfigPreset URL-encodes the name and omits the body for "all sections"', async () => {
-		await runAction(instance, 'applyConfigPreset', { preset: 'Show A', sections: [] })
-		let req = one(mock, 'POST', `${V2}/system/presets/Show%20A/control/apply`)
-		assert.equal(req.body, null)
-		assert.equal(req.rawBody, undefined)
-		assert.deepEqual(mock.state.appliedPresets[0].name, 'Show A')
-		assert.equal(mock.state.appliedPresets[0].sections.length, 10)
-		assert.ok(instance.calls.log.some((l) => l.level === 'info' && /rebooting/.test(l.message)))
-		// optimistic: the API has no read endpoint for which preset is currently applied
-		assert.equal(instance.state.lastConfigPreset.name, 'Show A')
-		assert.equal(instance.variableValues.last_config_preset, 'Show A')
-		assert.equal(await runFeedback(instance, 'configPresetApplied', { preset: 'Show A' }), true)
-		assert.equal(await runFeedback(instance, 'configPresetApplied', { preset: 'Default' }), false)
-		assert.ok(instance.checkedFeedbacks.some((ids) => ids.includes('configPresetApplied')))
+	// ------------------------------------------------------------------
+	// Layout
+	// ------------------------------------------------------------------
 
-		mock.requests.length = 0
-		await runAction(instance, 'applyConfigPreset', { preset: 'Show A', sections: ['channels', 'sources'] })
-		req = one(mock, 'POST', `${V2}/system/presets/Show%20A/control/apply`)
-		assert.deepEqual(req.body, { sections: ['channels', 'sources'] })
+	describe('layout', () => {
+		it('sends the layout id as both query and body', async () => {
+			await runAction(instance, 'layout', { channelId: '1', layoutId: '1-2', layoutIdManual: '' })
+			const req = one(mock, 'PUT', `${V2}/channels/1/layouts/active`)
+			assert.equal(req.query.id, '2')
+			assert.deepEqual(req.body, { id: 2 })
+			assert.equal(mock.state.channels['1'].layouts.find((l) => l.id === '2').active, true)
+		})
 
-		mock.requests.length = 0
-		await runAction(instance, 'applyConfigPreset', { preset: 'Nope', sections: [] })
-		one(mock, 'POST', `${V2}/system/presets/Nope/control/apply`)
-		assert.ok(errors(instance).some((m) => /404/.test(m)))
-		// a failed apply must not overwrite the last successfully applied preset
-		assert.equal(instance.state.lastConfigPreset.name, 'Show A')
-		mock.reset()
+		it('falls back to the manual id when no layout is picked from the list', async () => {
+			await runAction(instance, 'layout', { channelId: '2', layoutId: '', layoutIdManual: '1' })
+			const req = one(mock, 'PUT', `${V2}/channels/2/layouts/active`)
+			assert.equal(req.query.id, '1')
+		})
+
+		it('an unknown channel or layout is reported, nothing is sent', async () => {
+			await runAction(instance, 'layout', { channelId: '99', layoutId: '', layoutIdManual: '1' })
+			assert.match(logged(instance, 'error').join('\n'), /unknown channel 99/)
+
+			instance.calls.log.length = 0
+			await runAction(instance, 'layout', { channelId: '1', layoutId: '1-9', layoutIdManual: '' })
+			assert.match(logged(instance, 'error').join('\n'), /unknown layout 9/)
+			assert.equal(recorded(mock, 'PUT').length, 0)
+
+			instance.calls.log.length = 0
+			await runAction(instance, 'layout', { channelId: '1', layoutId: '', layoutIdManual: '' })
+			assert.match(logged(instance, 'error').join('\n'), /no layout selected/)
+		})
 	})
 
-	it('storageEject', async () => {
-		await runAction(instance, 'storageEject', { storage: 'external' })
-		one(mock, 'POST', `${V2}/system/storages/external/control/eject`)
-		assert.deepEqual(mock.state.control.ejected, ['external'])
+	// ------------------------------------------------------------------
+	// Single touch
+	// ------------------------------------------------------------------
 
-		mock.requests.length = 0
-		await runAction(instance, 'storageEject', { storage: 'main' })
-		one(mock, 'POST', `${V2}/system/storages/main/control/eject`)
-		assert.ok(errors(instance).some((m) => /405/.test(m) && /does not support eject/.test(m)))
-		mock.reset()
+	describe('singletouch', () => {
+		it('toggles the control', async () => {
+			await runAction(instance, 'singletouch', { stcId: '0' })
+			one(mock, 'POST', `${V2}/system/singletouchcontrol/0/control/toggle`)
+			assert.equal(mock.state.singleTouch['0'].pressed, true)
+		})
+
+		it('an unknown control is reported, nothing is sent', async () => {
+			await runAction(instance, 'singletouch', { stcId: '7' })
+			assert.match(logged(instance, 'error').join('\n'), /unknown single touch control 7/)
+			assert.equal(mock.requests.length, 0)
+		})
 	})
 
-	it('eventControl with aliases and a custom id, eventExtend with finish seconds', async () => {
-		const eventId = mock.state.events[0].id
-		await runAction(instance, 'eventControl', { event: 'upcoming', eventId: '', action: 'start' })
-		one(mock, 'POST', `${V2}/schedule/events/upcoming/control/start`)
-		assert.equal(mock.state.events[0].status, 'running')
+	// ------------------------------------------------------------------
+	// Bookmark
+	// ------------------------------------------------------------------
 
-		mock.requests.length = 0
-		await runAction(instance, 'eventControl', { event: 'custom', eventId, action: 'pause' })
-		one(mock, 'POST', `${V2}/schedule/events/${eventId}/control/pause`)
-		assert.equal(mock.state.events[0].status, 'paused')
+	describe('bookmark', () => {
+		it('appends the local time when asked', async () => {
+			await runAction(instance, 'bookmark', { channelId: '1', text: 'Marker', appendTime: true })
+			const req = one(mock, 'POST', `${V2}/channels/1/bookmarks`)
+			assert.match(req.query.text, /^Marker \d\d:\d\d:\d\d$/)
+			assert.equal(req.body.text, req.query.text)
+		})
 
-		mock.requests.length = 0
-		await runAction(instance, 'eventControl', { event: 'paused', eventId: '', action: 'resume' })
-		one(mock, 'POST', `${V2}/schedule/events/paused/control/resume`)
-		assert.equal(mock.state.events[0].status, 'running')
+		it('an empty text falls back to "Marker" and appendTime off sends the text verbatim', async () => {
+			await runAction(instance, 'bookmark', { channelId: '1', text: '', appendTime: false })
+			const req = one(mock, 'POST', `${V2}/channels/1/bookmarks`)
+			assert.equal(req.query.text, 'Marker')
+		})
 
-		mock.requests.length = 0
-		const finishBefore = mock.state.events[0].finish
-		await runAction(instance, 'eventExtend', { event: 'ongoing', eventId: '', seconds: 600 })
-		const req = one(mock, 'POST', `${V2}/schedule/events/ongoing/control/extend`)
-		assert.deepEqual(req.body, { finish: 600 })
-		assert.equal(mock.state.events[0].finish, finishBefore + 600)
-
-		mock.requests.length = 0
-		await runAction(instance, 'eventControl', { event: 'ongoing', eventId: '', action: 'stop' })
-		one(mock, 'POST', `${V2}/schedule/events/ongoing/control/stop`)
-		assert.equal(mock.state.events[0].status, 'finished')
-
-		mock.requests.length = 0
-		await runAction(instance, 'eventControl', { event: 'custom', eventId: '  ', action: 'start' })
-		assert.equal(recorded(mock, 'POST').length, 0)
-		assert.ok(errors(instance).some((m) => /no event selected/.test(m)))
-
-		await runAction(instance, 'eventControl', { event: 'upcoming', eventId: '', action: 'explode' })
-		assert.equal(recorded(mock, 'POST').length, 0)
-		mock.reset()
+		it('an unknown channel is reported, nothing is sent', async () => {
+			await runAction(instance, 'bookmark', { channelId: '99', text: 'x', appendTime: false })
+			assert.match(logged(instance, 'error').join('\n'), /unknown channel 99/)
+			assert.equal(mock.requests.length, 0)
+		})
 	})
 
-	it('eventControl on a missing alias logs the 404 and keeps the instance status', async () => {
-		await runAction(instance, 'eventControl', { event: 'ongoing', eventId: '', action: 'stop' })
-		one(mock, 'POST', `${V2}/schedule/events/ongoing/control/stop`)
-		assert.ok(errors(instance).some((m) => /404/.test(m)))
-		assert.equal(instance.currentStatus, 'ok')
+	// ------------------------------------------------------------------
+	// Output source
+	// ------------------------------------------------------------------
+
+	describe('output', () => {
+		it('sets the source and remembers it with a timestamp for output_set (5 s window)', async () => {
+			const before = Date.now()
+			await runAction(instance, 'output', { outputId: 'D1', source: 'console' })
+			const req = one(mock, 'PUT', `${V2}/outputs/D1/settings`)
+			assert.equal(req.query.source, 'console')
+			assert.equal(instance.state.outputs.D1.source, 'console')
+			assert.ok(instance.state.outputs.D1.setAt >= before)
+			assert.ok(instance.checkedFeedbacks.some((ids) => ids.includes('output_set')))
+
+			assert.equal(await runFeedback(instance, 'output_set', { outputId: 'D1', source: 'console' }), true)
+			instance.state.outputs.D1.setAt = Date.now() - 6000
+			assert.equal(
+				await runFeedback(instance, 'output_set', { outputId: 'D1', source: 'console' }),
+				false,
+				'expires after 5 s',
+			)
+		})
+
+		it('an unknown output or blank source is reported, nothing is sent', async () => {
+			await runAction(instance, 'output', { outputId: 'nope', source: 'console' })
+			assert.match(logged(instance, 'error').join('\n'), /unknown output nope/)
+
+			instance.calls.log.length = 0
+			await runAction(instance, 'output', { outputId: 'D1', source: '' })
+			assert.match(logged(instance, 'error').join('\n'), /no source selected/)
+			assert.equal(mock.requests.length, 0)
+		})
 	})
 
-	it('createAdhocEvent POSTs the JSON, rejects invalid JSON', async () => {
-		await runAction(instance, 'createAdhocEvent', { json: '{"title":"Ad-hoc","duration":600}' })
-		const req = one(mock, 'POST', `${V2}/schedule/events`)
-		assert.deepEqual(req.body, { title: 'Ad-hoc', duration: 600 })
-		assert.equal(mock.state.events.length, 2)
-		assert.ok(
-			instance.calls.log.some((l) => l.level === 'info' && /Ad-hoc event created: adhoc0001/.test(l.message)),
-		)
+	// ------------------------------------------------------------------
+	// Configuration preset
+	// ------------------------------------------------------------------
 
-		mock.requests.length = 0
-		await runAction(instance, 'createAdhocEvent', { json: 'nope' })
-		assert.equal(recorded(mock, 'POST').length, 0)
-		assert.ok(errors(instance).some((m) => /not valid JSON/.test(m)))
-		mock.reset()
+	describe('preset', () => {
+		it('applies the whole preset and reports a reboot for 60 s', async () => {
+			const before = Date.now()
+			await runAction(instance, 'preset', { presetName: 'Show A', sections: [], confirm: false })
+			const req = one(mock, 'POST', `${V2}/system/presets/Show%20A/control/apply`)
+			assert.equal(req.body, null)
+			assert.equal(instance.state.lastConfigPreset.name, 'Show A')
+			assert.equal(instance.state.presetStatus.text, 'Rebooting…')
+			assert.ok(instance.state.presetStatus.until >= before + 59000)
+		})
+
+		it('sends only the picked sections, and no reboot is reported when the device does not ask for one', async () => {
+			await runAction(instance, 'preset', {
+				presetName: 'Show A',
+				sections: ['channels', 'sources'],
+				confirm: false,
+			})
+			const req = one(mock, 'POST', `${V2}/system/presets/Show%20A/control/apply`)
+			assert.deepEqual(req.body, { sections: ['channels', 'sources'] })
+			assert.equal(instance.state.presetStatus, undefined)
+		})
+
+		it('an unknown preset is reported, nothing is sent', async () => {
+			await runAction(instance, 'preset', { presetName: '', sections: [], confirm: false })
+			assert.match(logged(instance, 'error').join('\n'), /no preset selected/)
+			assert.equal(mock.requests.length, 0)
+		})
 	})
 
-	it('adhocSessionLogout', async () => {
-		mock.state.adhocSession = { id: 'x' }
-		await runAction(instance, 'adhocSessionLogout', {})
-		one(mock, 'DELETE', `${V2}/schedule/events/adhoc/session`)
-		assert.equal(mock.state.adhocSession, null)
+	// ------------------------------------------------------------------
+	// CMS event
+	// ------------------------------------------------------------------
+
+	describe('event', () => {
+		it('toggle starts a scheduled event, using its concrete id', async () => {
+			mock.state.events[0].status = 'scheduled'
+			const id = mock.state.events[0].id
+			await runAction(instance, 'event', { eventRef: 'upcoming', op: 'toggle', extendSeconds: 300 })
+			one(mock, 'GET', `${V2}/schedule/events/upcoming`)
+			one(mock, 'POST', `${V2}/schedule/events/${id}/control/start`)
+			assert.equal(mock.state.events[0].status, 'running')
+		})
+
+		it('toggle pauses a running event, resumes a paused one', async () => {
+			mock.state.events[0].status = 'running'
+			const id = mock.state.events[0].id
+			await runAction(instance, 'event', { eventRef: 'ongoing', op: 'toggle', extendSeconds: 300 })
+			one(mock, 'POST', `${V2}/schedule/events/${id}/control/pause`)
+			assert.equal(mock.state.events[0].status, 'paused')
+
+			mock.requests.length = 0
+			await runAction(instance, 'event', { eventRef: 'ongoing', op: 'toggle', extendSeconds: 300 })
+			one(mock, 'POST', `${V2}/schedule/events/${id}/control/resume`)
+			assert.equal(mock.state.events[0].status, 'running')
+		})
+
+		it('a fixed command that does not apply to the event state warns and sends nothing', async () => {
+			mock.state.events[0].status = 'running'
+			const id = mock.state.events[0].id
+			await runAction(instance, 'event', { eventRef: 'ongoing', op: 'start', extendSeconds: 300 })
+			none(mock, 'POST', `${V2}/schedule/events/${id}/control/start`)
+			assert.match(logged(instance, 'warn').join('\n'), /cannot start/)
+		})
+
+		it('a fixed command that does apply is sent', async () => {
+			mock.state.events[0].status = 'running'
+			const id = mock.state.events[0].id
+			await runAction(instance, 'event', { eventRef: 'ongoing', op: 'pause', extendSeconds: 300 })
+			one(mock, 'POST', `${V2}/schedule/events/${id}/control/pause`)
+			assert.equal(mock.state.events[0].status, 'paused')
+		})
+
+		it('extend sends the seconds as finish', async () => {
+			mock.state.events[0].status = 'running'
+			const id = mock.state.events[0].id
+			const finishBefore = mock.state.events[0].finish
+			await runAction(instance, 'event', { eventRef: 'ongoing', op: 'extend', extendSeconds: 600 })
+			const req = one(mock, 'POST', `${V2}/schedule/events/${id}/control/extend`)
+			assert.deepEqual(req.body, { finish: 600 })
+			assert.equal(mock.state.events[0].finish, finishBefore + 600)
+		})
+
+		it('status only re-polls, nothing is sent to the event endpoint', async () => {
+			await runAction(instance, 'event', { eventRef: 'ongoing', op: 'status', extendSeconds: 300 })
+			assert.equal(mock.requests.length, 0)
+		})
+
+		it('an eventRef that resolves to nothing warns and sends nothing', async () => {
+			await runAction(instance, 'event', { eventRef: 'no-such-event-id', op: 'start', extendSeconds: 300 })
+			assert.match(logged(instance, 'warn').join('\n'), /no event matches/)
+			assert.equal(recorded(mock, 'POST').length, 0)
+			mock.state.events[0].status = 'scheduled'
+		})
 	})
 
-	it('refreshConnectivity sets the connectivity variables', async () => {
-		assert.equal(instance.variableValues.connectivity_external_ip, '')
-		await runAction(instance, 'refreshConnectivity', {})
-		one(mock, 'GET', `${V2}/system/connectivity/details`)
-		assert.equal(instance.state.connectivity.external_ip, '174.115.41.91')
-		assert.equal(instance.variableValues.connectivity_external_ip, '174.115.41.91')
-		assert.equal(instance.variableValues.connectivity_icmp, 'error')
-		assert.equal(instance.variableValues.connectivity_vtun, 'disabled')
-		// survives the next poll
-		await instance.pollAll()
-		assert.equal(instance.variableValues.connectivity_external_ip, '174.115.41.91')
+	// ------------------------------------------------------------------
+	// Power
+	// ------------------------------------------------------------------
+
+	describe('power', () => {
+		it('reboot reports the command sent for 30 s', async () => {
+			const before = Date.now()
+			await runAction(instance, 'power', { op: 'reboot', confirm: false })
+			one(mock, 'POST', `${V2}/system/control/reboot`)
+			assert.equal(instance.state.powerStatus.text, 'Command sent')
+			assert.ok(instance.state.powerStatus.until >= before + 29000)
+		})
+
+		it('shutdown sends the shutdown command', async () => {
+			await runAction(instance, 'power', { op: 'shutdown', confirm: false })
+			one(mock, 'POST', `${V2}/system/control/shutdown`)
+		})
 	})
 
-	it('runSpeedTest passes mode/protocol/timeout and sets the speedtest variables', async () => {
-		await runAction(instance, 'runSpeedTest', { mode: 'downlink', protocol: 'udp', timeout: 5 })
-		const req = one(mock, 'GET', `${V2}/system/connectivity/tools/speedtest`)
-		assert.deepEqual(req.query, { mode: 'downlink', protocol: 'udp', timeout: '5' })
-		assert.equal(instance.variableValues.speedtest_bandwidth_mbps, 91.3)
-		assert.equal(instance.variableValues.speedtest_mode, 'downlink')
-		assert.equal(instance.variableValues.speedtest_protocol, 'udp')
-		assert.equal(instance.variableValues.speedtest_duration, 5)
-		assert.equal(instance.variableValues.speedtest_udp_loss, 0)
-		assert.ok(instance.calls.log.some((l) => l.level === 'info' && /91\.3 Mbps/.test(l.message)))
+	// ------------------------------------------------------------------
+	// Audio
+	// ------------------------------------------------------------------
 
-		mock.requests.length = 0
-		await runAction(instance, 'runSpeedTest', { mode: 'uplink', protocol: 'tcp', timeout: 10 })
-		assert.equal(instance.variableValues.speedtest_udp_loss, '')
-		await instance.pollAll()
-		assert.equal(instance.variableValues.speedtest_bandwidth_mbps, 91.3)
+	describe('audio', () => {
+		it('a gain nudge on a stereo pair reads the settings first and patches once', async () => {
+			mock.state.inputs['analog-a'].settings.local_audio.gain = 27
+			instance.rotaryWindowMs = 10
+			await runAction(instance, 'audio', { inputId: 'analog-a', control: 'gain', direction: 'up', step: 3 })
+			await waitFor(() => recorded(mock, 'PATCH', `${V2}/inputs/analog-a/settings`).length === 1)
+			one(mock, 'GET', `${V2}/inputs/analog-a/settings`)
+			const req = one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`)
+			assert.deepEqual(req.body, { local_audio: { gain: 30 } })
+		})
+
+		it('stereo_pair false patches both channels to the same value (§5)', async () => {
+			mock.state.inputs['analog-b'].settings.local_audio.channels.channelA.gain = 20
+			mock.state.inputs['analog-b'].settings.local_audio.channels.channelB.gain = 24
+			instance.rotaryWindowMs = 10
+			await runAction(instance, 'audio', { inputId: 'analog-b', control: 'gain', direction: 'up', step: 2 })
+			await waitFor(() => recorded(mock, 'PATCH', `${V2}/inputs/analog-b/settings`).length === 1)
+			const req = one(mock, 'PATCH', `${V2}/inputs/analog-b/settings`)
+			// read from channel A (20 + 2), both channels move to that value
+			assert.deepEqual(req.body, {
+				local_audio: { channels: { channelA: { gain: 22 }, channelB: { gain: 22 } } },
+			})
+		})
+
+		it('presses inside the coalescing window are summed into one patch (D4)', async () => {
+			mock.state.inputs['analog-b'].settings.local_audio.channels.channelA.gain = 20
+			mock.state.inputs['analog-b'].settings.local_audio.channels.channelB.gain = 24
+			instance.rotaryWindowMs = 80
+			const options = { inputId: 'analog-b', control: 'gain', direction: 'up', step: 2 }
+			await runAction(instance, 'audio', options)
+			await runAction(instance, 'audio', options)
+			await runAction(instance, 'audio', options)
+			await waitFor(() => recorded(mock, 'PATCH', `${V2}/inputs/analog-b/settings`).length === 1)
+			await new Promise((resolve) => setTimeout(resolve, 150))
+			const list = recorded(mock, 'PATCH', `${V2}/inputs/analog-b/settings`)
+			assert.equal(list.length, 1)
+			assert.deepEqual(list[0].body, {
+				local_audio: { channels: { channelA: { gain: 26 }, channelB: { gain: 26 } } },
+			})
+		})
+
+		it('rotary steps flush the same way runAction does (runRotate)', async () => {
+			mock.state.inputs['analog-a'].settings.local_audio.gain = 50
+			instance.rotaryWindowMs = 10
+			await runRotate(instance, 'audio', { inputId: 'analog-a', control: 'gain', direction: 'down', step: 5 })
+			await waitFor(() => recorded(mock, 'PATCH', `${V2}/inputs/analog-a/settings`).length === 1)
+			assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`).body, { local_audio: { gain: 45 } })
+		})
+
+		it('delay path detection: audio.delay, hdmi.audio.delay, sdi.audio.delay', async () => {
+			instance.rotaryWindowMs = 10
+
+			mock.state.inputs['analog-a'].settings.audio.delay = 0
+			await runAction(instance, 'audio', { inputId: 'analog-a', control: 'delay', direction: 'up', step: 5 })
+			await waitFor(() => recorded(mock, 'PATCH', `${V2}/inputs/analog-a/settings`).length === 1)
+			assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/analog-a/settings`).body, { audio: { delay: 5 } })
+
+			mock.requests.length = 0
+			mock.state.inputs['hdmi-b'].settings.hdmi.audio.delay = 0
+			await runAction(instance, 'audio', { inputId: 'hdmi-b', control: 'delay', direction: 'up', step: 40 })
+			await waitFor(() => recorded(mock, 'PATCH', `${V2}/inputs/hdmi-b/settings`).length === 1)
+			assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/hdmi-b/settings`).body, {
+				hdmi: { audio: { delay: 40 } },
+			})
+
+			mock.requests.length = 0
+			mock.state.inputs['sdi-a'].settings.sdi.audio.delay = 0
+			await runAction(instance, 'audio', { inputId: 'sdi-a', control: 'delay', direction: 'down', step: 20 })
+			await waitFor(() => recorded(mock, 'PATCH', `${V2}/inputs/sdi-a/settings`).length === 1)
+			assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/sdi-a/settings`).body, { sdi: { audio: { delay: -20 } } })
+		})
+
+		it('"Nothing" (control none) sends no request; it only re-reads', async () => {
+			instance.rotaryWindowMs = 10
+			await runAction(instance, 'audio', { inputId: 'analog-a', control: 'none', direction: 'up', step: 1 })
+			await new Promise((resolve) => setTimeout(resolve, 60))
+			assert.equal(mock.requests.length, 0)
+		})
+
+		it('an input with no gain/delay setting warns (from the coalesced flush) and sends nothing', async () => {
+			instance.rotaryWindowMs = 10
+			await runAction(instance, 'audio', { inputId: 'SRT1', control: 'gain', direction: 'up', step: 1 })
+			await new Promise((resolve) => setTimeout(resolve, 60))
+			assert.equal(recorded(mock, 'PATCH').length, 0)
+			assert.match(logged(instance, 'warn').join('\n'), /no gain setting/)
+		})
+
+		it('an unknown input is reported, nothing is sent', async () => {
+			await runAction(instance, 'audio', { inputId: 'nope', control: 'gain', direction: 'up', step: 1 })
+			assert.match(logged(instance, 'error').join('\n'), /unknown input nope/)
+			assert.equal(mock.requests.length, 0)
+		})
 	})
 
-	it('refreshPoll polls immediately', async () => {
-		await runAction(instance, 'refreshPoll', {})
-		one(mock, 'GET', `${V2}/channels`)
-		one(mock, 'GET', `${V2}/recorders/status`)
+	// ------------------------------------------------------------------
+	// Storage
+	// ------------------------------------------------------------------
+
+	describe('storage', () => {
+		it('nothing to eject on a storage without media (nodev), no confirm is armed', async () => {
+			instance.state.storages.external.status = { state: 'nodev' }
+			await runAction(instance, 'storage', { storageId: 'external', confirm: true })
+			assert.equal(mock.requests.length, 0)
+			assert.match(logged(instance, 'info').join('\n'), /Nothing to eject/)
+			assert.equal(instance.isConfirmPending('c1'), false)
+		})
+
+		it('eject sets the Ejected hint for 4 s', async () => {
+			instance.state.storages.external.status = { state: 'ready', total: 100, free: 50 }
+			const before = Date.now()
+			await runAction(instance, 'storage', { storageId: 'external', confirm: false })
+			one(mock, 'POST', `${V2}/system/storages/external/control/eject`)
+			assert.equal(instance.state.storages.external.hint.text, 'Ejected')
+			assert.ok(instance.state.storages.external.hint.until >= before + 3000)
+		})
+
+		it('an unknown storage is reported, nothing is sent', async () => {
+			await runAction(instance, 'storage', { storageId: 'nope', confirm: false })
+			assert.match(logged(instance, 'error').join('\n'), /unknown storage nope/)
+			assert.equal(mock.requests.length, 0)
+		})
 	})
 
-	it('no action callback ever throws, even with garbage options', async () => {
+	// ------------------------------------------------------------------
+	// Confirm gate (D2)
+	// ------------------------------------------------------------------
+
+	describe('confirm gate (D2)', () => {
+		it('first press only arms the button (no request, confirm_hint set, confirm_pending true)', async () => {
+			await runAction(instance, 'power', { op: 'reboot', confirm: true }, { controlId: 'confirm1' })
+			none(mock, 'POST', `${V2}/system/control/reboot`)
+			assert.equal(instance.variableValues.confirm_hint, 'Press again to confirm')
+			assert.ok(instance.checkedFeedbacks.some((ids) => ids.includes('confirm_pending')))
+			assert.equal(instance.isConfirmPending('confirm1'), true)
+			assert.equal(instance.isConfirmPending('other'), false)
+		})
+
+		it('a second press of the same button within the window sends the command', async () => {
+			await runAction(instance, 'power', { op: 'reboot', confirm: true }, { controlId: 'confirm2' })
+			none(mock, 'POST', `${V2}/system/control/reboot`)
+			await runAction(instance, 'power', { op: 'reboot', confirm: true }, { controlId: 'confirm2' })
+			one(mock, 'POST', `${V2}/system/control/reboot`)
+			assert.equal(instance.variableValues.confirm_hint, '')
+			assert.equal(instance.isConfirmPending('confirm2'), false)
+		})
+
+		it('a third press within the status window re-arms without leaving both confirm_hint and power_status set (regression)', async () => {
+			await runAction(instance, 'power', { op: 'reboot', confirm: true }, { controlId: 'confirm5' })
+			await runAction(instance, 'power', { op: 'reboot', confirm: true }, { controlId: 'confirm5' })
+			one(mock, 'POST', `${V2}/system/control/reboot`)
+			assert.equal(instance.variableValues.confirm_hint, '')
+			assert.notEqual(instance.variableValues.power_status, '')
+
+			// a third press on the same button, still inside power_status's 30 s window, only re-arms
+			await runAction(instance, 'power', { op: 'reboot', confirm: true }, { controlId: 'confirm5' })
+			assert.equal(recorded(mock, 'POST', `${V2}/system/control/reboot`).length, 1, 'no second command sent')
+			assert.equal(instance.variableValues.confirm_hint, 'Press again to confirm')
+			assert.equal(
+				instance.variableValues.power_status,
+				'',
+				'stale power_status must not linger alongside confirm_hint',
+			)
+			assert.equal(instance.state.powerStatus, undefined)
+		})
+
+		it('a press after the window has expired only re-arms (shortened confirmWindowMs)', async () => {
+			instance.confirmWindowMs = 20
+			await runAction(instance, 'storage', { storageId: 'main', confirm: true }, { controlId: 'confirm3' })
+			await new Promise((resolve) => setTimeout(resolve, 60))
+			await runAction(instance, 'storage', { storageId: 'main', confirm: true }, { controlId: 'confirm3' })
+			assert.equal(mock.requests.length, 0)
+			assert.equal(instance.variableValues.confirm_hint, 'Press again to confirm')
+			assert.equal(instance.isConfirmPending('confirm3'), true)
+		})
+
+		it('pressing a *different* button re-arms instead of confirming the first one (a single pending slot)', async () => {
+			await runAction(instance, 'power', { op: 'reboot', confirm: true }, { controlId: 'confirmA' })
+			assert.equal(instance.isConfirmPending('confirmA'), true)
+			await runAction(instance, 'power', { op: 'reboot', confirm: true }, { controlId: 'confirmB' })
+			assert.equal(mock.requests.length, 0)
+			assert.equal(instance.isConfirmPending('confirmB'), true)
+			assert.equal(instance.isConfirmPending('confirmA'), false, 'arming a different button displaces the first')
+		})
+
+		it('an unticked confirm fires immediately, arming nothing', async () => {
+			await runAction(instance, 'power', { op: 'shutdown', confirm: false }, { controlId: 'confirm4' })
+			one(mock, 'POST', `${V2}/system/control/shutdown`)
+			assert.equal(instance.isConfirmPending('confirm4'), false)
+		})
+	})
+
+	// ------------------------------------------------------------------
+	// Resilience
+	// ------------------------------------------------------------------
+
+	it('no action callback ever throws, even with garbage or empty options', async () => {
 		for (const [id, def] of Object.entries(instance.definitions.actions)) {
 			await assert.doesNotReject(
 				() => def.callback({ actionId: id, options: {}, id: 'a', controlId: 'c' }, {}),
@@ -838,11 +718,18 @@ describe('actions against a v2.0 device', () => {
 			)
 			await assert.doesNotReject(
 				() =>
-					def.callback({ actionId: id, options: { channelIdlayoutId: 42, channelIdpublisherId: null } }, {}),
+					def.callback(
+						{
+							actionId: id,
+							options: { channelId: 42, publisherId: null, recorderId: {}, layoutId: 7, storageId: [] },
+							id: 'a',
+							controlId: 'c',
+						},
+						{},
+					),
 				`action ${id} threw with garbage options`,
 			)
 		}
-		mock.reset()
 	})
 })
 
@@ -861,49 +748,34 @@ describe('actions against a legacy-only device', () => {
 		await mock.close()
 	})
 
-	it('existing actions use the /api base', async () => {
-		await runAction(instance, 'channelChangeLayout', { channelIdlayoutId: '1-2' })
-		const req = mock.requests.find((r) => r.method === 'PUT')
-		assert.equal(req.path, '/api/channels/1/layouts/active')
-		assert.deepEqual(req.body, { id: 2 })
+	it('actions that do not need v2 use the legacy /api base', async () => {
+		await runAction(instance, 'layout', { channelId: '1', layoutId: '1-2', layoutIdManual: '' })
+		const layoutReq = mock.requests.find((r) => r.method === 'PUT')
+		assert.equal(layoutReq.path, '/api/channels/1/layouts/active')
 
 		mock.requests.length = 0
-		await runAction(instance, 'controlStreaming', { channelIdpublisherId: '1-0', startStopAction: 1 })
+		await runAction(instance, 'stream', { channelId: '1', publisherId: '1-0', op: 'start' })
 		assert.equal(mock.requests[0].path, '/api/channels/1/publishers/0/control/start')
 
 		mock.requests.length = 0
-		await runAction(instance, 'insertMarker', { channel: '1', markertext: 'm' })
+		await runAction(instance, 'bookmark', { channelId: '1', text: 'm', appendTime: false })
 		assert.equal(mock.requests[0].path, '/api/channels/1/bookmarks')
-		assert.deepEqual(mock.requests[0].body, { text: 'm' })
+
+		mock.requests.length = 0
+		await runAction(instance, 'recorder', { recorderId: '2', op: 'start' })
+		assert.equal(mock.requests[0].path, '/api/recorders/2/control/start')
 	})
 
-	it('v2-only actions log a warning and send nothing', async () => {
+	it('v2-only actions (recorder all/pause/resume, singletouch, output, preset, event, audio, storage) warn and send nothing', async () => {
 		const v2Only = [
-			['recorderControlAll', { action: 'start' }],
-			['setChannelName', { channel: '1', name: 'x' }],
-			['setPublisherName', { channelIdpublisherId: '1-0', name: 'x' }],
-			['setPublisherEnabled', { channelIdpublisherId: '1-0', enabled: 'true' }],
-			['setPublisherSingleTouch', { channelIdpublisherId: '1-0', single_touch: 'true' }],
-			['setRtmpDestination', { channelIdpublisherId: '1-0', url: 'rtmp://x' }],
-			['setSrtDestination', { channelIdpublisherId: '1-1', mode: 'caller', url: 'srt://x' }],
-			['patchPublisherSettings', { channelIdpublisherId: '1-0', json: '{}' }],
-			['addPublisher', { channel: '1', name: '', json: '{"type":"rtmp"}' }],
-			['setOutputSource', { output: 'D1', source: '1' }],
-			['inputAudioMute', { input: 'analog-a', mute: 'true' }],
-			['inputAudioGain', { input: 'analog-a', gain: 1, channel: 'both' }],
-			['inputAudioDelay', { input: 'analog-a', delay: 0 }],
-			['inputPhantomPower', { input: 'analog-a', phantom_power: 'true' }],
-			['patchInputSettings', { input: 'analog-a', json: '{}' }],
-			['createNetworkInput', { type: 'rtsp', name: '', json: '{}' }],
-			['singleTouchToggle', { stc: '0' }],
-			['applyConfigPreset', { preset: 'Default', sections: [] }],
-			['storageEject', { storage: 'external' }],
-			['eventControl', { event: 'upcoming', eventId: '', action: 'start' }],
-			['eventExtend', { event: 'ongoing', eventId: '', seconds: 60 }],
-			['createAdhocEvent', { json: '{}' }],
-			['adhocSessionLogout', {}],
-			['refreshConnectivity', {}],
-			['runSpeedTest', { mode: 'uplink', protocol: 'tcp', timeout: 1 }],
+			['recorder', { recorderId: 'all', op: 'start' }],
+			['recorder', { recorderId: '1', op: 'pause' }],
+			['singletouch', { stcId: '0' }],
+			['output', { outputId: 'D1', source: 'console' }],
+			['preset', { presetName: 'Default', sections: [], confirm: false }],
+			['event', { eventRef: 'ongoing', op: 'toggle', extendSeconds: 300 }],
+			['audio', { inputId: 'analog-a', control: 'gain', direction: 'up', step: 1 }],
+			['storage', { storageId: 'external', confirm: false }],
 		]
 		for (const [id, options] of v2Only) {
 			mock.requests.length = 0
@@ -915,11 +787,5 @@ describe('actions against a legacy-only device', () => {
 				`${id} did not warn`,
 			)
 		}
-	})
-
-	it('refreshPoll works on legacy devices', async () => {
-		mock.requests.length = 0
-		await runAction(instance, 'refreshPoll', {})
-		assert.ok(mock.requests.some((r) => r.path === '/api/channels'))
 	})
 })

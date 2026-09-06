@@ -3,18 +3,21 @@
  * Mixed into the instance prototype, so `this` is the instance.
  */
 
+/** separator between the channel and the item in a composite choice label */
+const DASH = '–'
+
 const OUTPUT_SOURCE_STATIC = [
-	{ id: 'multiview', label: 'Multi-viewer' },
-	{ id: 'deviceinfo', label: 'Device information' },
-	{ id: 'console', label: 'Console' },
+	{ id: 'multiview', label: 'Built-in: Multiview' },
+	{ id: 'deviceinfo', label: 'Built-in: Device info' },
+	{ id: 'console', label: 'Built-in: Console' },
 ]
 
-const EVENT_ALIASES = [
-	{ id: 'upcoming', label: 'Upcoming (next scheduled) event' },
-	{ id: 'ongoing', label: 'Ongoing event (running or paused)' },
-	{ id: 'running', label: 'Running event' },
-	{ id: 'paused', label: 'Paused event' },
-	{ id: 'completed', label: 'Most recent completed event' },
+const EVENT_REFS = [
+	{ id: 'upcoming', label: 'Upcoming (next scheduled)' },
+	{ id: 'ongoing', label: 'Ongoing (running or paused)' },
+	{ id: 'running', label: 'Running' },
+	{ id: 'paused', label: 'Paused' },
+	{ id: 'completed', label: 'Completed (most recent)' },
 ]
 
 module.exports = {
@@ -31,6 +34,18 @@ module.exports = {
 		return ''
 	},
 
+	/**
+	 * Return `preferred` when the choices contain it, otherwise the first id
+	 *
+	 * @param {{id: string|number, label: string}[]} arr the dropdown array
+	 * @param {string|number} preferred
+	 * @returns {string|number}
+	 */
+	preferredId(arr, preferred) {
+		if (Array.isArray(arr) && arr.some((choice) => String(choice?.id) === String(preferred))) return preferred
+		return this.firstId(arr)
+	},
+
 	/** Channels -> id cid */
 	choicesChannel() {
 		return Object.values(this.state?.channels || {}).map((channel) => ({
@@ -39,43 +54,43 @@ module.exports = {
 		}))
 	},
 
-	/** Channel/layout combinations -> id `${cid}-${lid}` */
-	choicesChannelLayout() {
+	/** Channel/layout combinations -> id `${cid}-${lid}`, label `Channel – Layout` */
+	choicesLayouts() {
 		const choices = []
 		for (const channel of Object.values(this.state?.channels || {})) {
+			const cname = channel.name ?? String(channel.id)
 			for (const layout of Object.values(channel.layouts || {})) {
 				choices.push({
 					id: `${channel.id}-${layout.id}`,
-					label: `${channel.name} - ${layout.name}`,
+					label: `${cname} ${DASH} ${layout.name ?? layout.id}`,
 				})
 			}
 		}
 		return choices
 	},
 
-	/** Channel/publisher combinations including a `${cid}-all` entry per channel with publishers */
-	choicesChannelPublishers() {
+	/**
+	 * Channel/publisher combinations -> id `${cid}-all` (label `Channel – All publishers`) first per
+	 * channel, then `${cid}-${pid}` (label `Channel – Name (type)`)
+	 */
+	choicesPublishers() {
 		const choices = []
 		for (const channel of Object.values(this.state?.channels || {})) {
 			const publishers = Object.values(channel.publishers || {})
 			if (publishers.length === 0) continue
-			choices.push({
-				id: `${channel.id}-all`,
-				label: `${channel.name} - All Streams`,
-			})
+			const cname = channel.name ?? String(channel.id)
+			choices.push({ id: `${channel.id}-all`, label: `${cname} ${DASH} All publishers` })
 			for (const publisher of publishers) {
+				const pname = publisher.name ?? String(publisher.id)
 				choices.push({
 					id: `${channel.id}-${publisher.id}`,
-					label: `${channel.name} - ${publisher.name ?? publisher.id}`,
+					label: publisher.type
+						? `${cname} ${DASH} ${pname} (${publisher.type})`
+						: `${cname} ${DASH} ${pname}`,
 				})
 			}
 		}
 		return choices
-	},
-
-	/** Channel/publisher combinations without the `-all` entries */
-	choicesChannelPublishersOnly() {
-		return this.choicesChannelPublishers().filter((choice) => !String(choice.id).endsWith('-all'))
 	},
 
 	/** Recorders -> id rid */
@@ -84,6 +99,11 @@ module.exports = {
 			id: String(recorder.id),
 			label: recorder.name ?? String(recorder.id),
 		}))
+	},
+
+	/** Recorders with the `all` aggregate first */
+	choicesRecordersWithAll() {
+		return [{ id: 'all', label: 'All recorders' }, ...this.choicesRecorders()]
 	},
 
 	/** Inputs -> id sid, label `name (type)` */
@@ -164,8 +184,38 @@ module.exports = {
 			}))
 	},
 
-	/** Static event aliases accepted by the schedule endpoints */
-	choicesEventAlias() {
-		return EVENT_ALIASES.map((c) => ({ ...c }))
+	/**
+	 * Union of channels, video-capable inputs and outputs for the advanced `preview` feedback's
+	 * `sourceId` option, each labelled with its domain since Companion dropdown choices cannot depend
+	 * on another option's value (the `source` option picks which of the three the id is looked up in).
+	 */
+	choicesPreviewSources() {
+		const choices = []
+		for (const channel of Object.values(this.state?.channels || {})) {
+			choices.push({ id: String(channel.id), label: `Channel: ${channel.name ?? channel.id}` })
+		}
+		for (const input of Object.values(this.state?.inputs || {})) {
+			if (input.video !== true) continue
+			choices.push({ id: String(input.id), label: `Input: ${input.name ?? input.id}` })
+		}
+		for (const output of Object.values(this.state?.outputs || {})) {
+			choices.push({ id: String(output.id), label: `Output: ${output.name ?? output.id}` })
+		}
+		return choices
+	},
+
+	/** The five schedule aliases, then the polled events labelled `title (status)` */
+	choicesEventRefs() {
+		const choices = EVENT_REFS.map((c) => ({ ...c }))
+		const seen = new Set(choices.map((c) => c.id))
+		for (const event of this.state?.events?.list || []) {
+			if (!event || event.id === undefined || event.id === null) continue
+			const id = String(event.id)
+			if (seen.has(id)) continue
+			seen.add(id)
+			const title = typeof event.title === 'string' && event.title !== '' ? event.title : `Event ${id}`
+			choices.push({ id, label: `${title} (${event.status ?? 'unknown'})` })
+		}
+		return choices
 	},
 }

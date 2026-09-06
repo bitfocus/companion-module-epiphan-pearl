@@ -1,16 +1,20 @@
 const variables = require('./variables')
-const { stableJson, emptyState, metadataRetryDue, normaliseInputId } = require('./utils')
+const { stableJson, emptyState, normaliseInputId, clampNumber } = require('./utils')
 
 /** every Nth poll the slow changing system information is refreshed */
 const STRUCTURE_REFRESH_EVERY = 30
-/** every Nth poll the connectivity details are refreshed (when enabled) */
-const CONNECTIVITY_EVERY = 6
 /**
  * Preview images are fetched this many at a time rather than all at once. The Pearl is an embedded
  * device: firing one request per placed preview button (there can easily be a dozen or more) at the
  * same instant tends to overwhelm it, so most of them time out instead of a few taking slightly longer.
  */
 const MAX_CONCURRENT_PREVIEWS = 3
+/** poll_interval bounds and fallback (D8); kept in sync with src/config.js's field of the same name */
+const POLL_INTERVAL_DEFAULT_MS = 2000
+const POLL_INTERVAL_MIN_MS = 500
+const POLL_INTERVAL_MAX_MS = 300000
+/** failure backoff cap (D8): a failing poll never waits longer than this before retrying */
+const POLL_BACKOFF_MAX_MS = 15000
 
 /**
  * Return the fulfilled value of a Promise.allSettled entry or `fallback`
@@ -20,17 +24,17 @@ function settled(entry, fallback = undefined) {
 }
 
 /**
- * Feedback ids to re-check per state domain when that domain changed
+ * Feedback ids to re-check per state domain when that domain changed (D7 ids).
  */
 const DOMAIN_FEEDBACKS = {
-	layouts: ['channelLayout'],
-	publishers: ['streamingState', 'publisherState', 'anyStreaming'],
-	recorders: ['recorderRecording', 'recorderState', 'anyRecording'],
-	storages: ['storageState', 'storageFreeBelow'],
-	singleTouch: ['singleTouchPressed', 'singleTouchOk'],
-	afu: ['afuState'],
-	systemStatus: ['cpuLoadHigh', 'cpuTempHigh'],
-	events: ['eventStatus'],
+	layouts: ['layout_active'],
+	publishers: ['stream_state'],
+	recorders: ['recorder_state'],
+	storages: ['storage_level'],
+	singleTouch: ['singletouch_active'],
+	afu: ['system'],
+	systemStatus: ['system'],
+	events: ['event_state', 'event_applies'],
 }
 
 /**
@@ -105,6 +109,37 @@ module.exports = {
 	},
 
 	/**
+	 * Base interval between polls, in milliseconds (D8): `config.poll_interval` when present (the
+	 * upgrade this module's config stage has not landed yet still ships `pollfreq` in seconds), clamped
+	 * 500..300000, default 2000.
+	 *
+	 * @returns {number}
+	 */
+	pollIntervalMs() {
+		const configured = this.config?.poll_interval
+		if (configured !== undefined && configured !== null && configured !== '') {
+			return clampNumber(configured, POLL_INTERVAL_DEFAULT_MS, POLL_INTERVAL_MIN_MS, POLL_INTERVAL_MAX_MS)
+		}
+		return Math.round(clampNumber(this.config?.pollfreq, 10, 1, 300) * 1000)
+	},
+
+	/**
+	 * Delay before the next poll should run (D8): the base interval while polls are succeeding, doubling
+	 * per consecutive failed poll and capped at 15 s. `pollAllInner` resets the failure count to 0 on the
+	 * first successful poll and increments it when the core request fails. `instance.js`'s `initInterval()`
+	 * chains via `setTimeout` and recomputes this value after every poll (see doc/ARCHITECTURE.md, poller
+	 * section) so the backoff actually widens the gap between real polls.
+	 *
+	 * @returns {number} milliseconds
+	 */
+	nextPollDelayMs() {
+		const base = this.pollIntervalMs()
+		const failures = Math.max(0, Number(this.pollFailureCount) || 0)
+		if (failures === 0) return base
+		return Math.min(POLL_BACKOFF_MAX_MS, base * Math.pow(2, failures))
+	},
+
+	/**
 	 * INTERNAL: the actual poll, may throw (caught by pollAll)
 	 */
 	async pollAllInner() {
@@ -115,8 +150,6 @@ module.exports = {
 		this.pollCounter = (this.pollCounter || 0) + 1
 		const firstPoll = this.pollCounter === 1
 		const refreshSystemInfo = firstPoll || (this.pollCounter - 1) % STRUCTURE_REFRESH_EVERY === 0
-		const refreshConnectivity =
-			this.config.poll_connectivity === true && (firstPoll || (this.pollCounter - 1) % CONNECTIVITY_EVERY === 0)
 		const isV2 = this.isV2
 		const prev = this.state || emptyState()
 		const state = emptyState()
@@ -126,9 +159,9 @@ module.exports = {
 		const coreResults = await Promise.allSettled([
 			isV2
 				? req('GET', '/channels', {
-						query: { publishers: true, 'publishers-status': true, encoders: true, active_layout: true },
+						query: { publishers: true, 'publishers-status': true, active_layout: true },
 					})
-				: req('GET', '/channels', { query: { publishers: 'yes', encoders: 'yes' } }),
+				: req('GET', '/channels', { query: { publishers: 'yes' } }),
 			req('GET', '/recorders'),
 			req('GET', '/recorders/status'),
 		])
@@ -143,12 +176,16 @@ module.exports = {
 			} else if (this.config.verbose) {
 				this.log('debug', message)
 			}
+			// D8: back off the next poll instead of retrying at the full (possibly very short) interval
+			this.pollFailureCount = (this.pollFailureCount || 0) + 1
 			return
 		}
 		if (this.pollErrorLogged) {
 			this.log('info', 'Connection to device restored')
 			this.pollErrorLogged = false
 		}
+		// D8: reset on the first successful poll
+		this.pollFailureCount = 0
 
 		const channels = Array.isArray(channelsRes.value) ? channelsRes.value : []
 		const recorders = Array.isArray(recordersRes.value) ? recordersRes.value : []
@@ -193,8 +230,9 @@ module.exports = {
 				}),
 			)
 			round2.push(
-				req('GET', '/inputs').then((inputs) => {
-					for (const input of Array.isArray(inputs) ? inputs : []) {
+				req('GET', '/inputs').then(async (inputs) => {
+					const list = Array.isArray(inputs) ? inputs : []
+					for (const input of list) {
 						if (!input || input.id === undefined) continue
 						state.inputs[input.id] = {
 							id: String(input.id),
@@ -205,8 +243,23 @@ module.exports = {
 							real_device_name: input.real_device_name,
 							levels: undefined,
 							audioState: undefined,
+							settings: undefined,
 						}
 					}
+					// gain/delay settings cache for the audio action's variables (input_<id>_gain / _delay);
+					// only audio-capable inputs have anything to read here
+					await Promise.allSettled(
+						list
+							.filter((input) => input && input.id !== undefined && input.audio === true)
+							.map((input) =>
+								req('GET', `/inputs/${encodeURIComponent(input.id)}/settings`, { optional: true }).then(
+									(settings) => {
+										if (settings && typeof settings === 'object')
+											state.inputs[input.id].settings = settings
+									},
+								),
+							),
+					)
 				}),
 			)
 			round2.push(
@@ -221,7 +274,9 @@ module.exports = {
 						state.outputs[output.id] = {
 							id: String(output.id),
 							name: output.name ?? String(output.id),
+							// optimistic: no read endpoint for the current source, so carried over from the last poll
 							source: prev.outputs?.[output.id]?.source,
+							setAt: prev.outputs?.[output.id]?.setAt,
 						}
 					}
 				}),
@@ -231,7 +286,12 @@ module.exports = {
 					const list = Array.isArray(storages) ? storages : []
 					for (const storage of list) {
 						if (!storage || storage.id === undefined) continue
-						state.storages[storage.id] = { id: String(storage.id), status: undefined }
+						// hint ({text, until}) is optimistic, set by the storage action; carried over like output source
+						state.storages[storage.id] = {
+							id: String(storage.id),
+							status: undefined,
+							hint: prev.storages?.[storage.id]?.hint,
+						}
 					}
 					await Promise.allSettled(
 						list
@@ -278,7 +338,15 @@ module.exports = {
 						state.events.ongoing = event && typeof event === 'object' ? event : null
 					}),
 				)
+				// feeds choicesEventRefs() and the event_state / event_applies feedbacks for a specific event id (D5)
+				round2.push(
+					req('GET', '/schedule/events', { query: { limit: 10 }, optional: true }).then((list) => {
+						state.events.list = Array.isArray(list) ? list : []
+					}),
+				)
 			}
+			// poll_events off (or not reached yet this round): events stay at emptyState()'s null/[] defaults,
+			// same as upcoming/ongoing above
 
 			// ---- 3. slow changing system information
 			if (refreshSystemInfo) {
@@ -311,38 +379,17 @@ module.exports = {
 				state.identity = prev.identity
 				state.presets = prev.presets || []
 			}
-
-			// ---- 4. conditional
-			if (this.config.poll_archive === true) {
-				for (const rid of Object.keys(state.recorders)) {
-					round2.push(
-						req('GET', `/recorders/${encodeURIComponent(rid)}/archive/files`, {
-							query: { from: 0, limit: 1 },
-							optional: true,
-						}).then((files) => {
-							state.recorders[rid].lastFile =
-								Array.isArray(files) && files.length > 0 ? files[0] : undefined
-						}),
-					)
-				}
-			}
-			if (refreshConnectivity) {
-				round2.push(
-					req('GET', '/system/connectivity/details', { optional: true }).then((details) => {
-						state.connectivity = details && typeof details === 'object' ? details : prev.connectivity
-					}),
-				)
-			} else {
-				state.connectivity = prev.connectivity
-			}
 		} else {
 			// v1: nothing beyond channels/layouts/publishers/recorders is available
 			state.firmware = prev.firmware
 			state.identity = prev.identity
 		}
-		state.speedtest = prev.speedtest
-		// optimistic, set by the applyConfigPreset action; the API has no read endpoint for it
+		// optimistic / action-set fields carried over across polls (no read endpoint, or expiry is
+		// judged from `until` at variable-render time rather than here)
 		state.lastConfigPreset = prev.lastConfigPreset
+		state.presetStatus = prev.presetStatus
+		state.powerStatus = prev.powerStatus
+		state.lastError = prev.lastError
 
 		const round2Results = await Promise.allSettled(round2)
 		if (this.config.verbose) {
@@ -364,12 +411,13 @@ module.exports = {
 			return
 		}
 		const structureChanged = this.structureKey(prev) !== this.structureKey(state)
-		const feedbacksToCheck = []
+		const feedbacksToCheck = new Set()
 		if (!structureChanged) {
 			const before = domainSlices(prev)
 			const after = domainSlices(state)
 			for (const [domain, ids] of Object.entries(DOMAIN_FEEDBACKS)) {
-				if (stableJson(before[domain]) !== stableJson(after[domain])) feedbacksToCheck.push(...ids)
+				if (stableJson(before[domain]) !== stableJson(after[domain]))
+					for (const id of ids) feedbacksToCheck.add(id)
 			}
 		}
 
@@ -379,8 +427,21 @@ module.exports = {
 			this.updateSystem()
 			this.checkFeedbacks()
 			if (!firstPoll) this.log('info', 'Pearl configuration has changed, choices and presets updated.')
-		} else if (feedbacksToCheck.length > 0) {
-			this.checkFeedbacks(...feedbacksToCheck)
+		} else {
+			// output_set expires after a fixed 5 s window rather than on a state change, so it has no
+			// entry in DOMAIN_FEEDBACKS; instead it is rechecked every poll while any output was set
+			// recently enough that the window could still be closing (a generous margin of one poll
+			// interval past the 5 s mark covers the fall-off even at a slow poll_interval), and left
+			// alone otherwise so an idle connection that never touched an output checks nothing extra
+			const outputSetFalling = Object.values(state.outputs || {}).some((output) => {
+				const setAt = Number(output?.setAt)
+				return Number.isFinite(setAt) && Date.now() - setAt < 5000 + this.pollIntervalMs()
+			})
+			if (outputSetFalling) feedbacksToCheck.add('output_set')
+			// checkFeedbacks() with no ids at all means "recheck everything" in Companion, so it must
+			// only ever be called here with at least one id, never bare (that meaning is reserved for
+			// the structureChanged branch above)
+			if (feedbacksToCheck.size > 0) this.checkFeedbacks(...feedbacksToCheck)
 		}
 
 		// ---- 7. variables
@@ -388,13 +449,6 @@ module.exports = {
 			variables.updateVariables(this)
 		} catch (error) {
 			this.log('error', `Updating variables failed: ${error?.message || error}`)
-		}
-
-		// ---- 8. metadata for channels we have not seen yet (or whose failed fetch is due for a retry)
-		const now = Date.now()
-		const missing = Object.keys(this.state.channels).filter((cid) => metadataRetryDue(this.metadata?.[cid], now))
-		if (missing.length > 0) {
-			await Promise.allSettled(missing.map((cid) => this.fetchMetadata(cid)))
 		}
 	},
 
@@ -410,7 +464,6 @@ module.exports = {
 				name: channel.name ?? cid,
 				layouts: {},
 				publishers: {},
-				encoders: Array.isArray(channel.encoders) ? channel.encoders : [],
 				active_layout: undefined,
 			}
 			if (
@@ -447,7 +500,6 @@ module.exports = {
 				name: recorder.name ?? String(recorder.id),
 				multisource: recorder.multisource === true,
 				status: undefined,
-				lastFile: undefined,
 			}
 		}
 		for (const entry of recordersStatus) {
@@ -459,7 +511,6 @@ module.exports = {
 					name: entry.name ?? String(entry.id),
 					multisource: false,
 					status: undefined,
-					lastFile: undefined,
 				}
 			}
 			state.recorders[entry.id].status =
@@ -620,47 +671,9 @@ module.exports = {
 					}),
 				)
 			}
-			if (changed) this.checkFeedbacks('channelPreview', 'inputPreview', 'outputPreview', 'channelLayoutPreview')
+			if (changed) this.checkFeedbacks('preview', 'layout_preview')
 		} catch (error) {
 			this.log('error', `Preview poll failed: ${error?.message || error}`)
-		}
-	},
-
-	/**
-	 * Compatibility helper (used by older action code): refresh the active layout of one channel
-	 *
-	 * @param {string|number} channelId
-	 */
-	async updateActiveChannelLayout(channelId) {
-		const cid = String(channelId)
-		try {
-			const layouts = await this.request('GET', `/channels/${cid}/layouts`, { base: 'v1', silent: true })
-			const channel = this.state.channels[cid]
-			if (!channel) return
-			for (const layout of Array.isArray(layouts) ? layouts : []) {
-				if (channel.layouts[layout.id]) channel.layouts[layout.id].active = layout.active === true
-				if (layout.active === true) channel.active_layout = { id: String(layout.id), name: layout.name }
-			}
-			this.checkFeedbacks('channelLayout')
-			variables.updateVariables(this)
-		} catch (error) {
-			this.log('debug', `Could not refresh active layout of channel ${cid}: ${error?.message || error}`)
-		}
-	},
-
-	/**
-	 * Compatibility helper (used by older action code): refresh the status of all recorders
-	 */
-	async updateRecorderStatus() {
-		try {
-			const statuses = await this.request('GET', '/recorders/status', { silent: true })
-			for (const entry of Array.isArray(statuses) ? statuses : []) {
-				if (this.state.recorders[entry.id]) this.state.recorders[entry.id].status = entry.status
-			}
-			this.checkFeedbacks('recorderRecording', 'recorderState', 'anyRecording')
-			variables.updateVariables(this)
-		} catch (error) {
-			this.log('debug', `Could not refresh recorder status: ${error?.message || error}`)
 		}
 	},
 }

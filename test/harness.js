@@ -245,14 +245,15 @@ const DEFAULT_CONFIG = Object.freeze({
 	host: '127.0.0.1',
 	username: 'admin',
 	password: 'x',
-	pollfreq: 300,
+	// long enough that the interval poller never fires on its own during a test (D8: poll_interval
+	// replaces pollfreq, ms instead of seconds; 300000 ms is the same 5 minutes the old pollfreq: 300
+	// gave every other test)
+	poll_interval: 300000,
 	timeout: 2000,
 	use_api_v2: true,
 	preview_interval: 0,
 	preview_width: 144,
 	poll_events: true,
-	poll_archive: true,
-	poll_connectivity: false,
 	verbose: false,
 })
 
@@ -287,12 +288,33 @@ function actionContext() {
 
 /**
  * Run an action callback by id, the way Companion would.
+ *
+ * @param {object} instance
+ * @param {string} actionId
+ * @param {object} [options]
+ * @param {object} [meta]
+ * @param {string} [meta.controlId='c1'] the button this press belongs to (D2 confirm gate keys on this)
+ * @param {string} [meta.id='a1'] the action instance id
  */
-async function runAction(instance, actionId, options = {}) {
+async function runAction(instance, actionId, options = {}, { controlId = 'c1', id = 'a1' } = {}) {
 	const def = instance.definitions.actions[actionId]
 	if (!def) throw new Error(`Unknown action '${actionId}' (is it defined for the current state?)`)
 	if (typeof def.callback !== 'function') throw new Error(`Action '${actionId}' has no callback`)
-	return await def.callback({ actionId, options, id: 'a1', controlId: 'c1' }, actionContext())
+	return await def.callback({ actionId, options, id, controlId }, actionContext())
+}
+
+/**
+ * Run one rotary step (`rotate_left` / `rotate_right`) of a preset built with `options.rotaryActions`,
+ * the way Companion's rotary handling would: it calls the action(s) in that step's array, same as a
+ * `down` press, just with the direction-specific options baked into the preset.
+ *
+ * @param {object} instance
+ * @param {string} actionId
+ * @param {object} [options]
+ * @param {object} [meta] see runAction
+ */
+async function runRotate(instance, actionId, options = {}, meta = {}) {
+	return runAction(instance, actionId, options, meta)
 }
 
 function feedbackEvent(def, feedbackId, options) {
@@ -340,6 +362,7 @@ module.exports = {
 	installStub,
 	createInstance,
 	runAction,
+	runRotate,
 	runFeedback,
 	subscribeFeedback,
 	unsubscribeFeedback,

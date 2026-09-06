@@ -52,26 +52,58 @@ function round1(n) {
 	return Math.round(num * 10) / 10
 }
 
+/** units tried in order by bytesToHuman, base 1024 */
+const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+
 /**
- * Convert bytes to megabytes (1 decimal)
- * @param {number|string} n
- * @returns {number|''}
+ * Bytes as a human readable string, base 1024: '0 B', '512 B', '1.5 KB', '11 GB', '128 GB'.
+ * One decimal below 100 of the chosen unit (dropped when it would be '.0'), whole numbers at or above 100.
+ * @param {number|string} bytes
+ * @returns {string} '0 B' when not a finite positive number
  */
-function bytesToMb(n) {
-	const num = Number(n)
-	if (!Number.isFinite(num)) return ''
-	return round1(num / (1024 * 1024))
+function bytesToHuman(bytes) {
+	let value = Number(bytes)
+	if (!Number.isFinite(value) || value <= 0) return '0 B'
+	let unitIndex = 0
+	while (value >= 1024 && unitIndex < BYTE_UNITS.length - 1) {
+		value /= 1024
+		unitIndex++
+	}
+	const unit = BYTE_UNITS[unitIndex]
+	if (unitIndex === 0) return `${Math.round(value)} ${unit}`
+	const text = value >= 100 ? String(Math.round(value)) : String(Math.round(value * 10) / 10)
+	return `${text} ${unit}`
 }
 
 /**
- * Convert bytes to gigabytes (1 decimal)
- * @param {number|string} n
- * @returns {number|''}
+ * Seconds as a compact duration: 'm:ss' below one hour, 'h:mm:ss' from one hour up.
+ * @param {number|string} seconds
+ * @returns {string} '0:00' when not a finite positive number
  */
-function bytesToGb(n) {
-	const num = Number(n)
-	if (!Number.isFinite(num)) return ''
-	return round1(num / (1024 * 1024 * 1024))
+function compactDuration(seconds) {
+	const total = Number(seconds)
+	const abs = Number.isFinite(total) && total > 0 ? Math.floor(total) : 0
+	const h = Math.floor(abs / 3600)
+	const m = Math.floor((abs % 3600) / 60)
+	const s = abs % 60
+	const two = (v) => String(v).padStart(2, '0')
+	return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`
+}
+
+/**
+ * Seconds of uptime as '3d 4h' (days present), '4h 05m' (hours present) or '12m'.
+ * @param {number|string} seconds
+ * @returns {string} '0m' when not a finite positive number
+ */
+function formatUptime(seconds) {
+	const total = Number(seconds)
+	const abs = Number.isFinite(total) && total > 0 ? Math.floor(total) : 0
+	const d = Math.floor(abs / 86400)
+	const h = Math.floor((abs % 86400) / 3600)
+	const m = Math.floor((abs % 3600) / 60)
+	if (d > 0) return `${d}d ${h}h`
+	if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`
+	return `${m}m`
 }
 
 /**
@@ -168,24 +200,6 @@ function toQueryString(query) {
 }
 
 /**
- * Parse a legacy "key=value" per line text response (get_params.cgi) into an object
- * @param {string} text
- * @returns {Record<string,string>}
- */
-function parseKeyValueText(text) {
-	const out = {}
-	if (typeof text !== 'string') return out
-	for (const line of text.split(/\r?\n/)) {
-		const idx = line.indexOf('=')
-		if (idx <= 0) continue
-		const key = line.slice(0, idx).trim()
-		if (!key) continue
-		out[key] = line.slice(idx + 1).trim()
-	}
-	return out
-}
-
-/**
  * Convert a firmware version string like '4.24.1' to a comparable integer (4*10000 + 24*100 + 1 = 42401)
  * @param {string} version
  * @returns {number|null} null when unparseable
@@ -211,26 +225,6 @@ function clampNumber(value, def, min, max) {
 	return Math.min(max, Math.max(min, num))
 }
 
-/** base back-off between metadata retries (multiplied by the number of failed attempts, capped at 10) */
-const METADATA_RETRY_BASE_MS = 60000
-const METADATA_RETRY_MAX_FACTOR = 10
-
-/**
- * Decide whether the legacy content metadata of a channel has to be (re)fetched.
- * `entry` is `this.metadata[cid]`: undefined (never fetched) -> true; a successful entry -> false;
- * a failure marker `{ _failedAt, _attempts }` -> true once `60 s * min(attempts, 10)` have passed.
- * @param {object|undefined} entry
- * @param {number} [now=Date.now()]
- * @returns {boolean}
- */
-function metadataRetryDue(entry, now = Date.now()) {
-	if (!entry || typeof entry !== 'object') return true
-	const failedAt = Number(entry._failedAt)
-	if (!Number.isFinite(failedAt)) return false
-	const attempts = Math.min(Math.max(1, Number(entry._attempts) || 1), METADATA_RETRY_MAX_FACTOR)
-	return now - failedAt > METADATA_RETRY_BASE_MS * attempts
-}
-
 /** `D2P<serial>.` prefix carried by the ids of the legacy /sources/status list but not by the v2.0 /inputs ids */
 const INPUT_ID_PREFIX_RE = /^D2P[^.]*\./
 
@@ -253,6 +247,98 @@ function sameInputId(a, b) {
 	return normaliseInputId(a) === normaliseInputId(b)
 }
 
+/** recorder states in which a toggle press stops instead of starts */
+const ACTIVE_RECORDER_STATES = ['started', 'starting', 'paused']
+/** publisher states in which a toggle press stops instead of starts */
+const ACTIVE_PUBLISHER_STATES = ['started', 'starting', 'listening']
+
+/**
+ * Command a toggle press sends for a recorder: 'stop' when it (or, for 'all', any recorder) is
+ * started, starting or paused, otherwise 'start'.
+ * @param {Record<string, {status?: {state?: string}}>} recorders state.recorders
+ * @param {string} recorderId a recorder id or 'all'
+ * @returns {'start'|'stop'}
+ */
+function recorderToggleOp(recorders, recorderId) {
+	const list = recorderId === 'all' ? Object.values(recorders || {}) : [recorders?.[recorderId]].filter(Boolean)
+	return list.some((r) => ACTIVE_RECORDER_STATES.includes(r?.status?.state)) ? 'stop' : 'start'
+}
+
+/**
+ * Command a toggle press sends for a publisher: 'stop' when it (or, for 'all', any publisher of the
+ * channel) is started, starting or listening, otherwise 'start'.
+ * @param {Record<string, {status?: {state?: string}}>} publishers channel.publishers
+ * @param {string} publisherId a publisher id or 'all'
+ * @returns {'start'|'stop'}
+ */
+function publisherToggleOp(publishers, publisherId) {
+	const list = publisherId === 'all' ? Object.values(publishers || {}) : [publishers?.[publisherId]].filter(Boolean)
+	return list.some((p) => ACTIVE_PUBLISHER_STATES.includes(p?.status?.state)) ? 'stop' : 'start'
+}
+
+/**
+ * Command a toggle press sends for a scheduled event
+ * @param {string|undefined} status event status
+ * @returns {'pause'|'resume'|'start'|''} '' when no command applies
+ */
+function eventToggleOp(status) {
+	switch (status) {
+		case 'running':
+			return 'pause'
+		case 'paused':
+			return 'resume'
+		case 'scheduled':
+			return 'start'
+		default:
+			return ''
+	}
+}
+
+/**
+ * true when a fixed event command applies to an event in this status
+ * @param {string} op start, stop, pause, resume or extend
+ * @param {string|undefined} status event status
+ * @returns {boolean}
+ */
+function eventApplies(op, status) {
+	switch (op) {
+		case 'start':
+			return status === 'scheduled'
+		case 'stop':
+		case 'extend':
+			return status === 'running' || status === 'paused'
+		case 'pause':
+			return status === 'running'
+		case 'resume':
+			return status === 'paused'
+		default:
+			return false
+	}
+}
+
+/**
+ * Local wall clock time as HH:MM:SS
+ * @param {Date} [date=new Date()]
+ * @returns {string}
+ */
+function localTimeHms(date = new Date()) {
+	const two = (v) => String(v).padStart(2, '0')
+	return `${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}`
+}
+
+/**
+ * Text sent to the device by the bookmark action: the trimmed option ('Marker' when empty),
+ * followed by ' HH:MM:SS' when appendTime is on.
+ * @param {*} text
+ * @param {boolean} appendTime
+ * @param {Date} [date=new Date()]
+ * @returns {string}
+ */
+function bookmarkText(text, appendTime, date = new Date()) {
+	const base = String(text ?? '').trim() || 'Marker'
+	return appendTime === true ? `${base} ${localTimeHms(date)}` : base
+}
+
 /**
  * The empty shape of the instance state, see doc/ARCHITECTURE.md "Instance state"
  * @returns {object}
@@ -266,16 +352,19 @@ function emptyState() {
 		storages: {},
 		singleTouch: {},
 		presets: [],
-		events: { upcoming: null, ongoing: null },
+		events: { upcoming: null, ongoing: null, list: [] },
 		systemStatus: undefined,
 		firmware: undefined,
 		identity: undefined,
 		afu: [],
-		connectivity: undefined,
-		speedtest: undefined,
 		// optimistic: the Pearl API has no read endpoint for the currently applied preset, so this only
-		// reflects what was last applied through this connection, carried over across polls like speedtest
+		// reflects what was last applied through this connection, carried over across polls
 		lastConfigPreset: undefined,
+		// { text, until } set by the preset / power actions, cleared once `until` has passed
+		presetStatus: undefined,
+		powerStatus: undefined,
+		// message of the last failed action, exposed as the last_error variable
+		lastError: undefined,
 	}
 }
 
@@ -284,18 +373,25 @@ module.exports = {
 	formatHms,
 	formatClock,
 	round1,
-	bytesToMb,
-	bytesToGb,
+	bytesToHuman,
+	compactDuration,
+	formatUptime,
 	splitPair,
 	stableJson,
 	parseJsonOption,
 	nonBlank,
 	toQueryString,
-	parseKeyValueText,
 	firmwareVersionNumber,
 	clampNumber,
-	metadataRetryDue,
 	normaliseInputId,
 	sameInputId,
+	recorderToggleOp,
+	publisherToggleOp,
+	eventToggleOp,
+	eventApplies,
+	localTimeHms,
+	bookmarkText,
 	emptyState,
+	ACTIVE_RECORDER_STATES,
+	ACTIVE_PUBLISHER_STATES,
 }
