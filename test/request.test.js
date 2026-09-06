@@ -103,6 +103,24 @@ describe('request layer', () => {
 		assert.equal(instance.calls.log.filter((l) => l.level === 'error').length, 1)
 	})
 
+	it('an HTTP 200 with a failing envelope throws PearlApiError and keeps the status Ok', async () => {
+		instance.calls.log.length = 0
+		instance.calls.status.length = 0
+		await assert.rejects(instance.request('PUT', '/channels/1/name', { query: { softFail: true } }), (err) => {
+			assert.ok(err instanceof PearlApiError)
+			assert.equal(err.name, 'PearlApiError')
+			assert.equal(err.status, 200)
+			assert.equal(err.apiStatus, 'error')
+			assert.equal(err.method, 'PUT')
+			assert.equal(err.path, '/channels/1/name')
+			assert.match(err.message, /rename rejected by device policy/)
+			return true
+		})
+		assert.equal(instance.currentStatus, InstanceStatus.Ok)
+		assert.equal(instance.calls.status.length, 0, 'no status change reported')
+		assert.equal(instance.calls.log.filter((l) => l.level === 'error').length, 1)
+	})
+
 	it('silent suppresses the error log', async () => {
 		instance.calls.log.length = 0
 		await assert.rejects(instance.request('GET', '/channels/99/name', { silent: true }))

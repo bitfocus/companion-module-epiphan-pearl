@@ -165,7 +165,15 @@ itself, is never touched again); clamps `poll_interval` to 500..300000 with a 20
 
 Companion runs each upgrade script exactly once per connection and remembers how far it got, so an existing
 script must never be extended — a field or id added later gets its own script, appended to the exported
-array. The order is part of the contract and is only ever appended to:
+array. The order is part of the contract and is only ever appended to. `src/upgrades.js` itself exports only
+the six scripts below, in this order; test/upgrades.test.js asserts on that array directly. But the array
+Companion actually receives is built in `src/instance.js` as `upgradeScripts = [upgradeToBooleanFeedbacks,
+...upgrades]` — one more, pre-3.0.0 (v2.3.0) script runs before any of the six: `upgradeToBooleanFeedbacks`
+(`CreateConvertToBooleanFeedbackUpgradeScript`, a Companion-provided script, not one of ours) converts the
+legacy `channelLayout` / `streamingState` / `recorderRecording` feedbacks' `fg`/`bg` colour options to
+Companion's newer boolean-feedback style. It predates this rewrite and needed no change for it, so it stays
+unlisted in `src/upgrades.js`, but Companion still runs it first every time; `test/upgrades.test.js` asserts
+on its identity and position in the real `upgradeScripts` export too. The numbered list:
 
 1. `setDefaultConfig` (v2.2.0) — fills `use_api_v2` / `verbose` when undefined.
 2. `renameStreaming` (v2.2.0) — renames the pre-2.2.0 `channelStreaming` action/feedback ids to
@@ -345,6 +353,12 @@ text-in/text-out endpoints to exercise `request()`'s generic body/response handl
 would cost 22 otherwise-unrelated green tests to satisfy the letter of the removed-route table for routes
 nothing else needs gone. If `test/request.test.js` is ever repointed at still-current endpoints, these three
 mock routes can be deleted too.
+
+`PUT /channels/:cid/name` also answers a `?softFail=1` query flag with `{ envelopeError }` from its handler,
+which the dispatcher turns into an HTTP 200 whose JSON envelope is `{status: 'error', message}` instead of
+`{status:'ok', ...}` — a real Pearl quirk (`src/api.js`'s `request()` treats a 2xx body with `status !== 'ok'`
+as a failure) that no other mock route needs to simulate. `test/request.test.js` exercises it directly; no
+other route needs the flag, so it is not wired up anywhere else.
 
 ## Poller (`src/poller.js`)
 

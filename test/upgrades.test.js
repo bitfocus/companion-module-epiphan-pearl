@@ -23,6 +23,27 @@ describe('upgrade scripts', () => {
 		for (const fn of upgrades) assert.equal(typeof fn, 'function')
 	})
 
+	it("instance.js's exported upgradeScripts prepends the pre-3.0.0 upgradeToBooleanFeedbacks script (doc/ARCHITECTURE.md)", () => {
+		// src/upgrades.js's six scripts (asserted above) are not the whole story: instance.js builds the
+		// array Companion actually runs as [upgradeToBooleanFeedbacks, ...upgrades] — a pre-3.0.0 (v2.3.0)
+		// script that converts three legacy feedbacks' fg/bg options to boolean-feedback style before any
+		// of the six scripts above run. doc/ARCHITECTURE.md's "Upgrade scripts" section names it as the
+		// unlisted first entry; this test pins its identity and position so that fact stays true.
+		installStub()
+		const { upgradeScripts } = require('../src/instance')
+		assert.equal(upgradeScripts.length, upgrades.length + 1)
+		assert.equal(upgradeScripts[0].name, 'convertToBooleanFeedbacks')
+		assert.deepEqual(Object.keys(upgradeScripts[0].upgradeMap), [
+			'channelLayout',
+			'streamingState',
+			'recorderRecording',
+		])
+		assert.deepEqual(
+			upgradeScripts.slice(1).map((fn) => fn.name),
+			upgrades.map((fn) => fn.name),
+		)
+	})
+
 	it('setDefaultConfig (v2.2.0) only fills use_api_v2 and verbose', () => {
 		const result = upgrades[0](null, props({ host: '1.2.3.4' }))
 		assert.deepEqual(result.updatedConfig, { host: '1.2.3.4', use_api_v2: true, verbose: false })

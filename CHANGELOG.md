@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [3.0.0] (unreleased)
+## [3.0.0] (2026-09-06)
 
 Companion parity rewrite: the module's control set is now exactly the one offered by the sibling **Epiphan
 Pearl** Stream Deck plugin — same 13 actions (by Stream Deck action suffix), same feedback/variable ids

@@ -7,8 +7,8 @@
  *   const { createInstance, runAction, runFeedback } = require('./harness')
  *   const { startMockPearl } = require('./mock-pearl')
  *   const mock = await startMockPearl()
- *   const instance = await createInstance({ mock, config: { poll_archive: true } })
- *   await runAction(instance, 'recorderControlAll', { action: 'start' })
+ *   const instance = await createInstance({ mock, config: { verbose: true } })
+ *   await runAction(instance, 'recorder', { recorderId: 'all', op: 'start' })
  *   instance.calls.log            // [{ level, message }]
  *   instance.calls.status         // [{ status, message }]
  *   instance.definitions.actions  // last setActionDefinitions() payload

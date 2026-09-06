@@ -712,6 +712,9 @@ async function startMockPearl({
 	//   { png: true }           -> image/png
 	//   { text: string }        -> text/plain
 	//   { octet: Buffer }       -> application/octet-stream
+	//   { envelopeError }       -> 200 {status: envelopeStatus||'error', message: envelopeError} — a real
+	//                              Pearl quirk: the device answers 200 with a failing envelope instead of
+	//                              a non-2xx status (see PUT /channels/:cid/name's softFail flag below)
 
 	const routes = []
 	const route = (method, pattern, handler) => routes.push({ method, pattern, ...compile(pattern), handler })
@@ -748,11 +751,13 @@ async function startMockPearl({
 	})
 	// GET/PUT channel name: the "channel rename" feature (setChannelName) is removed, but this pair is
 	// kept as a generic text-in/text-out endpoint that test/request.test.js exercises directly against
-	// the request layer (result envelope unwrapping, 404, 400 on a bad body) — see the mock's header
-	// comment
+	// the request layer (result envelope unwrapping, 404, 400 on a bad body, and — via the softFail flag
+	// below — a real Pearl quirk where the device answers HTTP 200 with a failing {status:'error', ...}
+	// envelope instead of a non-2xx status) — see the mock's header comment
 	route('GET', '/channels/:cid/name', ({ params }) => ({ result: getChannel(params.cid).name }))
 	route('PUT', '/channels/:cid/name', ({ params, query, body }) => {
 		const ch = getChannel(params.cid)
+		if (flag(query.softFail)) return { envelopeError: `Channel '${ch.id}' rename rejected by device policy` }
 		const name = query.name ?? body?.name
 		if (typeof name !== 'string' || name.length < 1) throw badRequest('Missing channel name')
 		ch.name = name
@@ -1121,6 +1126,11 @@ async function startMockPearl({
 						'Content-Length': out.octet.length,
 					})
 					res.end(out.octet)
+				} else if (out.envelopeError) {
+					sendJson(res, out.code || 200, {
+						status: out.envelopeStatus || 'error',
+						message: out.envelopeError,
+					})
 				} else if ('result' in out) {
 					sendJson(res, out.code || 200, { status: 'ok', result: out.result })
 				} else {
