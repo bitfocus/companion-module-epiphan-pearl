@@ -11,6 +11,7 @@ const { startMockPearl, PNG_1X1 } = require('./mock-pearl')
 const { colors } = require('../src/style')
 
 const FEEDBACK_IDS = [
+	'action_failed',
 	'recorder_state',
 	'stream_state',
 	'layout_active',

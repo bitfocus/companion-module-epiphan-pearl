@@ -317,12 +317,12 @@ async function runRotate(instance, actionId, options = {}, meta = {}) {
 	return runAction(instance, actionId, options, meta)
 }
 
-function feedbackEvent(def, feedbackId, options) {
+function feedbackEvent(def, feedbackId, options, controlId = 'c1') {
 	return {
 		feedbackId,
 		options,
 		id: 'f1',
-		controlId: 'c1',
+		controlId,
 		type: def.type,
 		image: { width: 72, height: 72 },
 	}
@@ -331,11 +331,11 @@ function feedbackEvent(def, feedbackId, options) {
 /**
  * Run a feedback callback by id and return its result (boolean or advanced style object).
  */
-async function runFeedback(instance, feedbackId, options = {}) {
+async function runFeedback(instance, feedbackId, options = {}, { controlId = 'c1' } = {}) {
 	const def = instance.definitions.feedbacks[feedbackId]
 	if (!def) throw new Error(`Unknown feedback '${feedbackId}' (is it defined for the current state?)`)
 	if (typeof def.callback !== 'function') throw new Error(`Feedback '${feedbackId}' has no callback`)
-	return await def.callback(feedbackEvent(def, feedbackId, options), actionContext())
+	return await def.callback(feedbackEvent(def, feedbackId, options, controlId), actionContext())
 }
 
 /**

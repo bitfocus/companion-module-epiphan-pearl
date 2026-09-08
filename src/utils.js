@@ -247,14 +247,18 @@ function sameInputId(a, b) {
 	return normaliseInputId(a) === normaliseInputId(b)
 }
 
-/** recorder states in which a toggle press stops instead of starts */
-const ACTIVE_RECORDER_STATES = ['started', 'starting', 'paused']
-/** publisher states in which a toggle press stops instead of starts */
-const ACTIVE_PUBLISHER_STATES = ['started', 'starting', 'listening']
+/**
+ * recorder states in which a toggle press stops instead of starts. `error` is included: a recorder that
+ * failed mid-recording is still running from the device's point of view, and a second start does
+ * nothing, so the one toggle button an operator has must send the stop (QA 2026-09-08).
+ */
+const ACTIVE_RECORDER_STATES = ['started', 'starting', 'paused', 'error']
+/** publisher states in which a toggle press stops instead of starts (`error`: same reasoning as above) */
+const ACTIVE_PUBLISHER_STATES = ['started', 'starting', 'listening', 'error']
 
 /**
  * Command a toggle press sends for a recorder: 'stop' when it (or, for 'all', any recorder) is
- * started, starting or paused, otherwise 'start'.
+ * started, starting, paused or in error, otherwise 'start'.
  * @param {Record<string, {status?: {state?: string}}>} recorders state.recorders
  * @param {string} recorderId a recorder id or 'all'
  * @returns {'start'|'stop'}
@@ -266,14 +270,17 @@ function recorderToggleOp(recorders, recorderId) {
 
 /**
  * Command a toggle press sends for a publisher: 'stop' when it (or, for 'all', any publisher of the
- * channel) is started, starting or listening, otherwise 'start'.
- * @param {Record<string, {status?: {state?: string}}>} publishers channel.publishers
+ * channel) reports `started: true` (the API's own running flag, true throughout an error state) or a
+ * state of started, starting, listening or error, otherwise 'start'.
+ * @param {Record<string, {status?: {state?: string, started?: boolean}}>} publishers channel.publishers
  * @param {string} publisherId a publisher id or 'all'
  * @returns {'start'|'stop'}
  */
 function publisherToggleOp(publishers, publisherId) {
 	const list = publisherId === 'all' ? Object.values(publishers || {}) : [publishers?.[publisherId]].filter(Boolean)
-	return list.some((p) => ACTIVE_PUBLISHER_STATES.includes(p?.status?.state)) ? 'stop' : 'start'
+	return list.some((p) => p?.status?.started === true || ACTIVE_PUBLISHER_STATES.includes(p?.status?.state))
+		? 'stop'
+		: 'start'
 }
 
 /**

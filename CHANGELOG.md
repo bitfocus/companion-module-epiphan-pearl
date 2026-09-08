@@ -71,6 +71,21 @@ buttons**: read "Upgrade notes" below before updating a production connection.
 
 ### Changed
 
+- **Streaming and Recording toggles recover from an error state** (QA 2026-09-08: a publisher whose
+  destination had failed showed ERR but its Toggle button sent another start instead of a stop, so the
+  stream could not be stopped from the key). The toggle now stops when the publisher reports
+  `started: true` or a state of started, starting, listening or error; the recorder toggle likewise
+  treats `error` as running.
+- **A refused command is now visible on the key** (QA 2026-09-08: an Extend rejected with 409 looked like
+  a success). New feedback `action_failed` (`src/failure.js`): true for three seconds on the button whose
+  last device command failed, styled red with `Failed` in place of the label; every command preset
+  carries it. The message stays in `last_error`.
+- `confirm_pending` puts `Press again` on the armed key through its own style text, and the presets no
+  longer print the global `confirm_hint` variable, so arming Reboot no longer shows the hint on Shut down
+  as well.
+- Audio gain/delay nudges are queued one at a time per input and a settings call the Pearl refuses with
+  405 ("Source settings are not supported", seen when a nudge lands while the previous one is still being
+  applied) is retried once after 300 ms.
 - **Preset look** follows the Stream Deck plugin's key layout with Companion's own renderer: every icon in
   `src/icons.js` is now drawn small in the top third of its 72x72 canvas (Stream Deck proportions, fill
   `#e6e9ee`), every preset uses a fixed 14 px text size instead of `auto` (which broke short labels

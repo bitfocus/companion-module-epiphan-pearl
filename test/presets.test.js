@@ -305,8 +305,11 @@ describe('presets', () => {
 		for (const preset of confirmPresets) {
 			const confirmFeedback = preset.feedbacks.find((f) => f.feedbackId === 'confirm_pending')
 			assert.ok(confirmFeedback, `${preset.name}: missing confirm_pending feedback`)
-			assert.deepEqual(confirmFeedback.style, stateStyle(colors.red))
-			assert.match(preset.style.text, /\$\(pearl:confirm_hint\)/, `${preset.name}: confirm_hint on last line`)
+			assert.deepEqual(confirmFeedback.style, { ...stateStyle(colors.red), text: 'Press again' })
+			assert.ok(
+				!preset.style.text.includes('confirm_hint'),
+				`${preset.name}: the hint is the feedback's text, not a global variable`,
+			)
 			const action = preset.steps[0].down.find((a) => ['power', 'preset', 'storage'].includes(a.actionId))
 			assert.equal(action.options.confirm, true, `${preset.name}: confirm option is true`)
 		}

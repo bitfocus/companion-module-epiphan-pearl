@@ -309,6 +309,7 @@ class EpiphanPearl extends InstanceBase {
 		// outlive this instance
 		this.clearConfirmTimer()
 		this.clearRotaryTimers()
+		this.clearFailureTimers()
 	}
 
 	/**

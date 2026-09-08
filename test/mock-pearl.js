@@ -1058,6 +1058,15 @@ async function startMockPearl({
 		return true
 	}
 
+	/** one-shot failures queued by failNext(), consumed by the first matching request (tests of error paths) */
+	const injectedFailures = []
+	const takeInjectedFailure = (method, path) => {
+		const i = injectedFailures.findIndex(
+			(f) => f.method === method && (f.path instanceof RegExp ? f.path.test(path) : f.path === path),
+		)
+		return i < 0 ? undefined : injectedFailures.splice(i, 1)[0]
+	}
+
 	const handler = (req, res) => {
 		const chunks = []
 		req.on('data', (c) => chunks.push(c))
@@ -1085,6 +1094,13 @@ async function startMockPearl({
 						'WWW-Authenticate': 'Basic realm="Pearl"',
 					})
 					res.end(JSON.stringify({ status: 'unauthorized', message: 'Authentication required' }))
+					return
+				}
+
+				const injected = takeInjectedFailure(req.method, url.pathname)
+				if (injected) {
+					res.writeHead(injected.status, { 'Content-Type': 'application/json' })
+					res.end(JSON.stringify(injected.body))
 					return
 				}
 
@@ -1162,6 +1178,10 @@ async function startMockPearl({
 		requests,
 		server,
 		reset,
+		/** Answer the next `method path` (full pathname string or RegExp) with `status` and `body` instead of the route */
+		failNext(method, path, status, body = { status: 'error', message: 'injected failure' }) {
+			injectedFailures.push({ method, path, status, body })
+		},
 		setClockSkew(ms) {
 			clock.skewMs = Number(ms) || 0
 		},

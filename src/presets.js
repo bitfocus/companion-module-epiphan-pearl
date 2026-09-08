@@ -1,5 +1,14 @@
 const { safeId, splitPair, STORAGE_SEVERITY } = require('./utils')
 const { colors, restStyle, stateStyle } = require('./style')
+const { CONFIRM_HINT } = require('./confirm')
+const { FAILED_TEXT } = require('./failure')
+
+/** confirm_pending on a preset: red, with the hint in place of the label -- per button, unlike the global confirm_hint variable */
+const confirmStyle = () => ({ ...stateStyle(colors.red), text: CONFIRM_HINT })
+/** action_failed on a preset: red with "Failed" in place of the label for three seconds after a rejected command */
+const failedStyle = () => ({ ...stateStyle(colors.red), text: FAILED_TEXT })
+/** the action_failed feedback every command preset carries, appended last so it wins over the state colours */
+const failedFeedback = () => ({ feedbackId: 'action_failed', options: {}, style: failedStyle() })
 const { ICONS } = require('./icons')
 
 /** colour of each severity level of utils.storageLevel() on the Storage presets */
@@ -149,7 +158,8 @@ function button({ category, name, text, actions = [], feedbacks = [], rotary = n
 		name,
 		style,
 		steps: [step],
-		feedbacks,
+		// a command preset also carries the failure flash, last so it wins over the state colours
+		feedbacks: actions.length > 0 || rotary ? [...feedbacks, failedFeedback()] : feedbacks,
 	}
 	if (rotary) preset.options = { rotaryActions: true }
 	return preset
@@ -442,12 +452,11 @@ module.exports = {
 				button({
 					category: CAT_CONFIG_PRESETS,
 					name: `Apply ${preset.label}`,
-					// confirm_hint (while armed) and preset_status ("Rebooting..." after a reboot-reporting
-					// apply) share the last line: actions.js clears preset_status the moment a fresh confirm
-					// is armed (D2), so the two never render at the same time
-					text: `Apply\n${preset.id}\n${v('confirm_hint')}${v('preset_status')}`,
+					// preset_status ("Rebooting..." after a reboot-reporting apply) on the last line; the confirm
+					// hint is the confirm_pending feedback's own text, so it shows on the armed button only
+					text: `Apply\n${preset.id}\n${v('preset_status')}`,
 					actions: [{ actionId: 'preset', options: { presetName: preset.id, sections: [], confirm: true } }],
-					feedbacks: [{ feedbackId: 'confirm_pending', options: {}, style: stateStyle(colors.red) }],
+					feedbacks: [{ feedbackId: 'confirm_pending', options: {}, style: confirmStyle() }],
 				}),
 			)
 		}
@@ -615,16 +624,16 @@ module.exports = {
 		// Power (confirm before firing, D2)
 		// ---------------------------------------------------------------------
 
-		// confirm_hint (while armed) and power_status ("Command sent") share the last line: actions.js
-		// clears power_status the moment a fresh confirm is armed (D2), so the two never render together
+		// power_status ("Command sent") on the last line; the confirm hint is the confirm_pending feedback's
+		// own text (D2), so it shows on the armed button only, not on both power buttons
 		add(
 			presetId(CAT_POWER, 'reboot'),
 			button({
 				category: CAT_POWER,
 				name: 'Reboot',
-				text: `Reboot\n${v('confirm_hint')}${v('power_status')}`,
+				text: `Reboot\n${v('power_status')}`,
 				actions: [{ actionId: 'power', options: { op: 'reboot', confirm: true } }],
-				feedbacks: [{ feedbackId: 'confirm_pending', options: {}, style: stateStyle(colors.red) }],
+				feedbacks: [{ feedbackId: 'confirm_pending', options: {}, style: confirmStyle() }],
 			}),
 		)
 		add(
@@ -632,9 +641,9 @@ module.exports = {
 			button({
 				category: CAT_POWER,
 				name: 'Shut down',
-				text: `Shut down\n${v('confirm_hint')}${v('power_status')}`,
+				text: `Shut down\n${v('power_status')}`,
 				actions: [{ actionId: 'power', options: { op: 'shutdown', confirm: true } }],
-				feedbacks: [{ feedbackId: 'confirm_pending', options: {}, style: stateStyle(colors.red) }],
+				feedbacks: [{ feedbackId: 'confirm_pending', options: {}, style: confirmStyle() }],
 			}),
 		)
 
@@ -780,9 +789,9 @@ module.exports = {
 				button({
 					category: CAT_STORAGE,
 					name: `${storage.label} status`,
-					// confirm_hint (while armed) and the "Ejected" hint share the last line: actions.js clears
-					// the hint the moment a fresh confirm is armed (D2), so the two never render at the same time
-					text: `${v(`storage_${sid}_free`)}\n${v(`storage_${sid}_text`)}\n${v('confirm_hint')}${v(`storage_${sid}_hint`)}`,
+					// the "Ejected" hint on the last line; the confirm hint is the confirm_pending feedback's own
+					// text (D2), so it shows on the armed button only
+					text: `${v(`storage_${sid}_free`)}\n${v(`storage_${sid}_text`)}\n${v(`storage_${sid}_hint`)}`,
 					actions: [{ actionId: 'storage', options: { storageId: storage.id, confirm: true } }],
 					feedbacks: [
 						// the three severity levels of utils.storageLevel(), worst last so it wins
@@ -796,7 +805,7 @@ module.exports = {
 							options: { storageId: storage.id, level: 'nomedia' },
 							style: stateStyle(colors.grey),
 						},
-						{ feedbackId: 'confirm_pending', options: {}, style: stateStyle(colors.red) },
+						{ feedbackId: 'confirm_pending', options: {}, style: confirmStyle() },
 					],
 				}),
 			)

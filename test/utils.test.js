@@ -144,7 +144,7 @@ describe('utils', () => {
 		assert.equal(utils.round1('x'), '')
 	})
 
-	it('recorderToggleOp: stop while started/starting/paused, start otherwise (D14); "all" aggregates', () => {
+	it('recorderToggleOp: stop while started/starting/paused/error, start otherwise (D14); "all" aggregates', () => {
 		const recorders = { a: { status: { state: 'stopped' } }, b: { status: { state: 'started' } } }
 		assert.equal(utils.recorderToggleOp(recorders, 'a'), 'start')
 		assert.equal(utils.recorderToggleOp(recorders, 'b'), 'stop')
@@ -155,26 +155,29 @@ describe('utils', () => {
 			'none active -> start all',
 		)
 		assert.equal(utils.recorderToggleOp(recorders, 'nope'), 'start', 'a missing recorder is treated as inactive')
-		for (const state of ['starting', 'paused']) {
+		for (const state of ['starting', 'paused', 'error']) {
 			assert.equal(utils.recorderToggleOp({ a: { status: { state } } }, 'a'), 'stop')
 		}
-		for (const state of ['error', 'disabled', undefined]) {
+		for (const state of ['disabled', 'stopped', undefined]) {
 			assert.equal(utils.recorderToggleOp({ a: { status: { state } } }, 'a'), 'start')
 		}
 	})
 
-	it('publisherToggleOp: stop while started/starting/listening, start otherwise (D14); "all" aggregates', () => {
+	it('publisherToggleOp: stop while started/starting/listening/error or started:true, start otherwise (D14); "all" aggregates', () => {
 		const publishers = { a: { status: { state: 'stopped' } }, b: { status: { state: 'listening' } } }
 		assert.equal(utils.publisherToggleOp(publishers, 'a'), 'start')
 		assert.equal(utils.publisherToggleOp(publishers, 'b'), 'stop')
 		assert.equal(utils.publisherToggleOp(publishers, 'all'), 'stop')
 		assert.equal(utils.publisherToggleOp({ a: { status: { state: 'stopped' } } }, 'all'), 'start')
-		for (const state of ['started', 'starting', 'listening']) {
+		for (const state of ['started', 'starting', 'listening', 'error']) {
 			assert.equal(utils.publisherToggleOp({ a: { status: { state } } }, 'a'), 'stop')
 		}
-		for (const state of ['error', 'stopped', undefined]) {
+		for (const state of ['stopped', undefined]) {
 			assert.equal(utils.publisherToggleOp({ a: { status: { state } } }, 'a'), 'start')
 		}
+		// the API's own running flag wins over the state word: a publisher stuck in error is still started
+		assert.equal(utils.publisherToggleOp({ a: { status: { state: 'unknown', started: true } } }, 'a'), 'stop')
+		assert.equal(utils.publisherToggleOp({ a: { status: { state: 'stopped', started: false } } }, 'a'), 'start')
 	})
 
 	it('eventToggleOp: running->pause, paused->resume, scheduled->start, otherwise none applies', () => {

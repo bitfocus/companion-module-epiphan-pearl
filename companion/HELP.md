@@ -193,7 +193,14 @@ _Requires API v2.0._
 | **Confirm with a second press** | checkbox — see Confirm and hold                                                                     | on                    |
 
 **Feedback — Confirm pending** (`confirm_pending`): true while a confirm-gated action on this button is
-armed, waiting for a second press. Red — see Confirm and hold below.
+armed, waiting for a second press. Red, with `Press again` in place of the label on that button only — see
+Confirm and hold below.
+
+**Feedback — Action failed (recent)** (`action_failed`): true for three seconds on the button whose last
+device command failed — rejected (for example an Extend that would overlap the next event, 409), timed out
+or unreachable. Red with `Failed` in place of the label; every ready-made preset that sends a command
+carries it, so a refused command is visible on the key and not only in Companion's log. The message is in
+`last_error`.
 
 **Variables**: `preset_names` (comma-separated), `preset_last_applied` (optimistic), `preset_status`
 (`Rebooting…` for 60 s when the device reports a reboot).
@@ -379,7 +386,8 @@ Add the **Audio meter** feedback to a dial's button to see the bars next to the 
 | `system`             | boolean          | amber (CPU/paused), red (error), green (uploading)                 |
 | `storage_level`      | boolean          | amber (Low), red (Full), grey (No media)                           |
 | `audio`              | advanced (image) | —                                                                  |
-| `confirm_pending`    | boolean          | red                                                                |
+| `confirm_pending`    | boolean          | red, `Press again` on the key                                      |
+| `action_failed`      | boolean          | red, `Failed` on the key for 3 s                                   |
 
 ### Variables summary
 

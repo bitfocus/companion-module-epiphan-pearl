@@ -1,6 +1,10 @@
 const variables = require('./variables')
 const confirm = require('./confirm')
 const rotary = require('./rotary')
+const failure = require('./failure')
+
+/** pause before retrying an input settings call the Pearl refused with 405 (busy applying the previous one) */
+const SETTINGS_RETRY_MS = 300
 const {
 	splitPair,
 	clampNumber,
@@ -87,6 +91,7 @@ const errMsg = (e) => (e && e.message ? e.message : String(e))
 module.exports = {
 	...confirm,
 	...rotary,
+	...failure,
 
 	/**
 	 * Build all action definitions.
@@ -102,7 +107,11 @@ module.exports = {
 			this.log('error', `${label}: ${message}`)
 		}
 
-		/** Wrap an action callback so it never throws and always logs and records failures. */
+		/**
+		 * Wrap an action callback so it never throws and always logs and records failures -- and flashes
+		 * the failure on the button it came from (src/failure.js, the `action_failed` feedback), so a
+		 * rejected command is visible on the key and not only in the log.
+		 */
 		const wrap = (label, fn) => async (action, context) => {
 			try {
 				await fn(action, context)
@@ -110,6 +119,7 @@ module.exports = {
 				const message = errMsg(error)
 				if (this.state) this.state.lastError = message
 				this.log('error', `${label} failed: ${message}`)
+				this.flagActionFailure(action?.controlId)
 			}
 		}
 
@@ -750,7 +760,7 @@ module.exports = {
 				this.coalesce(
 					key,
 					delta,
-					(total) => this.nudgeInputAudio(label, sid, control, total),
+					(total) => this.nudgeInputAudio(label, sid, control, total, action.controlId),
 					this.rotaryWindowMs,
 				)
 			}),
@@ -820,10 +830,40 @@ module.exports = {
 	 * @param {string} sid input id
 	 * @param {'gain'|'delay'} control
 	 * @param {number} delta signed step
+	 * @param {string} [controlId] button the nudge came from, flashed on failure (src/failure.js)
 	 */
-	async nudgeInputAudio(label, sid, control, delta) {
+	async nudgeInputAudio(label, sid, control, delta, controlId) {
+		// one nudge at a time per input: a real Pearl-2 answers 405 "Source settings are not supported" to a
+		// settings GET/PATCH that lands while it is still applying the previous PATCH (QA 2026-09-08, rapid
+		// presses), so flushes queue behind each other and a 405 is retried once (settingsCall)
+		if (!(this.audioNudgeQueue instanceof Map)) this.audioNudgeQueue = new Map()
+		const previous = this.audioNudgeQueue.get(sid) ?? Promise.resolve()
+		const run = previous.then(() => this.nudgeInputAudioNow(label, sid, control, delta, controlId))
+		this.audioNudgeQueue.set(
+			sid,
+			run.catch(() => undefined),
+		)
+		return run
+	},
+
+	/** GET or PATCH an input's settings, retrying once after a short pause when the Pearl answers 405. */
+	async settingsCall(method, sid, opts) {
 		try {
-			const settings = await this.request('GET', `/inputs/${enc(sid)}/settings`)
+			// silent: a 405 is retried below and any other failure is logged by the caller
+			return await this.request(method, `/inputs/${enc(sid)}/settings`, { ...opts, silent: true })
+		} catch (error) {
+			if (error?.status !== 405) throw error
+			const pause = Number(this.settingsRetryMs) > 0 ? Number(this.settingsRetryMs) : SETTINGS_RETRY_MS
+			this.log('debug', `${method} settings of ${sid}: 405, retrying in ${pause} ms`)
+			await new Promise((resolve) => setTimeout(resolve, pause))
+			return await this.request(method, `/inputs/${enc(sid)}/settings`, opts)
+		}
+	},
+
+	/** INTERNAL: one queued nudge, see nudgeInputAudio(). */
+	async nudgeInputAudioNow(label, sid, control, delta, controlId) {
+		try {
+			const settings = await this.settingsCall('GET', sid)
 			let body
 			if (control === 'gain') {
 				const current = readGain(settings)
@@ -844,13 +884,14 @@ module.exports = {
 				this.log('warn', `${label}: input ${sid} has no ${control} setting`)
 				return
 			}
-			await this.request('PATCH', `/inputs/${enc(sid)}/settings`, { body })
+			await this.settingsCall('PATCH', sid, { body })
 			this.log('debug', `Audio ${sid}: ${control} ${delta > 0 ? '+' : ''}${delta}`)
 			this.schedulePollSoon()
 		} catch (error) {
 			const message = errMsg(error)
 			if (this.state) this.state.lastError = message
 			this.log('error', `${label} failed: ${message}`)
+			this.flagActionFailure(controlId)
 		}
 	},
 }

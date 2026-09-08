@@ -1,5 +1,7 @@
 const { splitPair, eventApplies, storageLevel, STORAGE_LOW_PCT, STORAGE_FULL_PCT } = require('./utils')
 const { colors, stateStyle } = require('./style')
+const { CONFIRM_HINT } = require('./confirm')
+const { FAILED_TEXT } = require('./failure')
 const { meterOf, renderMeter, METER_DEFAULT_SIZE } = require('./meter')
 
 const RECORDER_STATES = [
@@ -747,11 +749,31 @@ module.exports = {
 		// Confirm (D2)
 		// ------------------------------------------------------------------
 
+		feedbacks['action_failed'] = {
+			type: 'boolean',
+			name: 'Action failed (recent)',
+			description:
+				'True for three seconds on the button whose last device command failed (rejected, timed out or ' +
+				'unreachable), so the key itself shows the failure; the message is in the last_error variable.',
+			defaultStyle: { ...stateStyle(colors.red), text: FAILED_TEXT },
+			options: [],
+			callback: (feedback) => {
+				try {
+					return this.isActionFailed(feedback.controlId)
+				} catch (error) {
+					this.log('error', `action_failed feedback failed: ${error?.message ?? error}`)
+					return false
+				}
+			},
+		}
+
 		feedbacks['confirm_pending'] = {
 			type: 'boolean',
 			name: 'Confirm pending',
-			description: 'True while a confirm-gated action on this button is armed, waiting for a second press.',
-			defaultStyle: stateStyle(colors.red),
+			description:
+				'True while a confirm-gated action on this button is armed, waiting for a second press. Puts the ' +
+				'hint on the key in place of the label.',
+			defaultStyle: { ...stateStyle(colors.red), text: CONFIRM_HINT },
 			options: [],
 			callback: (feedback) => {
 				try {
