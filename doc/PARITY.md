@@ -1,6 +1,6 @@
 # Companion parity map (Epiphan Pearl)
 
-This file maps the module onto the behaviour reference `C:\Users\RyanHaynes\Desktop\Epiphan Tools\Claude Apps\Vibe Coded Apps\Epiphan-StreamDeck\docs\COMPANION-PARITY.md` (the Epiphan Stream Deck plugins, verified against a Pearl-2 on firmware 10.2.5.110 and an EC20 on firmware 10.2.3.37 on 2026-09-04). It is the Phase 0 contract for the 3.0.0 rewrite: §1 is the target control set, §2 the conversion of every existing id, §3 the wording and colour differences, and "Decisions taken" the operator-level decisions that bind Phases 1–4.
+This file maps the module onto the behaviour reference `C:\Users\RyanHaynes\Desktop\Epiphan Tools\Claude Apps\Vibe Coded Apps\Epiphan-StreamDeck\docs\COMPANION-PARITY.md` (the Epiphan Stream Deck plugins, verified against the lab Pearl-2 and EC20 on 2026-09-04). It is the Phase 0 contract for the 3.0.0 rewrite: §1 is the target control set, §2 the conversion of every existing id, §3 the wording and colour differences, and "Decisions taken" the operator-level decisions that bind Phases 1–4.
 
 Precedence when documents disagree: the lead's briefing (its decisions are copied below) over `COMPANION-PARITY.md` over `doc/pearl-api-v2.0.yaml`. Hex colours are the reference's §3.1 tokens (amber `#f0a83c`, red `#e5484d`, green `#3ccf6a`, grey `#7a8390`, cms blue `#5aa9ff`, background `#1b1d22`, text `#f4f6f8`, badge text `#14161a`). Ids in `<angle brackets>` are device ids run through `safeId`.
 
