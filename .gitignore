@@ -8,3 +8,4 @@ doc/source/
 
 # Epiphan-internal design notes, parity map and API spec copy: kept local, never published
 doc/
+*.tgz
