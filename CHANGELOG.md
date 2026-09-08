@@ -21,8 +21,8 @@ buttons**: read "Upgrade notes" below before updating a production connection.
 
 - **Confirm with a second press** (checkbox, default on) on the `preset` (Apply Preset), `power`
   (Reboot / Shutdown) and `storage` (Storage eject) actions, replacing the Stream Deck's hold-to-confirm
-  gesture (Companion has no hold arc): the first press arms the button (`confirm_hint` = `Press again to
-confirm`, boolean feedback `confirm_pending`) and sends nothing; the same button pressed again within 3
+  gesture (Companion has no hold arc): the first press arms the button (`confirm_hint` = `Press again`,
+  boolean feedback `confirm_pending`) and sends nothing; the same button pressed again within 3
   seconds sends the command. Untick the checkbox to send immediately, as every existing button of this kind
   already did before this release (the upgrade script sets it to off for them).
 - Rotary (Stream Deck+/encoder) support for the `audio` action: `rotate_left`/`rotate_right` nudge gain or
@@ -71,6 +71,21 @@ confirm`, boolean feedback `confirm_pending`) and sends nothing; the same button
 
 ### Changed
 
+- **Preset look** follows the Stream Deck plugin's key layout with Companion's own renderer: every icon in
+  `src/icons.js` is now drawn small in the top third of its 72x72 canvas (Stream Deck proportions, fill
+  `#e6e9ee`), every preset uses a fixed 14 px text size instead of `auto` (which broke short labels
+  mid-word, "Rebo / ot", and shrank long ones to illegibility) and hides the top bar so the whole key is
+  available. Labels were shortened to fit: the all-recorders key reads `Recorders`, stream keys show the
+  publisher's own name (the channel stays in the preset name), single-touch keys show the control's name,
+  the CMS status keys lead with the event title and time (the calendar icon says CMS), and the device-info
+  key shows product and firmware.
+- **Audio presets are generated for the analog inputs only.** Every audio-capable input keeps the `audio`
+  action, feedback and variables; the ready-made buttons (meter, gain ±, delay ±, rotary gain/delay) are
+  limited to the analog inputs to keep the category short.
+- `storage_<id>_text` reads `of 128 GB` (was `free of 128 GB`) so that, under `storage_<id>_free`, a
+  storage key reads "11 GB / of 128 GB" on two lines.
+- The `confirm_hint` variable now reads `Press again` (was `Press again to confirm`) so the hint fits one
+  14 px line under a button title.
 - Every action, feedback and (where the reference names one) variable id now matches the Stream Deck
   plugin's naming (`doc/PARITY.md` §2, §9): `channelChangeLayout`→`layout`, `controlStreaming`→`stream`,
   `recorderRecording`+`recorderControlAll`→`recorder`, `insertMarker`→`bookmark`, `systemReboot`/

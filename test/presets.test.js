@@ -191,6 +191,38 @@ describe('presets', () => {
 		}
 	})
 
+	it('every preset uses the Stream Deck key layout: fixed 14 px text, top bar hidden', () => {
+		for (const [id, preset] of Object.entries(presets)) {
+			assert.equal(preset.style.size, 14, `${id}: text size`)
+			assert.equal(preset.style.show_topbar, false, `${id}: top bar`)
+		}
+	})
+
+	it('fixed labels fit one 14 px line (at most 11 characters once variables are taken out) where the words are ours', () => {
+		// device-named things (layouts, publishers, single-touch controls, outputs) wrap as Companion sees fit
+		const fixedCategories = new Set(['Recording', 'Bookmarks', 'CMS events', 'System', 'Power', 'Audio', 'Storage'])
+		const tooLong = []
+		for (const [id, preset] of Object.entries(presets)) {
+			if (!fixedCategories.has(preset.category)) continue
+			for (const line of String(preset.style.text).split('\n')) {
+				const fixed = line.replace(/\$\(pearl:[^)]+\)/g, '').trim()
+				if (fixed.length > 10) tooLong.push(`${id}: "${line}"`)
+			}
+		}
+		assert.deepEqual(tooLong, [])
+	})
+
+	it('Audio presets are generated for the analog inputs only', () => {
+		const audio = Object.values(presets).filter((p) => p.category === 'Audio')
+		assert.ok(audio.length > 0, "expected Audio presets for the mock's analog inputs")
+		const inputIds = new Set(
+			audio.map((p) => p.steps[0].down[0]?.options.inputId ?? p.feedbacks[0]?.options.inputId),
+		)
+		assert.deepEqual([...inputIds].sort(), ['analog-a', 'analog-b'])
+		// 7 buttons per input: meter, gain +/-, delay +/-, rotary gain, rotary delay
+		assert.equal(audio.length, 14)
+	})
+
 	it(
 		'every state-driven feedback style is stateStyle() (bgcolor + badge text colour), except the ' +
 			'documented grey-text-only "does not apply" / "not recording" overrides',
@@ -230,15 +262,15 @@ describe('presets', () => {
 		}
 	})
 
-	it('CMS tag: only the ongoing/upcoming/toggle status buttons carry the "CMS" text prefix', () => {
+	it('CMS events: the three status buttons lead with an event variable; the command buttons grey out via event_applies', () => {
 		const cms = Object.values(presets).filter((p) => p.category === 'CMS events')
-		const withCmsPrefix = cms.filter((p) => p.style.text.startsWith('CMS\n'))
-		assert.equal(withCmsPrefix.length, 3, 'status_ongoing, status_upcoming and toggle')
-		for (const p of withCmsPrefix) {
-			assert.ok(/^CMS\n\$\(pearl:event_/.test(p.style.text), `${p.name}: text is CMS\\n<event var>...`)
+		const status = cms.filter((p) => /^\$\(pearl:event_/.test(p.style.text))
+		assert.equal(status.length, 3, 'status_ongoing, status_upcoming and toggle')
+		for (const p of status) {
+			assert.equal(p.style.text.split('\n').length, 2, `${p.name}: two lines, event title/command and time`)
 		}
-		// the command buttons (start/stop/pause/resume/extend) are not tagged CMS
-		const withoutCmsPrefix = cms.filter((p) => !p.style.text.startsWith('CMS\n'))
+		// the command buttons (start/stop/pause/resume/extend) name the command first
+		const withoutCmsPrefix = cms.filter((p) => !status.includes(p))
 		assert.equal(withoutCmsPrefix.length, cms.length - 3)
 		for (const p of withoutCmsPrefix) {
 			assert.ok(

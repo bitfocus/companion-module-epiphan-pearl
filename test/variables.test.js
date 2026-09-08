@@ -203,7 +203,7 @@ describe('variables: exact id set for the seeded mock', () => {
 		assert.match(String(instance.variableValues.storage_main_free), /GB$/)
 		assert.equal(instance.variableValues.storage_main_level_word, '')
 		assert.equal(instance.variableValues.storage_external_text, 'No media')
-		assert.match(String(instance.variableValues.storage_main_text), /^free of /)
+		assert.match(String(instance.variableValues.storage_main_text), /^of /)
 		// nothing ongoing, but the upcoming event is scheduled -> falls back to START
 		assert.equal(instance.variableValues.event_ongoing_toggle_command, 'START')
 		assert.equal(instance.variableValues.confirm_hint, '')
@@ -316,7 +316,7 @@ describe('variables: §3.3 word/format rules (via buildVariables, no device need
 	it('confirm_hint reflects a live confirmPending (mirrors CONFIRM_HINT)', () => {
 		const self = selfWith({ confirmPending: { until: Date.now() + 5000 } })
 		const { values } = buildVariables(self)
-		assert.equal(values.confirm_hint, 'Press again to confirm')
+		assert.equal(values.confirm_hint, 'Press again')
 		const expired = selfWith({ confirmPending: { until: Date.now() - 1 } })
 		assert.equal(buildVariables(expired).values.confirm_hint, '')
 	})

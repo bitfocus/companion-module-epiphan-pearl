@@ -676,7 +676,7 @@ describe('actions against a v2.0 device', () => {
 		it('first press only arms the button (no request, confirm_hint set, confirm_pending true)', async () => {
 			await runAction(instance, 'power', { op: 'reboot', confirm: true }, { controlId: 'confirm1' })
 			none(mock, 'POST', `${V2}/system/control/reboot`)
-			assert.equal(instance.variableValues.confirm_hint, 'Press again to confirm')
+			assert.equal(instance.variableValues.confirm_hint, 'Press again')
 			assert.ok(instance.checkedFeedbacks.some((ids) => ids.includes('confirm_pending')))
 			assert.equal(instance.isConfirmPending('confirm1'), true)
 			assert.equal(instance.isConfirmPending('other'), false)
@@ -701,7 +701,7 @@ describe('actions against a v2.0 device', () => {
 			// a third press on the same button, still inside power_status's 30 s window, only re-arms
 			await runAction(instance, 'power', { op: 'reboot', confirm: true }, { controlId: 'confirm5' })
 			assert.equal(recorded(mock, 'POST', `${V2}/system/control/reboot`).length, 1, 'no second command sent')
-			assert.equal(instance.variableValues.confirm_hint, 'Press again to confirm')
+			assert.equal(instance.variableValues.confirm_hint, 'Press again')
 			assert.equal(
 				instance.variableValues.power_status,
 				'',
@@ -716,7 +716,7 @@ describe('actions against a v2.0 device', () => {
 			await new Promise((resolve) => setTimeout(resolve, 60))
 			await runAction(instance, 'storage', { storageId: 'main', confirm: true }, { controlId: 'confirm3' })
 			assert.equal(mock.requests.length, 0)
-			assert.equal(instance.variableValues.confirm_hint, 'Press again to confirm')
+			assert.equal(instance.variableValues.confirm_hint, 'Press again')
 			assert.equal(instance.isConfirmPending('confirm3'), true)
 		})
 

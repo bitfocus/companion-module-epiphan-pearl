@@ -57,10 +57,10 @@ const CATEGORY_ICON = {
 	[CAT_STORAGE]: 'storage',
 }
 
-/** Built-in output sources offered by the `output` action, labelled without the dropdown's "Built-in:" prefix. */
+/** Built-in output sources offered by the `output` action, labelled without the dropdown's "Built-in:" prefix; `keyLabel` is the shorter word for the button. */
 const OUTPUT_BUILTIN_SOURCES = [
 	{ id: 'multiview', label: 'Multiview' },
-	{ id: 'deviceinfo', label: 'Device info' },
+	{ id: 'deviceinfo', label: 'Device info', keyLabel: 'Dev. info' }, // 'Device info' wraps at 14 px
 	{ id: 'console', label: 'Console' },
 ]
 
@@ -100,17 +100,29 @@ function v(variableId) {
 }
 
 /**
- * Build a standard button preset. Every preset is `restStyle()` (dark bg, light text) at rest, with
- * the category's icon on top (`pngalignment: 'center:top'`) and the text at the bottom
- * (`alignment: 'center:bottom'`) — every one of the 13 categories has a matching icons.js entry.
- * `feedbacks[].style` is the only thing that changes a button's colour; nothing here overrides
+ * Text size of every preset, in Companion's units (14 = the size Companion itself defaults to).
+ * Fixed rather than `auto`: auto grows a short label until it breaks mid-word ("Rebo" / "ot") and
+ * shrinks a long one to illegibility, and the Stream Deck plugin's subtitles are small text anyway.
+ * At 14 px a 72 px button holds about ten characters per line and two lines under the icon, so
+ * every fixed label below is written to fit that; a third line (the transient confirm hint, D2)
+ * only ever appears together with a colour change. Device-named things (layouts, publishers) wrap
+ * as Companion sees fit.
+ */
+const TEXT_SIZE = 14
+
+/**
+ * Build a standard button preset in the Stream Deck plugin's key layout, expressed with Companion's
+ * own renderer: `restStyle()` (dark bg, light text) at rest, the category's icon at the top (each
+ * src/icons.js glyph is drawn small in the top third of its 72x72 canvas; `pngalignment: 'center:top'`),
+ * the text at the bottom (`alignment: 'center:bottom'`, TEXT_SIZE), and no top bar so the whole 72x72
+ * key is available as on the plugin's keys — every one of the 13 categories has a matching icons.js
+ * entry. `feedbacks[].style` is the only thing that changes a button's colour; nothing here overrides
  * `bgcolor`/`color` at rest.
  *
  * @param {object} def
  * @param {string} def.category
  * @param {string} def.name
  * @param {string} def.text
- * @param {number|string} [def.size='auto']
  * @param {Array<{actionId: string, options: object}>} [def.actions=[]] down actions (Pearl has no
  *   hold-to-move motion actions — D3 is EC20-only — so every Pearl preset's `up` step is empty)
  * @param {Array<{feedbackId: string, options: object, style?: object, isInverted?: boolean}>} [def.feedbacks=[]]
@@ -118,8 +130,8 @@ function v(variableId) {
  *   `options.rotaryActions` and the `rotate_left`/`rotate_right` step arrays alongside `down`
  * @returns {object} preset definition
  */
-function button({ category, name, text, size = 'auto', actions = [], feedbacks = [], rotary = null }) {
-	const style = { text, size, ...restStyle() }
+function button({ category, name, text, actions = [], feedbacks = [], rotary = null }) {
+	const style = { text, size: TEXT_SIZE, show_topbar: false, ...restStyle() }
 	const icon = ICONS[CATEGORY_ICON[category]]
 	if (icon) {
 		style.png64 = icon
@@ -182,7 +194,7 @@ module.exports = {
 		for (const recorder of this.choicesRecordersWithAll()) {
 			const isAll = recorder.id === 'all'
 			const text = isAll
-				? `All recorders\n${v('recorder_all_state_word')} (${v('recorders_active_count')} active)`
+				? `Recorders\n${v('recorder_all_state_word')} (${v('recorders_active_count')})`
 				: `${recorder.label}\n${v(`recorder_${safeId(recorder.id)}_state_word`)} ${v(`recorder_${safeId(recorder.id)}_duration_text`)}`
 			add(
 				presetId(CAT_RECORDING, 'toggle', recorder.id),
@@ -228,12 +240,20 @@ module.exports = {
 				isAll && pair
 					? `channel_${safeId(pair[0])}_publishers_state_word`
 					: `channel_${safeId(pair?.[0] ?? '')}_publisher_${safeId(pair?.[1] ?? '')}_state_word`
+			// the key shows the publisher's own name (the preset name and category carry the channel)
+			const publisherName = isAll
+				? 'All streams'
+				: String(
+						this.state?.channels?.[pair?.[0] ?? '']?.publishers?.[pair?.[1] ?? '']?.name ??
+							pair?.[1] ??
+							publisher.id,
+					)
 			add(
 				presetId(CAT_STREAMING, 'toggle', publisher.id),
 				button({
 					category: CAT_STREAMING,
 					name: `${publisher.label} toggle`,
-					text: `${publisher.label}\n${v(stateWordVar)}`,
+					text: `${publisherName}\n${v(stateWordVar)}`,
 					actions: [
 						{
 							actionId: 'stream',
@@ -304,7 +324,7 @@ module.exports = {
 				button({
 					category: CAT_SINGLE_TOUCH,
 					name: `${stc.label} toggle`,
-					text: `Single\nTouch\n${v(`singletouch_${safeId(stc.id)}_summary`)}`,
+					text: `${stc.label}\n${v(`singletouch_${safeId(stc.id)}_summary`)}`,
 					actions: [{ actionId: 'singletouch', options: { stcId: stc.id } }],
 					feedbacks: [
 						{
@@ -398,7 +418,7 @@ module.exports = {
 					button({
 						category: CAT_OUTPUTS,
 						name: `${output.label} → ${source.label}`,
-						text: `${output.label}\n${source.label}`,
+						text: `${output.label}\n${source.keyLabel ?? source.label}`,
 						actions: [{ actionId: 'output', options: { outputId: output.id, source: source.id } }],
 						feedbacks: [
 							{
@@ -441,7 +461,7 @@ module.exports = {
 			button({
 				category: CAT_CMS_EVENTS,
 				name: 'Ongoing event status',
-				text: `CMS\n${v('event_ongoing_title')}\n${v('event_ongoing_time_text')}`,
+				text: `${v('event_ongoing_title')}\n${v('event_ongoing_time_text')}`,
 				feedbacks: [
 					{
 						feedbackId: 'event_state',
@@ -466,7 +486,7 @@ module.exports = {
 			button({
 				category: CAT_CMS_EVENTS,
 				name: 'Upcoming event status',
-				text: `CMS\n${v('event_upcoming_title')}\n${v('event_upcoming_time_text')}`,
+				text: `${v('event_upcoming_title')}\n${v('event_upcoming_time_text')}`,
 				feedbacks: [
 					{
 						feedbackId: 'event_state',
@@ -481,7 +501,7 @@ module.exports = {
 			button({
 				category: CAT_CMS_EVENTS,
 				name: 'Toggle ongoing / next event',
-				text: `CMS\n${v('event_ongoing_toggle_command')}`,
+				text: `${v('event_ongoing_toggle_command')}\n${v('event_ongoing_title')}`,
 				actions: [{ actionId: 'event', options: { eventRef: 'ongoing', op: 'toggle' } }],
 				feedbacks: [
 					{
@@ -587,7 +607,7 @@ module.exports = {
 			button({
 				category: CAT_SYSTEM,
 				name: 'Device info',
-				text: `${v('product_name')}\n${v('firmware')}\n${v('device_name')}`,
+				text: `${v('product_name')}\n${v('firmware')}`,
 			}),
 		)
 
@@ -619,10 +639,12 @@ module.exports = {
 		)
 
 		// ---------------------------------------------------------------------
-		// Audio: meter, gain +/-, delay +/-, rotary gain, rotary delay, per audio-capable input (D4)
+		// Audio: meter, gain +/-, delay +/-, rotary gain, rotary delay -- for the analog audio inputs only
+		// (the other audio-capable inputs keep their variables, feedback and action; they just get no
+		// ready-made buttons)
 		// ---------------------------------------------------------------------
 
-		for (const input of this.choicesInputsWithAudio()) {
+		for (const input of this.choicesAnalogAudioInputs()) {
 			const sid = safeId(input.id)
 			add(
 				presetId(CAT_AUDIO, 'meter', input.id),
@@ -638,7 +660,7 @@ module.exports = {
 				button({
 					category: CAT_AUDIO,
 					name: `${input.label} gain +`,
-					text: `${input.label}\nGain +`,
+					text: `${v(`input_${sid}_name`)}\nGain +`,
 					actions: [
 						{
 							actionId: 'audio',
@@ -652,7 +674,7 @@ module.exports = {
 				button({
 					category: CAT_AUDIO,
 					name: `${input.label} gain −`,
-					text: `${input.label}\nGain −`,
+					text: `${v(`input_${sid}_name`)}\nGain −`,
 					actions: [
 						{
 							actionId: 'audio',
@@ -666,7 +688,7 @@ module.exports = {
 				button({
 					category: CAT_AUDIO,
 					name: `${input.label} delay +`,
-					text: `${input.label}\nDelay +`,
+					text: `${v(`input_${sid}_name`)}\nDelay +`,
 					actions: [
 						{
 							actionId: 'audio',
@@ -680,7 +702,7 @@ module.exports = {
 				button({
 					category: CAT_AUDIO,
 					name: `${input.label} delay −`,
-					text: `${input.label}\nDelay −`,
+					text: `${v(`input_${sid}_name`)}\nDelay −`,
 					actions: [
 						{
 							actionId: 'audio',
@@ -694,7 +716,7 @@ module.exports = {
 				button({
 					category: CAT_AUDIO,
 					name: `${input.label} gain (rotary)`,
-					text: `${input.label}\nGain\n${v(`input_${sid}_gain`)}`,
+					text: `${v(`input_${sid}_name`)}\nGain ${v(`input_${sid}_gain`)}`,
 					actions: [
 						{
 							actionId: 'audio',
@@ -722,7 +744,7 @@ module.exports = {
 				button({
 					category: CAT_AUDIO,
 					name: `${input.label} delay (rotary)`,
-					text: `${input.label}\nDelay\n${v(`input_${sid}_delay`)} ms`,
+					text: `${v(`input_${sid}_name`)}\nDelay ${v(`input_${sid}_delay`)} ms`,
 					actions: [
 						{
 							actionId: 'audio',

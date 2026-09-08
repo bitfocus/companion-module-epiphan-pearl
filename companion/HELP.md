@@ -299,7 +299,8 @@ re-reads the levels once.
 `_peak_dbfs`, `_peak_left`, `_peak_right`, `_level_text` (`-18 dBFS`/`silent`/`No signal`; all four empty
 while no meter is subscribed), `_gain`, `_delay` (from the regular poll, always available).
 
-**Presets — Audio**: per audio input — meter (feedback only, so the button shows the input name with the
+**Presets — Audio**: per analog audio input (the other audio-capable inputs keep the action, feedback and
+variables, they just get no ready-made buttons) — meter (feedback only, so the button shows the input name with the
 bars beside it), Gain +, Gain −, Delay +, Delay −, a rotary Gain button and a rotary Delay button (see
 Rotary below).
 
@@ -323,7 +324,7 @@ condition — Low (≥ 90 % used), Full (≥ 97 % used), Read-only, No media, No
 **Feedback**: **Confirm pending** (see Apply Preset above).
 
 **Variables**: `storage_ID_state`, `_free` (human bytes, e.g. `11 GB`), `_total`, `_used_pct`, `_text`
-(`free of 128 GB`/`No media`/`Not ready`/`Formatting…`/`No data`), `_level_word` (`LOW`/`FULL`/`RO`/`''`),
+(`of 128 GB`, read under `_free` as "11 GB of 128 GB"/`No media`/`Not ready`/`Formatting…`/`No data`), `_level_word` (`LOW`/`FULL`/`RO`/`''`),
 `_hint` (`Ejected` for 4 s).
 
 **Presets — Storage**: one button per storage showing free space, status and eject hint; green OK, amber
@@ -334,7 +335,7 @@ Low, red Full, grey No media; red while confirm is armed.
 Companion has no press-and-hold progress arc, so the actions the Stream Deck plugin gates behind a hold
 (_Apply Preset_, _Reboot / Shutdown_, _Storage_'s eject) instead offer a **Confirm with a second press**
 checkbox, ticked by default. With it ticked, the first press only arms the button — it sets the
-`confirm_hint` variable to `Press again to confirm` and turns on the **Confirm pending** feedback (red) —
+`confirm_hint` variable to `Press again` and turns on the **Confirm pending** feedback (red) —
 and sends nothing to the device; pressing the _same_ button again within 3 seconds sends the command. If 3
 seconds pass without a second press, the button quietly disarms. Untick the checkbox to send the command
 immediately on every press, matching the old (pre-3.0.0) behaviour.
@@ -409,6 +410,11 @@ Presets are generated from what the Pearl reports, so they appear after the firs
 categories actually get generated is controlled by _Preset categories to generate_ (see Connection settings
 above); all of them are on by default.
 
+Every button follows the Stream Deck plugin's key layout, drawn with Companion's own renderer: the
+category's icon small at the top, one or two short lines of 14 px text at the bottom (the second line
+usually a live variable), a dark background with light text, no top bar, and the state colour filling the
+background when a feedback is true. Labels and text size stay editable like any Companion button.
+
 | Category                  | Buttons                                                                    |
 | ------------------------- | -------------------------------------------------------------------------- |
 | **Recording**             | Toggle per recorder, plus "All recorders".                                 |
@@ -422,7 +428,7 @@ above); all of them are on by default.
 | **CMS events**            | Ongoing/upcoming status, toggle, start/stop/pause/resume, extend +5:00.    |
 | **System**                | CPU load/status, AFU status, device info.                                  |
 | **Power**                 | Reboot, Shut down; both confirm-gated.                                     |
-| **Audio**                 | Meter, gain ±, delay ± and rotary gain/delay per audio input.              |
+| **Audio**                 | Meter, gain ±, delay ± and rotary gain/delay per **analog** audio input.   |
 | **Storage**               | Status + eject per storage, confirm-gated.                                 |
 
 ### Tips

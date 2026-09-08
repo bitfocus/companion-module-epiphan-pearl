@@ -249,11 +249,11 @@ function buildVariables(self) {
 		let levelWord = ''
 		switch (state_) {
 			case 'ready':
-				text = total === undefined ? 'No data' : `free of ${bytesToHuman(total)}`
+				text = total === undefined ? 'No data' : `of ${bytesToHuman(total)}`
 				levelWord = severity.word
 				break
 			case 'devro':
-				text = total === undefined ? 'No data' : `free of ${bytesToHuman(total)}`
+				text = total === undefined ? 'No data' : `of ${bytesToHuman(total)}`
 				levelWord = 'RO'
 				break
 			case 'nodev':

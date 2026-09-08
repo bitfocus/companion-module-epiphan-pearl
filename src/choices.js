@@ -12,6 +12,23 @@ const OUTPUT_SOURCE_STATIC = [
 	{ id: 'console', label: 'Built-in: Console' },
 ]
 
+/**
+ * Is this Pearl input one of the analog audio inputs? Decides which inputs get ready-made Audio presets
+ * (src/presets.js): every audio-capable input keeps the `audio` action, feedback and variables, only the
+ * preset buttons are limited to the analog ones. `input` is the polled /inputs entry: `{ id, name, type,
+ * audio, video, ... }` -- on the mock, the analog inputs are `{ id: "analog-a", name: "Analog-A", type:
+ * "embedded" }` and `analog-b`, alongside `hdmi-b`, `sdi-a`, `USBA` and `SRT1`.
+ *
+ * @param {object} input
+ * @returns {boolean}
+ */
+function isAnalogAudioInput(input) {
+	// the id is what the Pearl assigns to its analog jacks (`analog-a`, `analog-b`, on some firmware with a
+	// device prefix) and survives the operator renaming the input; the name is renamable and the type
+	// cannot tell (analog inputs report `embedded` like the digital ones)
+	return /analog/i.test(String(input?.id ?? ''))
+}
+
 const EVENT_REFS = [
 	{ id: 'upcoming', label: 'Upcoming (next scheduled)' },
 	{ id: 'ongoing', label: 'Ongoing (running or paused)' },
@@ -122,6 +139,17 @@ module.exports = {
 				id: String(input.id),
 				label: input.type ? `${input.name ?? input.id} (${input.type})` : `${input.name ?? input.id}`,
 			}))
+	},
+
+	/**
+	 * The analog audio inputs (the only ones that get ready-made Audio presets, src/presets.js): the
+	 * audio-capable inputs isAnalogAudioInput() accepts, in the {id, label} shape of choicesInputsWithAudio().
+	 */
+	choicesAnalogAudioInputs() {
+		return this.choicesInputsWithAudio().filter((choice) => {
+			const input = this.state?.inputs?.[choice.id]
+			return input !== undefined && isAnalogAudioInput(input)
+		})
 	},
 
 	/**
