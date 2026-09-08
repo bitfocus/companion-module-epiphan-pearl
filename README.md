@@ -31,11 +31,9 @@ yarn companion-module-build # build the module package for Companion
 
 References while working on the code:
 
-- [doc/pearl-api-v2.0.yaml](doc/pearl-api-v2.0.yaml) is the OpenAPI 3.0 description of the Pearl REST API v2.0. Look up
-  paths, query parameter names, request bodies and response shapes there; do not guess them.
-- [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) is the implementation contract: file layout under `src/`, state shape,
-  config fields, request layer, poller behaviour, choice builders and the ids of every action, feedback, variable and
-  preset. Keep it up to date when behaviour changes.
+- The Pearl REST API v2.0 description and the module's design notes, which code comments cite as
+  `doc/pearl-api-v2.0.yaml`, `doc/ARCHITECTURE.md` and `doc/PARITY.md`, are maintained by Epiphan outside this
+  repository.
 - `src/` holds the module code: `instance` (wiring), `api` (request layer), `poller`, `choices`, `actions`, `feedbacks`,
   `variables`, `presets`, `config`, `upgrades`, `utils`, plus the shared pieces the control set is built from — `style`
   (palette, state words, standard texts), `icons` (one PNG per preset category), `confirm` (the two-press gate),

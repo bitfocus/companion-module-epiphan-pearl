@@ -5,3 +5,6 @@ pkg.tgz
 # Temp store for pearl files.
 # Which cannot be commited due to licence
 doc/source/
+
+# Epiphan-internal design notes, parity map and API spec copy: kept local, never published
+doc/
