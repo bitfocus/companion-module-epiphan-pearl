@@ -73,7 +73,7 @@ buttons**: read "Upgrade notes" below before updating a production connection.
 
 - **Presets standardised on the operator's reference page** (2026-09-11): text size 20 everywhere except
   16 on the CMS status keys and the stream keys (three lines each) and 22 on the Single touch summary,
-  which now stands alone without an icon; stream keys read channel name / stream name (or `All Streams`) / state, without the category icon so all three lines fit; bookmark keys read channel name / Bookmark; layout keys read `<layout> <channel>`;
+  which now stands alone without an icon; stream keys read channel name / stream name (or `All Streams`) / state, auto-sized and without the category icon so the state line survives long channel names; bookmark keys read channel name / Bookmark; layout keys read `<layout> <channel>`;
   the CMS command keys read the verb alone, with Stop in red.
 - **Outputs and Audio are no longer preset groups.** Their actions, feedbacks and variables stay for
   hand-built buttons. The Storage group skips the Pearl's internal maintenance partition.

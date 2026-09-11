@@ -416,8 +416,9 @@ categories actually get generated is controlled by _Preset categories to generat
 above); all of them are on by default.
 
 Every button follows the Stream Deck plugin's key layout, drawn with Companion's own renderer: the
-category's icon small at the top, the text at the bottom (size 20; 16 on the CMS status keys and the stream
-keys, which carry three lines; 22 on the Single touch summary; the Single touch and stream keys carry no icon so all their lines fit), a
+category's icon small at the top, the text at the bottom (size 20; 16 on the CMS status keys; 22 on the Single touch summary; sized
+automatically on the stream keys so channel, stream and state all stay visible; the Single touch and stream
+keys carry no icon), a
 dark background with light text, no top bar, and the state colour filling the background when a feedback
 is true. Labels and text size stay editable like any Companion button.
 

@@ -101,10 +101,11 @@ function v(variableId) {
 
 /**
  * Text sizes, in Companion's units, standardised on Ryan's reference page (Companion 5, 2026-09-11):
- * 20 for most buttons, 16 where three lines must fit (the CMS status keys, the stream keys with channel
- * and stream name), 22 for the Single touch summary that has the whole key to itself. Fixed rather
- * than `auto`: auto grows a short label until it breaks mid-word ("Rebo" / "ot") and shrinks a long one
- * to illegibility. Device-named things wrap as Companion sees fit.
+ * 20 for most buttons, 16 where two variable lines must fit (the CMS status keys), 22 for the Single
+ * touch summary that has the whole key to itself. Fixed rather than `auto`: auto grows a short label
+ * until it breaks mid-word ("Rebo" / "ot") and shrinks a long one to illegibility. The one exception is
+ * the stream keys (channel / stream / state, see there), which need `auto` so the state line survives
+ * long channel names. Device-named things wrap as Companion sees fit.
  */
 const TEXT_SIZE = 20
 const TEXT_SIZE_STATUS = 16
@@ -243,8 +244,11 @@ module.exports = {
 				isAll && pair
 					? `channel_${safeId(pair[0])}_publishers_state_word`
 					: `channel_${safeId(pair?.[0] ?? '')}_publisher_${safeId(pair?.[1] ?? '')}_state_word`
-			// channel name, then the stream's own name (or "All Streams"), then the state -- three lines, hence
-			// the status text size and no icon (reference page, 2026-09-11); names are variables so a rename follows
+			// channel name, then the stream's own name (or "All Streams"), then the state (reference page,
+			// 2026-09-11); names are variables so a rename follows. Companion sizes this text itself: a channel
+			// name alone can wrap, and at any fixed size four lines overflow the key and Companion drops the last
+			// one -- the state word, the line that matters -- so this is the one preset that uses `auto`, with
+			// no icon so the text has the whole key
 			const cid = safeId(pair?.[0] ?? '')
 			const streamLine = isAll ? 'All Streams' : v(`channel_${cid}_publisher_${safeId(pair?.[1] ?? '')}_name`)
 			add(
@@ -253,7 +257,7 @@ module.exports = {
 					category: CAT_STREAMING,
 					name: `${publisher.label} toggle`,
 					text: `${v(`channel_${cid}_name`)}\n${streamLine}\n${v(stateWordVar)}`,
-					size: TEXT_SIZE_STATUS,
+					size: 'auto',
 					actions: [
 						{
 							actionId: 'stream',

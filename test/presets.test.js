@@ -186,15 +186,17 @@ describe('presets', () => {
 		}
 	})
 
-	it('text sizes follow the reference page: 16 on CMS status and stream keys, 22 on Single touch, 20 elsewhere; top bar hidden', () => {
+	it('text sizes follow the reference page: 16 on CMS status keys, 22 on Single touch, auto on stream keys, 20 elsewhere; top bar hidden', () => {
 		for (const [id, preset] of Object.entries(presets)) {
 			assert.equal(preset.style.show_topbar, false, `${id}: top bar`)
 			const expected =
-				preset.category === 'Streaming' || /^cms_events_status_/.test(id)
-					? 16
-					: preset.category === 'Single touch'
-						? 22
-						: 20
+				preset.category === 'Streaming'
+					? 'auto'
+					: /^cms_events_status_/.test(id)
+						? 16
+						: preset.category === 'Single touch'
+							? 22
+							: 20
 			assert.equal(preset.style.size, expected, `${id}: text size`)
 		}
 	})
