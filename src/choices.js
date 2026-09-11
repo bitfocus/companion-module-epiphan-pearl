@@ -106,14 +106,6 @@ module.exports = {
 		return [{ id: 'all', label: 'All recorders' }, ...this.choicesRecorders()]
 	},
 
-	/** Inputs -> id sid, label `name (type)` */
-	choicesInputs() {
-		return Object.values(this.state?.inputs || {}).map((input) => ({
-			id: String(input.id),
-			label: input.type ? `${input.name ?? input.id} (${input.type})` : `${input.name ?? input.id}`,
-		}))
-	},
-
 	/** Inputs that carry audio */
 	choicesInputsWithAudio() {
 		return Object.values(this.state?.inputs || {})

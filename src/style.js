@@ -31,60 +31,6 @@ function hexToRgb(hex) {
 const colors = Object.fromEntries(Object.entries(HEX).map(([key, hex]) => [key, hexToRgb(hex)]))
 
 /**
- * State words (COMPANION-PARITY.md §3.2) — badges/state variables use exactly these strings, upper
- * case. `?` is "unknown", `—` is "nothing to show". `BLINK`, `TRACK`, `AUTO`, `MAN`, `1-PUSH` and
- * `FLIPPED` are EC20-only words, kept here so both modules share one source list.
- */
-const STATE_WORDS = [
-	'REC',
-	'PAUSED',
-	'ERR',
-	'OFF',
-	'LIVE',
-	'STARTING',
-	'LISTEN',
-	'ACTIVE',
-	'ON',
-	'BLINK',
-	'TRACK',
-	'SET',
-	'LOW',
-	'FULL',
-	'RO',
-	'FMT',
-	'MOUNT',
-	'AFU',
-	'HOT',
-	'HIGH',
-	'CPU',
-	'AUTO',
-	'MAN',
-	'1-PUSH',
-	'FLIPPED',
-	'SCHED',
-	'DONE',
-	'?',
-	'—',
-]
-
-/**
- * Standard texts (COMPANION-PARITY.md §3.3) shown in place of live data. The module's variable layer
- * (src/variables.js) already renders most of these dynamically (durations, countdowns, byte counts,
- * levels); this export exists so a preset that needs one of the fixed phrases verbatim does not have
- * to retype it.
- */
-const TEXT = {
-	LOADING: 'Loading…',
-	OFFLINE: 'Offline',
-	NO_MEDIA: 'No media',
-	NOTHING_SCHEDULED: 'Nothing scheduled',
-	NO_ONGOING_EVENT: 'No ongoing event',
-	PICK_A_CHANNEL: 'Pick a channel',
-	STARTING: 'Starting…',
-	FINISHED: 'Finished',
-}
-
-/**
  * Style of every preset while at rest: dark background, light text (§3 — "dark background and light
  * text at rest" on every generated preset).
  *
@@ -106,4 +52,4 @@ function stateStyle(color) {
 	return { bgcolor: color, color: colors.badgeText }
 }
 
-module.exports = { HEX, colors, STATE_WORDS, TEXT, restStyle, stateStyle }
+module.exports = { HEX, colors, restStyle, stateStyle }
