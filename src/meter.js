@@ -313,9 +313,5 @@ module.exports = {
 	meterLayout,
 	renderMeter,
 	meterOf,
-	levelsKey,
-	METER_POLL_MS,
 	METER_DEFAULT_SIZE,
-	METER_FLOOR_DBFS,
-	PEAK_TICK_PX,
 }

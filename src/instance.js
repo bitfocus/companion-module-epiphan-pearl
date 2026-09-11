@@ -426,4 +426,4 @@ const upgradeToBooleanFeedbacks = CreateConvertToBooleanFeedbackUpgradeScript({
 
 const upgradeScripts = [upgradeToBooleanFeedbacks, ...upgrades]
 
-module.exports = { EpiphanPearl, upgradeScripts, PearlApiError, MIN_API_V2_VERSION, normaliseConfig }
+module.exports = { EpiphanPearl, upgradeScripts, PearlApiError, normaliseConfig }

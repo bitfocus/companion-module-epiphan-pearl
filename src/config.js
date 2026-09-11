@@ -145,4 +145,4 @@ function getConfigFields() {
 	]
 }
 
-module.exports = { getConfigFields, REGEX_IP_OR_HOSTNAME }
+module.exports = { getConfigFields }

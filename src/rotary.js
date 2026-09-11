@@ -51,5 +51,3 @@ module.exports = {
 		this.rotaryPending.clear()
 	},
 }
-
-module.exports.ROTARY_WINDOW_MS = ROTARY_WINDOW_MS

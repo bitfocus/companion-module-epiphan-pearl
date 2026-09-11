@@ -123,9 +123,4 @@ module.exports = {
 	readDelay,
 	delayPatch,
 	levelSummary,
-	GAIN_MIN,
-	GAIN_MAX,
-	DELAY_MIN,
-	DELAY_MAX,
-	SILENT_DBFS,
 }

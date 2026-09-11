@@ -75,5 +75,4 @@ module.exports = {
 	},
 }
 
-module.exports.CONFIRM_WINDOW_MS = CONFIRM_WINDOW_MS
 module.exports.CONFIRM_HINT = CONFIRM_HINT

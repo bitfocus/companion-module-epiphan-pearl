@@ -432,8 +432,6 @@ module.exports = {
 	bookmarkText,
 	storageLevel,
 	emptyState,
-	ACTIVE_RECORDER_STATES,
-	ACTIVE_PUBLISHER_STATES,
 	STORAGE_LOW_PCT,
 	STORAGE_FULL_PCT,
 	STORAGE_SEVERITY,

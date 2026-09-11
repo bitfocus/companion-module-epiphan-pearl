@@ -57,5 +57,4 @@ module.exports = {
 	},
 }
 
-module.exports.FAILURE_FLASH_MS = FAILURE_FLASH_MS
 module.exports.FAILED_TEXT = FAILED_TEXT
