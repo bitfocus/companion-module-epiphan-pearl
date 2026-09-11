@@ -20,17 +20,16 @@ const CAT_LAYOUTS = 'Layouts'
 const CAT_SINGLE_TOUCH = 'Single touch'
 const CAT_BOOKMARKS = 'Bookmarks'
 const CAT_PREVIEWS = 'Previews'
-const CAT_OUTPUTS = 'Outputs'
 const CAT_CONFIG_PRESETS = 'Configuration presets'
 const CAT_CMS_EVENTS = 'CMS events'
 const CAT_SYSTEM = 'System'
 const CAT_POWER = 'Power'
-const CAT_AUDIO = 'Audio'
 const CAT_STORAGE = 'Storage'
 
 /**
  * Every preset category that can be generated, in the order they are built (D15: one category per
- * Stream Deck Pearl action). Used to build the "Preset categories to generate" connection setting
+ * Stream Deck Pearl action, minus Outputs and Audio, dropped from the ready-made buttons on 2026-09-11 --
+ * their actions, feedbacks and variables stay for hand-built buttons). Used to build the "Preset categories to generate" connection setting
  * (src/config.js) and to validate/default its stored value (see normalisePresetCategories).
  */
 const PRESET_CATEGORY_IDS = [
@@ -40,38 +39,30 @@ const PRESET_CATEGORY_IDS = [
 	CAT_SINGLE_TOUCH,
 	CAT_BOOKMARKS,
 	CAT_PREVIEWS,
-	CAT_OUTPUTS,
 	CAT_CONFIG_PRESETS,
 	CAT_CMS_EVENTS,
 	CAT_SYSTEM,
 	CAT_POWER,
-	CAT_AUDIO,
 	CAT_STORAGE,
 ]
 
-/** Category -> the icons.js key drawn at the top of every preset in that category (all 13 have one). */
+/**
+ * Category -> the icons.js key drawn at the top of every preset in that category. Single touch and
+ * Streaming have none: the Single touch summary (reference page, 2026-09-11) and the stream keys' three
+ * lines (channel / stream / state; a channel name alone can wrap) need the whole key -- with an icon in
+ * the way Companion drops the last line, and on a stream key that is the state word.
+ */
 const CATEGORY_ICON = {
 	[CAT_RECORDING]: 'recorder',
-	[CAT_STREAMING]: 'stream',
 	[CAT_LAYOUTS]: 'layout',
-	[CAT_SINGLE_TOUCH]: 'singletouch',
 	[CAT_BOOKMARKS]: 'bookmark',
 	[CAT_PREVIEWS]: 'preview',
-	[CAT_OUTPUTS]: 'output',
 	[CAT_CONFIG_PRESETS]: 'preset',
 	[CAT_CMS_EVENTS]: 'event',
 	[CAT_SYSTEM]: 'system',
 	[CAT_POWER]: 'power',
-	[CAT_AUDIO]: 'audio',
 	[CAT_STORAGE]: 'storage',
 }
-
-/** Built-in output sources offered by the `output` action, labelled without the dropdown's "Built-in:" prefix; `keyLabel` is the shorter word for the button. */
-const OUTPUT_BUILTIN_SOURCES = [
-	{ id: 'multiview', label: 'Multiview' },
-	{ id: 'deviceinfo', label: 'Device info', keyLabel: 'Dev. info' }, // 'Device info' wraps at 14 px
-	{ id: 'console', label: 'Console' },
-]
 
 /**
  * Validate a stored `preset_categories` config value against the known category list.
@@ -109,29 +100,31 @@ function v(variableId) {
 }
 
 /**
- * Text size of every preset, in Companion's units (14 = the size Companion itself defaults to).
- * Fixed rather than `auto`: auto grows a short label until it breaks mid-word ("Rebo" / "ot") and
- * shrinks a long one to illegibility, and the Stream Deck plugin's subtitles are small text anyway.
- * At 14 px a 72 px button holds about ten characters per line and two lines under the icon, so
- * every fixed label below is written to fit that; a third line (the transient confirm hint, D2)
- * only ever appears together with a colour change. Device-named things (layouts, publishers) wrap
- * as Companion sees fit.
+ * Text sizes, in Companion's units, standardised on Ryan's reference page (Companion 5, 2026-09-11):
+ * 20 for most buttons, 16 where three lines must fit (the CMS status keys, the stream keys with channel
+ * and stream name), 22 for the Single touch summary that has the whole key to itself. Fixed rather
+ * than `auto`: auto grows a short label until it breaks mid-word ("Rebo" / "ot") and shrinks a long one
+ * to illegibility. Device-named things wrap as Companion sees fit.
  */
-const TEXT_SIZE = 14
+const TEXT_SIZE = 20
+const TEXT_SIZE_STATUS = 16
+const TEXT_SIZE_SUMMARY = 22
 
 /**
  * Build a standard button preset in the Stream Deck plugin's key layout, expressed with Companion's
  * own renderer: `restStyle()` (dark bg, light text) at rest, the category's icon at the top (each
  * src/icons.js glyph is drawn small in the top third of its 72x72 canvas; `pngalignment: 'center:top'`),
- * the text at the bottom (`alignment: 'center:bottom'`, TEXT_SIZE), and no top bar so the whole 72x72
- * key is available as on the plugin's keys — every one of the 13 categories has a matching icons.js
- * entry. `feedbacks[].style` is the only thing that changes a button's colour; nothing here overrides
- * `bgcolor`/`color` at rest.
+ * the text at the bottom (`alignment: 'center:bottom'`, `size`), and no top bar so the whole 72x72 key
+ * is available as on the plugin's keys — every category except Single touch has a matching icons.js
+ * entry. `feedbacks[].style` is what changes a button's colour; the only rest-state override here is
+ * `color` (the red Stop of the CMS group).
  *
  * @param {object} def
  * @param {string} def.category
  * @param {string} def.name
  * @param {string} def.text
+ * @param {number} [def.size=TEXT_SIZE] text size (TEXT_SIZE_STATUS / TEXT_SIZE_SUMMARY for the exceptions)
+ * @param {number} [def.color] text colour at rest, when not the palette text colour
  * @param {Array<{actionId: string, options: object}>} [def.actions=[]] down actions (Pearl has no
  *   hold-to-move motion actions — D3 is EC20-only — so every Pearl preset's `up` step is empty)
  * @param {Array<{feedbackId: string, options: object, style?: object, isInverted?: boolean}>} [def.feedbacks=[]]
@@ -139,13 +132,13 @@ const TEXT_SIZE = 14
  *   `options.rotaryActions` and the `rotate_left`/`rotate_right` step arrays alongside `down`
  * @returns {object} preset definition
  */
-function button({ category, name, text, actions = [], feedbacks = [], rotary = null }) {
-	const style = { text, size: TEXT_SIZE, show_topbar: false, ...restStyle() }
+function button({ category, name, text, size = TEXT_SIZE, color, actions = [], feedbacks = [], rotary = null }) {
+	const style = { text, size, show_topbar: false, alignment: 'center:bottom', ...restStyle() }
+	if (color !== undefined) style.color = color
 	const icon = ICONS[CATEGORY_ICON[category]]
 	if (icon) {
 		style.png64 = icon
 		style.pngalignment = 'center:top'
-		style.alignment = 'center:bottom'
 	}
 	const step = { down: actions, up: [] }
 	if (rotary) {
@@ -240,7 +233,7 @@ module.exports = {
 		}
 
 		// ---------------------------------------------------------------------
-		// Streaming: one toggle button per publisher, plus per channel "All publishers"
+		// Streaming: one toggle button per publisher, plus per channel "All Streams"
 		// ---------------------------------------------------------------------
 
 		for (const publisher of this.choicesPublishers()) {
@@ -250,20 +243,17 @@ module.exports = {
 				isAll && pair
 					? `channel_${safeId(pair[0])}_publishers_state_word`
 					: `channel_${safeId(pair?.[0] ?? '')}_publisher_${safeId(pair?.[1] ?? '')}_state_word`
-			// the key shows the publisher's own name (the preset name and category carry the channel)
-			const publisherName = isAll
-				? 'All streams'
-				: String(
-						this.state?.channels?.[pair?.[0] ?? '']?.publishers?.[pair?.[1] ?? '']?.name ??
-							pair?.[1] ??
-							publisher.id,
-					)
+			// channel name, then the stream's own name (or "All Streams"), then the state -- three lines, hence
+			// the status text size and no icon (reference page, 2026-09-11); names are variables so a rename follows
+			const cid = safeId(pair?.[0] ?? '')
+			const streamLine = isAll ? 'All Streams' : v(`channel_${cid}_publisher_${safeId(pair?.[1] ?? '')}_name`)
 			add(
 				presetId(CAT_STREAMING, 'toggle', publisher.id),
 				button({
 					category: CAT_STREAMING,
 					name: `${publisher.label} toggle`,
-					text: `${publisherName}\n${v(stateWordVar)}`,
+					text: `${v(`channel_${cid}_name`)}\n${streamLine}\n${v(stateWordVar)}`,
+					size: TEXT_SIZE_STATUS,
 					actions: [
 						{
 							actionId: 'stream',
@@ -297,7 +287,7 @@ module.exports = {
 		}
 
 		// ---------------------------------------------------------------------
-		// Layouts: one switch button per layout, title = layout name, subtitle line = channel name
+		// Layouts: one switch button per layout, "<layout name> <channel name>" (reference page, 2026-09-11)
 		// ---------------------------------------------------------------------
 
 		for (const channel of Object.values(this.state?.channels || {})) {
@@ -308,7 +298,7 @@ module.exports = {
 					button({
 						category: CAT_LAYOUTS,
 						name: `${channel.name ?? channel.id} – ${layout.name ?? layout.id}`,
-						text: `${layout.name ?? layout.id}\n${channel.name ?? channel.id}`,
+						text: `${layout.name ?? layout.id} ${channel.name ?? channel.id}`,
 						actions: [
 							{
 								actionId: 'layout',
@@ -325,7 +315,7 @@ module.exports = {
 		}
 
 		// ---------------------------------------------------------------------
-		// Single touch: toggle per control
+		// Single touch: toggle per control; the summary alone at the large size, no icon (reference page)
 		// ---------------------------------------------------------------------
 
 		for (const stc of this.choicesSingleTouch()) {
@@ -334,7 +324,8 @@ module.exports = {
 				button({
 					category: CAT_SINGLE_TOUCH,
 					name: `${stc.label} toggle`,
-					text: `${stc.label}\n${v(`singletouch_${safeId(stc.id)}_summary`)}`,
+					text: v(`singletouch_${safeId(stc.id)}_summary`),
+					size: TEXT_SIZE_SUMMARY,
 					actions: [{ actionId: 'singletouch', options: { stcId: stc.id } }],
 					feedbacks: [
 						{
@@ -362,7 +353,7 @@ module.exports = {
 				button({
 					category: CAT_BOOKMARKS,
 					name: `Bookmark ${channel.label}`,
-					text: 'Bookmark\nMarker',
+					text: `${v(`channel_${safeId(channel.id)}_name`)}\nBookmark`,
 					actions: [
 						{ actionId: 'bookmark', options: { channelId: channel.id, text: 'Marker', appendTime: false } },
 					],
@@ -418,31 +409,6 @@ module.exports = {
 		}
 
 		// ---------------------------------------------------------------------
-		// Outputs: one button per output x built-in source
-		// ---------------------------------------------------------------------
-
-		for (const output of this.choicesOutputs()) {
-			for (const source of OUTPUT_BUILTIN_SOURCES) {
-				add(
-					presetId(CAT_OUTPUTS, output.id, source.id),
-					button({
-						category: CAT_OUTPUTS,
-						name: `${output.label} → ${source.label}`,
-						text: `${output.label}\n${source.keyLabel ?? source.label}`,
-						actions: [{ actionId: 'output', options: { outputId: output.id, source: source.id } }],
-						feedbacks: [
-							{
-								feedbackId: 'output_set',
-								options: { outputId: output.id, source: source.id },
-								style: stateStyle(colors.green),
-							},
-						],
-					}),
-				)
-			}
-		}
-
-		// ---------------------------------------------------------------------
 		// Configuration presets stored on the device (confirm before applying, D2)
 		// ---------------------------------------------------------------------
 
@@ -462,7 +428,8 @@ module.exports = {
 		}
 
 		// ---------------------------------------------------------------------
-		// CMS events (schedule)
+		// CMS events (schedule): the two status keys and the toggle show live variables, the fixed commands
+		// read as the verb alone (reference page, 2026-09-11)
 		// ---------------------------------------------------------------------
 
 		add(
@@ -471,6 +438,7 @@ module.exports = {
 				category: CAT_CMS_EVENTS,
 				name: 'Ongoing event status',
 				text: `${v('event_ongoing_title')}\n${v('event_ongoing_time_text')}`,
+				size: TEXT_SIZE_STATUS,
 				feedbacks: [
 					{
 						feedbackId: 'event_state',
@@ -496,6 +464,7 @@ module.exports = {
 				category: CAT_CMS_EVENTS,
 				name: 'Upcoming event status',
 				text: `${v('event_upcoming_title')}\n${v('event_upcoming_time_text')}`,
+				size: TEXT_SIZE_STATUS,
 				feedbacks: [
 					{
 						feedbackId: 'event_state',
@@ -510,7 +479,7 @@ module.exports = {
 			button({
 				category: CAT_CMS_EVENTS,
 				name: 'Toggle ongoing / next event',
-				text: `${v('event_ongoing_toggle_command')}\n${v('event_ongoing_title')}`,
+				text: v('event_ongoing_toggle_command'),
 				actions: [{ actionId: 'event', options: { eventRef: 'ongoing', op: 'toggle' } }],
 				feedbacks: [
 					{
@@ -536,7 +505,7 @@ module.exports = {
 			button({
 				category: CAT_CMS_EVENTS,
 				name: 'Start upcoming event',
-				text: `Start\n${v('event_upcoming_title')}`,
+				text: 'Start',
 				actions: [{ actionId: 'event', options: { eventRef: 'upcoming', op: 'start' } }],
 				feedbacks: [appliesGreyOut('upcoming', 'start')],
 			}),
@@ -546,7 +515,8 @@ module.exports = {
 			button({
 				category: CAT_CMS_EVENTS,
 				name: 'Stop ongoing event',
-				text: `Stop\n${v('event_ongoing_title')}`,
+				text: 'Stop',
+				color: colors.red, // the one red label of the set: the destructive command (reference page)
 				actions: [{ actionId: 'event', options: { eventRef: 'ongoing', op: 'stop' } }],
 				feedbacks: [appliesGreyOut('ongoing', 'stop')],
 			}),
@@ -556,7 +526,7 @@ module.exports = {
 			button({
 				category: CAT_CMS_EVENTS,
 				name: 'Pause event',
-				text: `Pause\n${v('event_ongoing_title')}`,
+				text: 'Pause',
 				actions: [{ actionId: 'event', options: { eventRef: 'ongoing', op: 'pause' } }],
 				feedbacks: [appliesGreyOut('ongoing', 'pause')],
 			}),
@@ -566,7 +536,7 @@ module.exports = {
 			button({
 				category: CAT_CMS_EVENTS,
 				name: 'Resume event',
-				text: `Resume\n${v('event_ongoing_title')}`,
+				text: 'Resume',
 				actions: [{ actionId: 'event', options: { eventRef: 'ongoing', op: 'resume' } }],
 				feedbacks: [appliesGreyOut('ongoing', 'resume')],
 			}),
@@ -648,141 +618,12 @@ module.exports = {
 		)
 
 		// ---------------------------------------------------------------------
-		// Audio: meter, gain +/-, delay +/-, rotary gain, rotary delay -- for the analog audio inputs only
-		// (the other audio-capable inputs keep their variables, feedback and action; they just get no
-		// ready-made buttons)
-		// ---------------------------------------------------------------------
-
-		for (const input of this.choicesAnalogAudioInputs()) {
-			const sid = safeId(input.id)
-			add(
-				presetId(CAT_AUDIO, 'meter', input.id),
-				button({
-					category: CAT_AUDIO,
-					name: `${input.label} meter`,
-					text: v(`input_${sid}_name`),
-					feedbacks: [{ feedbackId: 'audio', options: { inputId: input.id } }],
-				}),
-			)
-			add(
-				presetId(CAT_AUDIO, 'gain', 'up', input.id),
-				button({
-					category: CAT_AUDIO,
-					name: `${input.label} gain +`,
-					text: `${v(`input_${sid}_name`)}\nGain +`,
-					actions: [
-						{
-							actionId: 'audio',
-							options: { inputId: input.id, control: 'gain', direction: 'up', step: 1 },
-						},
-					],
-				}),
-			)
-			add(
-				presetId(CAT_AUDIO, 'gain', 'down', input.id),
-				button({
-					category: CAT_AUDIO,
-					name: `${input.label} gain −`,
-					text: `${v(`input_${sid}_name`)}\nGain −`,
-					actions: [
-						{
-							actionId: 'audio',
-							options: { inputId: input.id, control: 'gain', direction: 'down', step: 1 },
-						},
-					],
-				}),
-			)
-			add(
-				presetId(CAT_AUDIO, 'delay', 'up', input.id),
-				button({
-					category: CAT_AUDIO,
-					name: `${input.label} delay +`,
-					text: `${v(`input_${sid}_name`)}\nDelay +`,
-					actions: [
-						{
-							actionId: 'audio',
-							options: { inputId: input.id, control: 'delay', direction: 'up', step: 1 },
-						},
-					],
-				}),
-			)
-			add(
-				presetId(CAT_AUDIO, 'delay', 'down', input.id),
-				button({
-					category: CAT_AUDIO,
-					name: `${input.label} delay −`,
-					text: `${v(`input_${sid}_name`)}\nDelay −`,
-					actions: [
-						{
-							actionId: 'audio',
-							options: { inputId: input.id, control: 'delay', direction: 'down', step: 1 },
-						},
-					],
-				}),
-			)
-			add(
-				presetId(CAT_AUDIO, 'rotary', 'gain', input.id),
-				button({
-					category: CAT_AUDIO,
-					name: `${input.label} gain (rotary)`,
-					text: `${v(`input_${sid}_name`)}\nGain ${v(`input_${sid}_gain`)}`,
-					actions: [
-						{
-							actionId: 'audio',
-							options: { inputId: input.id, control: 'none', direction: 'up', step: 1 },
-						},
-					],
-					rotary: {
-						rotateLeft: [
-							{
-								actionId: 'audio',
-								options: { inputId: input.id, control: 'gain', direction: 'down', step: 1 },
-							},
-						],
-						rotateRight: [
-							{
-								actionId: 'audio',
-								options: { inputId: input.id, control: 'gain', direction: 'up', step: 1 },
-							},
-						],
-					},
-				}),
-			)
-			add(
-				presetId(CAT_AUDIO, 'rotary', 'delay', input.id),
-				button({
-					category: CAT_AUDIO,
-					name: `${input.label} delay (rotary)`,
-					text: `${v(`input_${sid}_name`)}\nDelay ${v(`input_${sid}_delay`)} ms`,
-					actions: [
-						{
-							actionId: 'audio',
-							options: { inputId: input.id, control: 'none', direction: 'up', step: 1 },
-						},
-					],
-					rotary: {
-						rotateLeft: [
-							{
-								actionId: 'audio',
-								options: { inputId: input.id, control: 'delay', direction: 'down', step: 1 },
-							},
-						],
-						rotateRight: [
-							{
-								actionId: 'audio',
-								options: { inputId: input.id, control: 'delay', direction: 'up', step: 1 },
-							},
-						],
-					},
-				}),
-			)
-		}
-
-		// ---------------------------------------------------------------------
 		// Storage: free space / status display per storage, eject on press (confirm, D2)
 		// ---------------------------------------------------------------------
 
 		for (const storage of this.choicesStorages()) {
+			// the Pearl's internal maintenance partition is not operator storage (reference page, 2026-09-11)
+			if (/maintenance/i.test(storage.id) || /maintenance/i.test(storage.label)) continue
 			const sid = safeId(storage.id)
 			add(
 				presetId(CAT_STORAGE, storage.id),

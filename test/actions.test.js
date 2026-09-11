@@ -558,12 +558,13 @@ describe('actions against a v2.0 device', () => {
 
 		it('three rotate_right ticks of the gain dial within 150 ms make one patch of +3 (D4)', async () => {
 			mock.state.inputs['analog-a'].settings.local_audio.gain = 27
-			// the real 150 ms window, and the options the shipped rotary preset actually carries
+			// the real 150 ms window, and the options a hand-built rotary button carries (the Audio preset group
+			// is not generated any more, see src/presets.js)
 			instance.rotaryWindowMs = undefined
-			const preset = instance.definitions.presets['audio_rotary_gain_analog-a']
-			assert.ok(preset?.options?.rotaryActions, 'the Audio gain rotary preset exists')
-			const [tick] = preset.steps[0].rotate_right
-			assert.deepEqual(tick.options, { inputId: 'analog-a', control: 'gain', direction: 'up', step: 1 })
+			const tick = {
+				actionId: 'audio',
+				options: { inputId: 'analog-a', control: 'gain', direction: 'up', step: 1 },
+			}
 
 			// a spin of the dial: the three ticks are handed over in one go, well inside the 150 ms window
 			const start = Date.now()

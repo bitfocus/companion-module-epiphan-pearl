@@ -178,8 +178,7 @@ so this only reflects what this connection itself last sent, not a value confirm
 
 **Variables**: `output_ID_name`, `_source` (optimistic, empty until set, see Known limitations).
 
-**Presets — Outputs**: one button per output × built-in source (Multiview, Device info, Console); green
-right after a press.
+**Presets**: none — build Output Source buttons by hand from the action above (green **Output set** feedback).
 
 #### Apply Preset
 
@@ -306,10 +305,8 @@ re-reads the levels once.
 `_peak_dbfs`, `_peak_left`, `_peak_right`, `_level_text` (`-18 dBFS`/`silent`/`No signal`; all four empty
 while no meter is subscribed), `_gain`, `_delay` (from the regular poll, always available).
 
-**Presets — Audio**: per analog audio input (the other audio-capable inputs keep the action, feedback and
-variables, they just get no ready-made buttons) — meter (feedback only, so the button shows the input name with the
-bars beside it), Gain +, Gain −, Delay +, Delay −, a rotary Gain button and a rotary Delay button (see
-Rotary below).
+**Presets**: none — build audio buttons by hand from the action, feedback and variables above (a rotary
+button works with the action on both rotate steps, see Rotary below).
 
 #### Storage
 
@@ -419,25 +416,24 @@ categories actually get generated is controlled by _Preset categories to generat
 above); all of them are on by default.
 
 Every button follows the Stream Deck plugin's key layout, drawn with Companion's own renderer: the
-category's icon small at the top, one or two short lines of 14 px text at the bottom (the second line
-usually a live variable), a dark background with light text, no top bar, and the state colour filling the
-background when a feedback is true. Labels and text size stay editable like any Companion button.
+category's icon small at the top, the text at the bottom (size 20; 16 on the CMS status keys and the stream
+keys, which carry three lines; 22 on the Single touch summary; the Single touch and stream keys carry no icon so all their lines fit), a
+dark background with light text, no top bar, and the state colour filling the background when a feedback
+is true. Labels and text size stay editable like any Companion button.
 
-| Category                  | Buttons                                                                    |
-| ------------------------- | -------------------------------------------------------------------------- |
-| **Recording**             | Toggle per recorder, plus "All recorders".                                 |
-| **Streaming**             | Toggle per publisher, plus "All publishers" per channel.                   |
-| **Layouts**               | Switch button per layout, live preview image.                              |
-| **Single touch**          | Toggle per control.                                                        |
-| **Bookmarks**             | One button per channel, greyed out while not recording.                    |
-| **Previews**              | Live thumbnail per channel, video-capable input and output.                |
-| **Outputs**               | One button per output × built-in source (Multiview, Device info, Console). |
-| **Configuration presets** | Apply button per device preset, confirm-gated.                             |
-| **CMS events**            | Ongoing/upcoming status, toggle, start/stop/pause/resume, extend +5:00.    |
-| **System**                | CPU load/status, AFU status, device info.                                  |
-| **Power**                 | Reboot, Shut down; both confirm-gated.                                     |
-| **Audio**                 | Meter, gain ±, delay ± and rotary gain/delay per **analog** audio input.   |
-| **Storage**               | Status + eject per storage, confirm-gated.                                 |
+| Category                  | Buttons                                                                           |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| **Recording**             | Toggle per recorder, plus "All recorders".                                        |
+| **Streaming**             | Toggle per stream (channel, stream name, state), plus "All Streams" per channel.  |
+| **Layouts**               | Switch button per layout, live preview image.                                     |
+| **Single touch**          | Toggle per control.                                                               |
+| **Bookmarks**             | One button per channel (channel name / Bookmark), greyed out while not recording. |
+| **Previews**              | Live thumbnail per channel, video-capable input and output.                       |
+| **Configuration presets** | Apply button per device preset, confirm-gated.                                    |
+| **CMS events**            | Ongoing/upcoming status, toggle, start/stop/pause/resume, extend +5:00.           |
+| **System**                | CPU load/status, AFU status, device info.                                         |
+| **Power**                 | Reboot, Shut down; both confirm-gated.                                            |
+| **Storage**               | Status + eject per storage, confirm-gated.                                        |
 
 ### Tips
 

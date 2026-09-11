@@ -40,22 +40,19 @@ describe('style.js palette and helpers', () => {
 })
 
 describe('icons.js', () => {
-	it('has exactly the 13 Pearl category icons, all valid PNG payloads', () => {
+	it('has exactly the 10 Pearl category icons, all valid PNG payloads', () => {
 		assert.deepEqual(
 			Object.keys(ICONS).sort(),
 			[
-				'audio',
 				'bookmark',
 				'event',
 				'layout',
-				'output',
 				'power',
 				'preset',
 				'preview',
 				'recorder',
 				'singletouch',
 				'storage',
-				'stream',
 				'system',
 			].sort(),
 		)
@@ -94,7 +91,7 @@ describe('presets', () => {
 		presets = instance.definitions.presets
 	})
 
-	it('PRESET_CATEGORY_IDS is the D15 list of 13 categories, in order (one per Stream Deck action)', () => {
+	it('PRESET_CATEGORY_IDS is the D15 list minus Outputs and Audio: 11 categories, in order', () => {
 		assert.deepEqual(PRESET_CATEGORY_IDS, [
 			'Recording',
 			'Streaming',
@@ -102,18 +99,16 @@ describe('presets', () => {
 			'Single touch',
 			'Bookmarks',
 			'Previews',
-			'Outputs',
 			'Configuration presets',
 			'CMS events',
 			'System',
 			'Power',
-			'Audio',
 			'Storage',
 		])
 	})
 
 	it('generates presets (default config enables every category on the seeded mock)', () => {
-		assert.ok(Object.keys(presets).length > 40, `expected >40 presets, got ${Object.keys(presets).length}`)
+		assert.ok(Object.keys(presets).length > 30, `expected >30 presets, got ${Object.keys(presets).length}`)
 	})
 
 	it('every preset id is sanitised, uses type/name (not label), and category is a D15 id', () => {
@@ -166,61 +161,81 @@ describe('presets', () => {
 		}
 	})
 
-	it('every preset is restStyle() at rest, with its category icon top / text bottom', () => {
+	it('every preset is restStyle() at rest, with its category icon top / text bottom (Single touch, Streaming: no icon)', () => {
 		const categoryIcon = {
 			Recording: 'recorder',
-			Streaming: 'stream',
 			Layouts: 'layout',
-			'Single touch': 'singletouch',
 			Bookmarks: 'bookmark',
 			Previews: 'preview',
-			Outputs: 'output',
 			'Configuration presets': 'preset',
 			'CMS events': 'event',
 			System: 'system',
 			Power: 'power',
-			Audio: 'audio',
 			Storage: 'storage',
 		}
 		for (const [id, preset] of Object.entries(presets)) {
 			assert.equal(preset.style.bgcolor, colors.bg, `${id}: rest bgcolor`)
-			assert.equal(preset.style.color, colors.text, `${id}: rest color`)
+			assert.equal(preset.style.color, id === 'cms_events_stop' ? colors.red : colors.text, `${id}: rest color`)
 			assert.equal(preset.style.png64, ICONS[categoryIcon[preset.category]], `${id}: category icon`)
-			assert.equal(preset.style.pngalignment, 'center:top', `${id}: pngalignment`)
+			assert.equal(
+				preset.style.pngalignment,
+				categoryIcon[preset.category] ? 'center:top' : undefined,
+				`${id}: pngalignment`,
+			)
 			assert.equal(preset.style.alignment, 'center:bottom', `${id}: alignment`)
 		}
 	})
 
-	it('every preset uses the Stream Deck key layout: fixed 14 px text, top bar hidden', () => {
+	it('text sizes follow the reference page: 16 on CMS status and stream keys, 22 on Single touch, 20 elsewhere; top bar hidden', () => {
 		for (const [id, preset] of Object.entries(presets)) {
-			assert.equal(preset.style.size, 14, `${id}: text size`)
 			assert.equal(preset.style.show_topbar, false, `${id}: top bar`)
+			const expected =
+				preset.category === 'Streaming' || /^cms_events_status_/.test(id)
+					? 16
+					: preset.category === 'Single touch'
+						? 22
+						: 20
+			assert.equal(preset.style.size, expected, `${id}: text size`)
 		}
 	})
 
-	it('fixed labels fit one 14 px line (at most 11 characters once variables are taken out) where the words are ours', () => {
-		// device-named things (layouts, publishers, single-touch controls, outputs) wrap as Companion sees fit
-		const fixedCategories = new Set(['Recording', 'Bookmarks', 'CMS events', 'System', 'Power', 'Audio', 'Storage'])
-		const tooLong = []
-		for (const [id, preset] of Object.entries(presets)) {
-			if (!fixedCategories.has(preset.category)) continue
-			for (const line of String(preset.style.text).split('\n')) {
-				const fixed = line.replace(/\$\(pearl:[^)]+\)/g, '').trim()
-				if (fixed.length > 10) tooLong.push(`${id}: "${line}"`)
-			}
-		}
-		assert.deepEqual(tooLong, [])
-	})
-
-	it('Audio presets are generated for the analog inputs only', () => {
-		const audio = Object.values(presets).filter((p) => p.category === 'Audio')
-		assert.ok(audio.length > 0, "expected Audio presets for the mock's analog inputs")
-		const inputIds = new Set(
-			audio.map((p) => p.steps[0].down[0]?.options.inputId ?? p.feedbacks[0]?.options.inputId),
+	it('reference-page texts: channel + stream name on stream keys, channel name on bookmarks, verbs on CMS commands, summary alone on Single touch', () => {
+		assert.equal(
+			presets['streaming_toggle_1-0'].style.text,
+			'$(pearl:channel_1_name)\n$(pearl:channel_1_publisher_0_name)\n$(pearl:channel_1_publisher_0_state_word)',
 		)
-		assert.deepEqual([...inputIds].sort(), ['analog-a', 'analog-b'])
-		// 7 buttons per input: meter, gain +/-, delay +/-, rotary gain, rotary delay
-		assert.equal(audio.length, 14)
+		assert.equal(
+			presets['streaming_toggle_1-all'].style.text,
+			'$(pearl:channel_1_name)\nAll Streams\n$(pearl:channel_1_publishers_state_word)',
+		)
+		assert.equal(presets.bookmarks_1.style.text, '$(pearl:channel_1_name)\nBookmark')
+		assert.equal(presets.cms_events_toggle.style.text, '$(pearl:event_ongoing_toggle_command)')
+		assert.equal(presets.cms_events_stop.style.text, 'Stop')
+		assert.equal(presets.cms_events_stop.style.color, colors.red, 'Stop is the one red label')
+		for (const [id, verb] of [
+			['cms_events_start_upcoming', 'Start'],
+			['cms_events_pause', 'Pause'],
+			['cms_events_resume', 'Resume'],
+		]) {
+			assert.equal(presets[id].style.text, verb, `${id}: verb only`)
+		}
+		assert.equal(presets.single_touch_toggle_0.style.text, '$(pearl:singletouch_0_summary)')
+		assert.equal(presets.single_touch_toggle_0.style.png64, undefined, 'Single touch has no icon')
+		assert.equal(presets['streaming_toggle_1-0'].style.png64, undefined, 'stream keys have no icon')
+		const channel = instance.state.channels['1']
+		const layout = Object.values(channel.layouts)[0]
+		assert.equal(presets[`layouts_1_${layout.id}`].style.text, `${layout.name} ${channel.name}`)
+	})
+
+	it('no Outputs or Audio presets, and no button for the maintenance storage', () => {
+		const categories = new Set(Object.values(presets).map((p) => p.category))
+		assert.ok(
+			!categories.has('Outputs') && !categories.has('Audio'),
+			'Outputs and Audio dropped from the preset groups',
+		)
+		assert.ok(presets.storage_main, 'main storage keeps its button')
+		assert.ok(presets.storage_external, 'removable storage keeps its button')
+		assert.equal(presets.storage_maintenance, undefined, 'the maintenance partition gets none')
 	})
 
 	it(
@@ -267,7 +282,8 @@ describe('presets', () => {
 		const status = cms.filter((p) => /^\$\(pearl:event_/.test(p.style.text))
 		assert.equal(status.length, 3, 'status_ongoing, status_upcoming and toggle')
 		for (const p of status) {
-			assert.equal(p.style.text.split('\n').length, 2, `${p.name}: two lines, event title/command and time`)
+			// status keys: title and time; the toggle: the command alone (reference page, 2026-09-11)
+			assert.equal(p.style.text.split('\n').length, p.name.startsWith('Toggle') ? 1 : 2, `${p.name}: line count`)
 		}
 		// the command buttons (start/stop/pause/resume/extend) name the command first
 		const withoutCmsPrefix = cms.filter((p) => !status.includes(p))
@@ -280,17 +296,8 @@ describe('presets', () => {
 		}
 	})
 
-	it('rotary presets (Audio gain/delay) carry options.rotaryActions and both rotate arrays; push = control:none', () => {
-		const rotaryPresets = Object.values(presets).filter((p) => p.options?.rotaryActions === true)
-		assert.ok(rotaryPresets.length > 0, 'expected at least one rotary preset (Audio gain/delay)')
-		for (const preset of rotaryPresets) {
-			assert.equal(preset.category, 'Audio')
-			const step = preset.steps[0]
-			assert.ok(Array.isArray(step.rotate_left) && step.rotate_left.length > 0)
-			assert.ok(Array.isArray(step.rotate_right) && step.rotate_right.length > 0)
-			assert.ok(Array.isArray(step.down) && step.down.length > 0, 'push = control:none re-read')
-			assert.equal(step.down[0].options.control, 'none')
-		}
+	it('Pearl ships no rotary presets (the Audio group, the only one with dials, is not generated)', () => {
+		assert.equal(Object.values(presets).filter((p) => p.options?.rotaryActions === true).length, 0)
 	})
 
 	it('Pearl has no hold-to-move presets (D3 motion-stop is EC20-only): every "up" step is empty', () => {
@@ -356,13 +363,11 @@ describe('presets', () => {
 		assert.ok(instance.calls.log.some((l) => l.level === 'debug' && /duplicate preset id/.test(l.message)))
 	})
 
-	it('audio-only inputs get no preview button; Outputs presets exist only for built-in sources', () => {
+	it('audio-only inputs get no preview button', () => {
 		// analog-a is audio-only (video: false) in the mock: no picture to preview
 		assert.equal(instance.definitions.presets['previews_input_analog-a'], undefined)
 		assert.ok(instance.definitions.presets['previews_input_hdmi-a'])
 		assert.ok(instance.definitions.presets['previews_input_USBA'])
-		const outputPresets = Object.values(instance.definitions.presets).filter((p) => p.category === 'Outputs')
-		assert.equal(outputPresets.length, 3, 'one output x 3 built-in sources (Multiview/Device info/Console)')
 	})
 })
 

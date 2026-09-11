@@ -144,7 +144,7 @@ describe('init against a v2.0 device', () => {
 		}
 
 		const optionIds = (def) => new Set(def.options.map((o) => o.id))
-		assert.ok(Object.keys(presets).length >= 40, `expected >=40 presets, got ${Object.keys(presets).length}`)
+		assert.ok(Object.keys(presets).length >= 30, `expected >=30 presets, got ${Object.keys(presets).length}`)
 		for (const [id, preset] of Object.entries(presets)) {
 			assert.match(id, VARIABLE_ID_RE, `preset id ${id}`)
 			assert.equal(preset.type, 'button')
