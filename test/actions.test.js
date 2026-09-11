@@ -1,5 +1,5 @@
 /**
- * The target 3.0.0 action set (doc/PARITY.md §1): one action per Stream Deck action, D14 toggle
+ * The target 3.0.0 action set: one action per Stream Deck action, D14 toggle
  * semantics, the D2 confirm gate, the D4 rotary coalescing and the D5 composite ids.
  */
 const { describe, it, before, after, beforeEach } = require('node:test')
@@ -526,7 +526,7 @@ describe('actions against a v2.0 device', () => {
 			assert.deepEqual(req.body, { local_audio: { gain: 30 } })
 		})
 
-		it('stereo_pair false patches both channels to the same value (§5)', async () => {
+		it('stereo_pair false patches both channels to the same value', async () => {
 			mock.state.inputs['analog-b'].settings.local_audio.channels.channelA.gain = 20
 			mock.state.inputs['analog-b'].settings.local_audio.channels.channelB.gain = 24
 			instance.rotaryWindowMs = 10

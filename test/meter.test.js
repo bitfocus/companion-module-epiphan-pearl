@@ -1,6 +1,6 @@
 /**
  * The audio level meter: the pure drawing helpers of src/meter.js and the ref-counted 500 ms level
- * poll the `audio` feedback drives (doc/PARITY.md §1 row `audio`).
+ * poll the `audio` feedback drives.
  */
 const { describe, it, before, after, beforeEach } = require('node:test')
 const assert = require('node:assert/strict')

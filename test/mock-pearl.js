@@ -1,20 +1,20 @@
 /**
  * In-memory HTTP mock of an Epiphan Pearl device.
  *
- * Serves the target 3.0.0 control set's endpoints (see doc/PARITY.md §1, §2.6 and doc/pearl-api-v2.0.yaml)
- * under both `/api/v2.0/...` and the legacy `/api/...` prefix, plus the legacy-only endpoints listed in
- * doc/ARCHITECTURE.md that are still used (layout list/active/preview, the audio settings PATCH, the
+ * Serves the target 3.0.0 control set's endpoints
+ * under both `/api/v2.0/...` and the legacy `/api/...` prefix, plus the legacy-only endpoints that are
+ * still used (layout list/active/preview, the audio settings PATCH, the
  * legacy `/sources/status` levels). Routes that only served a feature the 3.0.0 rewrite removed (admin CGI
  * content metadata, network connectivity/speedtest, recorder archive files, ad-hoc CMS sessions, publisher
  * create/rename/settings, channel rename, input creation, layout settings GET/PUT, and a handful of GETs
- * nothing in the module ever called) are gone — see doc/PARITY.md §2.6 for the full removed-route list.
+ * nothing in the module ever called) are gone.
  * One admin CGI route (`GET get_params.cgi`) is kept anyway: `test/request.test.js` uses it as a generic
  * text/plain endpoint to exercise the request layer's `base:'raw'`/`text:true` handling, unrelated to the
  * removed content-metadata feature itself.
  *
  * Recorder control (`applyRecorderOp`) answers pause/resume alongside start/stop (verified against real
- * hardware per COMPANION-PARITY.md, not in the locally kept doc/pearl-api-v2.0.yaml copy - the parity
- * document wins per doc/PARITY.md's precedence note). `reset` is legacy-only: the v2.0 route 404s so the
+ * hardware, even though the published API description lists start/stop only; behaviour verified on
+ * hardware wins). `reset` is legacy-only: the v2.0 route 404s so the
  * `recorder` action's own v1 fallback (src/actions.js) is exercised for real by test/actions.test.js.
  *
 
@@ -667,9 +667,8 @@ async function startMockPearl({
 		if (rec.status?.state !== 'paused') throw conflict(`Recorder '${rec.id}' is not paused`)
 		rec.status = { ...rec.status, state: 'started' }
 	}
-	// pause/resume/reset are not in doc/pearl-api-v2.0.yaml (start/stop only) but COMPANION-PARITY.md's
-	// verified-on-hardware behaviour wins per doc/PARITY.md's precedence note; reset in particular is
-	// legacy-only (see doc/ARCHITECTURE.md "Legacy-only endpoints"), so the v2.0 route 404s and the
+	// pause/resume/reset are not in the published API description (start/stop only) but the behaviour
+	// verified on real hardware wins; reset in particular is legacy-only, so the v2.0 route 404s and the
 	// action's own fallback (src/actions.js) retries on the legacy base - exercised by test/actions.test.js
 	function applyRecorderOp(rec, action) {
 		switch (action) {

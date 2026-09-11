@@ -1,3 +1,4 @@
+// D-numbers (D1–D17) refer to Epiphan's internal Companion-parity decisions.
 const {
 	CreateConvertToBooleanFeedbackUpgradeScript,
 	InstanceBase,
@@ -85,7 +86,7 @@ class EpiphanPearl extends InstanceBase {
 	constructor(internal) {
 		super(internal)
 
-		/** device state, rebuilt on every poll (see doc/ARCHITECTURE.md) */
+		/** device state, rebuilt on every poll */
 		this.state = emptyState()
 		/** cached preview images: { [key]: { png64, fetchedAt } } */
 		this.previews = {}

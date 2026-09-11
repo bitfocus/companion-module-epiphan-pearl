@@ -346,7 +346,7 @@ function bookmarkText(text, appendTime, date = new Date()) {
 	return appendTime === true ? `${base} ${localTimeHms(date)}` : base
 }
 
-/** used-space thresholds of a storage (doc/PARITY.md §5.13): amber LOW at 90 %, red FULL at 97 % */
+/** used-space thresholds of a storage: amber LOW at 90 %, red FULL at 97 % */
 const STORAGE_LOW_PCT = 90
 const STORAGE_FULL_PCT = 97
 /** the three severity levels of a mounted storage, worst last */
@@ -379,7 +379,7 @@ function storageLevel(status) {
 }
 
 /**
- * The empty shape of the instance state, see doc/ARCHITECTURE.md "Instance state"
+ * The empty shape of the instance state
  * @returns {object}
  */
 function emptyState() {

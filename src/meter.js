@@ -2,7 +2,6 @@
  * Audio level meter: the pure drawing helpers for the `audio` feedback's image and the mixin methods
  * of the 500 ms level poll that feeds it.
  * Mixed into the instance prototype, so `this` is the instance in every method below.
- * See doc/ARCHITECTURE.md "Audio meter (src/meter.js)".
  */
 
 const { HEX } = require('./style')

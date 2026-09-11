@@ -1,7 +1,7 @@
 const { combineRgb } = require('@companion-module/base')
 
 /**
- * Palette from doc/PARITY.md §3 (COMPANION-PARITY.md §3.1), as hex strings.
+ * Palette of the Stream Deck plugin (its src/lib/svg.ts), as hex strings.
  */
 const HEX = {
 	bg: '#1b1d22',
@@ -31,8 +31,8 @@ function hexToRgb(hex) {
 const colors = Object.fromEntries(Object.entries(HEX).map(([key, hex]) => [key, hexToRgb(hex)]))
 
 /**
- * Style of every preset while at rest: dark background, light text (§3 — "dark background and light
- * text at rest" on every generated preset).
+ * Style of every preset while at rest: dark background, light text (the plugin's rule: "dark background
+ * and light text at rest" on every generated preset).
  *
  * @returns {{bgcolor: number, color: number}}
  */
@@ -42,8 +42,8 @@ function restStyle() {
 
 /**
  * Style of a feedback that represents a state: background becomes the state colour, text becomes the
- * dark badge text colour (§3 — "the feedback that represents the state sets the background to the
- * state colour with dark text").
+ * dark badge text colour (the plugin's rule: "the feedback that represents the state sets the background
+ * to the state colour with dark text").
  *
  * @param {number} color one of `colors.*` (a combineRgb() value)
  * @returns {{bgcolor: number, color: number}}

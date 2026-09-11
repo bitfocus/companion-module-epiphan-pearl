@@ -1,3 +1,4 @@
+// D-numbers (D1–D17) refer to Epiphan's internal Companion-parity decisions.
 const variables = require('./variables')
 const { stableJson, emptyState, normaliseInputId, clampNumber } = require('./utils')
 
@@ -128,8 +129,7 @@ module.exports = {
 	 * Delay before the next poll should run (D8): the base interval while polls are succeeding, doubling
 	 * per consecutive failed poll and capped at 15 s. `pollAllInner` resets the failure count to 0 on the
 	 * first successful poll and increments it when the core request fails. `instance.js`'s `initInterval()`
-	 * chains via `setTimeout` and recomputes this value after every poll (see doc/ARCHITECTURE.md, poller
-	 * section) so the backoff actually widens the gap between real polls.
+	 * chains via `setTimeout` and recomputes this value after every poll, so the backoff actually widens the gap between real polls.
 	 *
 	 * @returns {number} milliseconds
 	 */

@@ -1,7 +1,6 @@
 /**
  * Coalescing of rotary ticks (and rapid presses) into one command per key.
  * Mixed into the instance prototype, so `this` is the instance.
- * See doc/ARCHITECTURE.md "Rotary coalescing (src/rotary.js)".
  */
 
 /** default quiet time after the last tick before the accumulated delta is flushed */

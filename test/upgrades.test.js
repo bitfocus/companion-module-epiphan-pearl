@@ -23,12 +23,12 @@ describe('upgrade scripts', () => {
 		for (const fn of upgrades) assert.equal(typeof fn, 'function')
 	})
 
-	it("instance.js's exported upgradeScripts prepends the pre-3.0.0 upgradeToBooleanFeedbacks script (doc/ARCHITECTURE.md)", () => {
+	it("instance.js's exported upgradeScripts prepends the pre-3.0.0 upgradeToBooleanFeedbacks script", () => {
 		// src/upgrades.js's six scripts (asserted above) are not the whole story: instance.js builds the
 		// array Companion actually runs as [upgradeToBooleanFeedbacks, ...upgrades] — a pre-3.0.0 (v2.3.0)
 		// script that converts three legacy feedbacks' fg/bg options to boolean-feedback style before any
-		// of the six scripts above run. doc/ARCHITECTURE.md's "Upgrade scripts" section names it as the
-		// unlisted first entry; this test pins its identity and position so that fact stays true.
+		// of the six scripts above run. It is the unlisted first entry; this test pins its identity and
+		// position so that fact stays true.
 		installStub()
 		const { upgradeScripts } = require('../src/instance')
 		assert.equal(upgradeScripts.length, upgrades.length + 1)
@@ -163,7 +163,7 @@ describe('upgrade scripts', () => {
 })
 
 // ------------------------------------------------------------------------------------------------
-// convertToParityV300 (doc/PARITY.md §2.1/§2.2/§2.4, D13): the 3.0.0 Companion-parity control-set
+// convertToParityV300 (D13): the 3.0.0 Companion-parity control-set
 // rewrite. Every legacy action/feedback id, every op/state value mapping and the config conversion.
 // ------------------------------------------------------------------------------------------------
 
@@ -186,7 +186,7 @@ function feedback(feedbackId, options, controlId, isInverted = false) {
 	return { id: `${controlId}-inst`, controlId, feedbackId, options, isInverted }
 }
 
-describe('convertToParityV300 (D13, doc/PARITY.md §2.1)', () => {
+describe('convertToParityV300 (D13)', () => {
 	before(() => {
 		// a stray entry from a require elsewhere in the same process must not pollute the counts below
 		upgrades.REMOVED_LEGACY.length = 0
@@ -284,7 +284,7 @@ describe('convertToParityV300 (D13, doc/PARITY.md §2.1)', () => {
 		expectRemoved('a35', 'runSpeedTest')
 		expectRemoved('a36', 'refreshPoll')
 
-		// 15 legacy action ids convert (doc/PARITY.md §2.1) + one extra eventControl fixture (a30b)
+		// 15 legacy action ids convert + one extra eventControl fixture (a30b)
 		// added above to also cover the event==='custom' branch, so 16 fixtures end up in updatedActions
 		assert.equal(result.updatedActions.length, 16, 'exactly the 16 converted action instances were reported')
 	})
@@ -364,7 +364,7 @@ describe('convertToParityV300 (D13, doc/PARITY.md §2.1)', () => {
 		assert.equal(result.updatedFeedbacks.length, 19, 'exactly the 19 converted feedbacks were reported as updated')
 	})
 
-	it('maps every storageState / afuState / eventStatus value (§2.2)', () => {
+	it('maps every storageState / afuState / eventStatus value', () => {
 		const feedbacks = [
 			feedback('storageState', { storageId: 'x', state: 'nodev' }, 's1'),
 			feedback('storageState', { storageId: 'x', state: 'dev' }, 's2'),

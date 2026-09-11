@@ -67,7 +67,7 @@ function labelFor(kind, id, name) {
 	return n !== '' && n !== String(id) && n !== base ? `${base} (${n})` : base
 }
 
-/** Badge word for a recorder status (§3.2): REC / PAUSED / ERR / OFF / ? */
+/** Badge word for a recorder status: REC / PAUSED / ERR / OFF / ? */
 function recorderWord(state) {
 	switch (state) {
 		case 'started':
@@ -85,7 +85,7 @@ function recorderWord(state) {
 	}
 }
 
-/** Badge word for a publisher status (§3.2): LIVE / STARTING / LISTEN / ERR / OFF / ? */
+/** Badge word for a publisher status: LIVE / STARTING / LISTEN / ERR / OFF / ? */
 function publisherWord(state) {
 	switch (state) {
 		case 'started':
@@ -400,7 +400,7 @@ function buildVariables(self) {
 		toggleWord(ongoing?.status) || toggleWord(upcoming?.status),
 	)
 
-	// aliases of the ongoing event (COMPANION-PARITY.md §9)
+	// aliases of the ongoing event
 	add('event_title', 'Event Title', ongoing ? ongoing.title : '')
 	add('event_state', 'Event State', ongoing ? ongoing.status : '')
 	add('event_remaining', 'Event Remaining (HH:MM:SS)', ongoing ? hms(num(ongoing.finish) - nowSeconds) : '')

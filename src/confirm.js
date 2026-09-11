@@ -1,7 +1,6 @@
 /**
  * Two-press confirm gate for the destructive actions (power, preset, storage).
  * Mixed into the instance prototype, so `this` is the instance.
- * See doc/ARCHITECTURE.md "Confirm gate (src/confirm.js)".
  */
 
 /** window between the arming press and the confirming press, overridable with this.confirmWindowMs */

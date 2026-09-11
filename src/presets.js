@@ -1,3 +1,4 @@
+// D-numbers (D1–D17) refer to Epiphan's internal Companion-parity decisions.
 const { safeId, splitPair, STORAGE_SEVERITY } = require('./utils')
 const { colors, restStyle, stateStyle } = require('./style')
 const { CONFIRM_HINT } = require('./confirm')

@@ -22,7 +22,7 @@ describe('utils', () => {
 		assert.equal(utils.formatClock('x'), '')
 	})
 
-	it('compactDuration is m:ss below one hour, h:mm:ss from one hour up (§3.3)', () => {
+	it('compactDuration is m:ss below one hour, h:mm:ss from one hour up', () => {
 		assert.equal(utils.compactDuration(0), '0:00')
 		assert.equal(utils.compactDuration(65), '1:05')
 		assert.equal(utils.compactDuration(300), '5:00')
@@ -34,7 +34,7 @@ describe('utils', () => {
 		assert.equal(utils.compactDuration('x'), '0:00')
 	})
 
-	it('formatUptime reads "3d 4h" (days), "4h 05m" (hours), "12m" (§3.3)', () => {
+	it('formatUptime reads "3d 4h" (days), "4h 05m" (hours), "12m"', () => {
 		assert.equal(utils.formatUptime(3 * 86400 + 4 * 3600), '3d 4h')
 		assert.equal(utils.formatUptime(4 * 3600 + 5 * 60), '4h 05m')
 		assert.equal(utils.formatUptime(12 * 60), '12m')
@@ -42,7 +42,7 @@ describe('utils', () => {
 		assert.equal(utils.formatUptime(-5), '0m')
 	})
 
-	it('bytesToHuman reads "1.5 GB" and friends (§3.3), base 1024', () => {
+	it('bytesToHuman reads "1.5 GB" and friends, base 1024', () => {
 		assert.equal(utils.bytesToHuman(0), '0 B')
 		assert.equal(utils.bytesToHuman(512), '512 B')
 		assert.equal(utils.bytesToHuman(1536), '1.5 KB')
@@ -238,7 +238,7 @@ describe('utils', () => {
 		}
 	})
 
-	it('emptyState has the target 3.0.0 shape (doc/PARITY.md §1 state shape target)', () => {
+	it('emptyState has the target 3.0.0 shape', () => {
 		const s = utils.emptyState()
 		assert.deepEqual(Object.keys(s).sort(), [
 			'afu',
@@ -263,7 +263,7 @@ describe('utils', () => {
 		assert.deepEqual(s.presets, [])
 		assert.deepEqual(s.afu, [])
 		// connectivity, speedtest and per-entity encoders/metadata/lastFile are gone (removed with the
-		// features that read them; see doc/PARITY.md §2.6)
+		// features that read them)
 		assert.equal('connectivity' in s, false)
 		assert.equal('speedtest' in s, false)
 	})

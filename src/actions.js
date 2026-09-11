@@ -1,3 +1,4 @@
+// D-numbers (D1–D17) refer to Epiphan's internal Companion-parity decisions.
 const variables = require('./variables')
 const confirm = require('./confirm')
 const rotary = require('./rotary')

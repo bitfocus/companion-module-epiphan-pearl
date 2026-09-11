@@ -1,5 +1,5 @@
 /**
- * The target 3.0.0 preset set (doc/PARITY.md §1 "Presets" column, briefing §5 "Presets", D15
+ * The target 3.0.0 preset set (D15
  * categories) and the style module (src/style.js) it is built from.
  */
 const { describe, it, before, after, afterEach } = require('node:test')
@@ -25,7 +25,7 @@ function hexToComponents(hex) {
 }
 
 describe('style.js palette and helpers', () => {
-	it('exposes the §3.1 palette, round-tripping every hex through combineRgb/splitRgb', () => {
+	it('exposes the palette, round-tripping every hex through combineRgb/splitRgb', () => {
 		assert.deepEqual(Object.keys(colors).sort(), Object.keys(HEX).sort())
 		for (const [key, hex] of Object.entries(HEX)) {
 			assert.deepEqual(splitRgb(colors[key]), hexToComponents(hex), `colors.${key} round-trips to ${hex}`)

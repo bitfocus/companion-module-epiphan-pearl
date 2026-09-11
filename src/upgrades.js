@@ -1,3 +1,4 @@
+// D-numbers (D1–D17) refer to Epiphan's internal Companion-parity decisions.
 const { PRESET_CATEGORY_IDS } = require('./presets')
 const { splitPair, clampNumber } = require('./utils')
 
@@ -108,7 +109,7 @@ function renameStreaming(context, props) {
 }
 
 // ------------------------------------------------------------------------------------------------
-// v3.0.0: Companion-parity control-set rewrite (doc/PARITY.md §2, briefing §4 D1-D16, §7)
+// v3.0.0: Companion-parity control-set rewrite (D1-D16)
 // ------------------------------------------------------------------------------------------------
 
 /**
@@ -130,13 +131,13 @@ function recordRemovedLegacy(kind, id, controlId) {
 	REMOVED_LEGACY.push({ kind, id, controlId: controlId ?? '' })
 }
 
-/** legacy `recorderRecording` / `recorderControlAll` numeric-or-string op -> the new `recorder.op` (§2.1) */
+/** legacy `recorderRecording` / `recorderControlAll` numeric-or-string op -> the new `recorder.op` */
 const RECORDER_OP_MAP = { 0: 'stop', 1: 'start', 2: 'reset', 3: 'toggle', 99: 'toggle' }
-/** legacy `controlStreaming` numeric op -> the new `stream.op` (§2.1) */
+/** legacy `controlStreaming` numeric op -> the new `stream.op` */
 const STREAM_OP_MAP = { 0: 'stop', 1: 'start', 3: 'toggle', 99: 'toggle' }
-/** legacy `storageState` value -> the new `storage_level.level` (§2.2) */
+/** legacy `storageState` value -> the new `storage_level.level` */
 const STORAGE_STATE_MAP = { ready: 'ok', nodev: 'nomedia', dev: 'notready', devro: 'ro', formatting: 'formatting' }
-/** legacy `afuState` value -> the new `system.condition` (§2.2) */
+/** legacy `afuState` value -> the new `system.condition` */
 const AFU_STATE_MAP = {
 	idle: 'afu_idle',
 	paused: 'afu_paused',
@@ -144,7 +145,7 @@ const AFU_STATE_MAP = {
 	error: 'afu_error',
 	disabled: 'afu_off',
 }
-/** legacy `eventStatus.which` -> the new `event_state` options (§2.2) */
+/** legacy `eventStatus.which` -> the new `event_state` options */
 const EVENT_WHICH_MAP = {
 	upcoming: { eventRef: 'upcoming', state: 'scheduled' },
 	running: { eventRef: 'ongoing', state: 'running' },
@@ -154,7 +155,7 @@ const EVENT_WHICH_MAP = {
 
 /**
  * Resolve the event id/alias an `eventControl` / `eventExtend` action targeted, into the new `eventRef`
- * (§2.1: `eventRef = event === 'custom' ? eventId : event`).
+ * (`eventRef = event === 'custom' ? eventId : event`).
  * @param {object} opt legacy action options
  * @returns {string}
  */
@@ -164,7 +165,7 @@ function legacyEventRef(opt) {
 
 /**
  * Companion parity control-set rewrite: converts every legacy action/feedback id to its new
- * counterpart (doc/PARITY.md §2.1/§2.2) and the connection config to the new field set (§2.4). Actions
+ * counterpart and the connection config to the new field set. Actions
  * and feedbacks with no Stream Deck counterpart are left exactly as stored (an upgrade script has no way
  * to delete a placed instance) and only recorded via recordRemovedLegacy so init() can warn once (D13).
  *
@@ -464,7 +465,7 @@ module.exports = [
 	setDefaultConfigV260,
 	// v3.0.0: default values (HTTPS off, self-signed accepted) for the connection security settings
 	setDefaultConfigV300Https,
-	// v3.0.0: Companion-parity control-set rewrite (briefing §7, doc/PARITY.md §2)
+	// v3.0.0: Companion-parity control-set rewrite
 	convertToParityV300,
 ]
 

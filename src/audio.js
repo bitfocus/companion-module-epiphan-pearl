@@ -1,7 +1,6 @@
 /**
  * Pure helpers for the audio settings and levels of a Pearl input.
- * No instance access, no side effects. The read-modify-write rules are explained in
- * doc/ARCHITECTURE.md "Audio helper (src/audio.js)".
+ * No instance access, no side effects; each helper explains its read-modify-write rule.
  */
 
 const GAIN_MIN = 0

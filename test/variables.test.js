@@ -1,6 +1,6 @@
 /**
- * The target variable set (doc/PARITY.md §1, §2.5): the exact id set for the seeded mock (and that no
- * legacy id remains), the §3.3 word/format rules and the clock-skew countdown.
+ * The target variable set: the exact id set for the seeded mock (and that no legacy id remains), the
+ * word/format rules and the clock-skew countdown.
  */
 const { describe, it, before, after } = require('node:test')
 const assert = require('node:assert/strict')
@@ -11,7 +11,7 @@ const { buildVariables } = require('../src/variables')
 const { emptyState } = require('../src/utils')
 
 /**
- * Build the exact set of variable ids the briefing's §5 list documents for a given instance state,
+ * Build the exact set of variable ids the module documents for a given instance state,
  * from the state's own entity ids (not a hand-typed literal) so this stays in step with whichever
  * recorders/channels/inputs/etc. the mock happens to seed.
  */
@@ -99,7 +99,7 @@ function expectedVariableIds(state) {
 	return ids
 }
 
-/** ids from a legacy id pattern that must never reappear (doc/PARITY.md §2.5) */
+/** ids from a legacy id pattern that must never reappear */
 const LEGACY_IDS = [
 	'channel_1_resolution',
 	'channel_1_fps',
@@ -162,7 +162,7 @@ describe('variables: exact id set for the seeded mock', () => {
 		await mock.close()
 	})
 
-	it('matches exactly the ids derived from the current state (§2.5 new set)', () => {
+	it('matches exactly the ids derived from the current state (the new set)', () => {
 		const actual = new Set(instance.definitions.variables.map((d) => d.variableId))
 		const expected = expectedVariableIds(instance.state)
 		assert.deepEqual([...actual].sort(), [...expected].sort())
@@ -180,7 +180,7 @@ describe('variables: exact id set for the seeded mock', () => {
 		}
 	})
 
-	it('no legacy variable id (§2.5 removed column) survived the rewrite', () => {
+	it('no legacy variable id (the removed set) survived the rewrite', () => {
 		for (const id of LEGACY_IDS) {
 			assert.equal(instance.variableValues[id], undefined, `legacy variable ${id} still exists`)
 			assert.ok(
@@ -221,7 +221,7 @@ describe('variables: exact id set for the seeded mock', () => {
 	})
 })
 
-describe('variables: §3.3 word/format rules (via buildVariables, no device needed)', () => {
+describe('variables: word/format rules (via buildVariables, no device needed)', () => {
 	function selfWith(overrides = {}) {
 		return { state: { ...emptyState(), ...overrides.state }, confirmPending: overrides.confirmPending }
 	}
@@ -253,7 +253,7 @@ describe('variables: §3.3 word/format rules (via buildVariables, no device need
 		assert.equal(values.event_upcoming_state_word, 'SCHED')
 	})
 
-	it('nothing scheduled reads "Nothing scheduled" (§3.3 standard text)', () => {
+	it('nothing scheduled reads "Nothing scheduled" (standard text)', () => {
 		const self = selfWith({ state: { events: { upcoming: null, ongoing: null, list: [] } } })
 		const { values } = buildVariables(self)
 		assert.equal(values.event_upcoming_time_text, 'Nothing scheduled')
@@ -277,7 +277,7 @@ describe('variables: §3.3 word/format rules (via buildVariables, no device need
 		assert.equal(values.event_ongoing_toggle_command, 'PAUSE')
 	})
 
-	it('no ongoing event reads "No ongoing event" (§3.3 standard text)', () => {
+	it('no ongoing event reads "No ongoing event" (standard text)', () => {
 		const self = selfWith({ state: { events: { upcoming: null, ongoing: null, list: [] } } })
 		const { values } = buildVariables(self)
 		assert.equal(values.event_ongoing_time_text, 'No ongoing event')
@@ -322,7 +322,7 @@ describe('variables: §3.3 word/format rules (via buildVariables, no device need
 	})
 })
 
-describe('variables: clock-skew countdown (doc/ARCHITECTURE.md "Request layer")', () => {
+describe('variables: clock-skew countdown', () => {
 	it('event countdowns use self.deviceNow(), not the host clock, when it is offset', () => {
 		const nowSeconds = Math.floor(Date.now() / 1000)
 		const state = {

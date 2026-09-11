@@ -44,7 +44,7 @@ describe('init against a v2.0 device', () => {
 		assert.equal(instance.currentStatus, InstanceStatus.Ok)
 	})
 
-	it('populates every state domain (doc/PARITY.md §1 state shape target)', () => {
+	it('populates every state domain (the target state shape)', () => {
 		const s = instance.state
 		assert.deepEqual(Object.keys(s.channels).sort(), ['1', '2'])
 		assert.equal(s.channels['1'].name, 'HDMI-A')
@@ -55,13 +55,13 @@ describe('init against a v2.0 device', () => {
 		assert.deepEqual(Object.keys(s.channels['1'].publishers).sort(), ['0', '1'])
 		assert.equal(s.channels['1'].publishers['1'].status.state, 'started')
 		assert.equal(s.channels['1'].publishers['0'].type, 'rtmp')
-		assert.equal('encoders' in s.channels['1'], false, 'encoders were dropped from the state (§2.6)')
+		assert.equal('encoders' in s.channels['1'], false, 'encoders were dropped from the state')
 		assert.deepEqual(Object.keys(s.channels['2'].publishers), [])
 
 		assert.deepEqual(Object.keys(s.recorders).sort(), ['1', '2', 'm1'])
 		assert.equal(s.recorders['1'].status.state, 'started')
 		assert.equal(s.recorders['m1'].multisource, true)
-		assert.equal('lastFile' in s.recorders['1'], false, 'archive/lastFile was dropped (§2.6, poll_archive removed)')
+		assert.equal('lastFile' in s.recorders['1'], false, 'archive/lastFile was dropped (poll_archive removed)')
 
 		assert.deepEqual(Object.keys(s.inputs).sort(), [
 			'SRT1',

@@ -1,5 +1,5 @@
 /**
- * The target 3.0.0 feedback set (doc/PARITY.md §1): every id, true/false cases, the "all"/"cid-all"
+ * The target 3.0.0 feedback set: every id, true/false cases, the "all"/"cid-all"
  * aggregates, the storage_level thresholds, the event_state/event_applies resolution and the advanced
  * preview/layout_preview/audio feedbacks.
  */
