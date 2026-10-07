@@ -10,13 +10,31 @@ const { Regex } = require('@companion-module/base')
  */
 const get_config_fields = () => {
 	return [
+		// Pearls in the same network announce themselves via Bonjour as '_epiphan._tcp' (checked on a
+		// Pearl-2 with firmware 4.24.6), see bonjourQueries in companion/manifest.json. Companion lists
+		// them here with the device name of the Pearl and offers "Manual" for all other cases, e.g. a
+		// Pearl in another network. The value is 'host:port', or null for "Manual".
+		{
+			type: 'bonjour-device',
+			id: 'bonjourHost',
+			label: 'Pearl',
+			tooltip:
+				'Pearls in the same network as Companion are found automatically. Select "Manual" to enter the address yourself, e.g. for a Pearl in another network.',
+			width: 6,
+			// the manual address fields below refer to this field, see isVisibleExpression
+			disableAutoExpression: true,
+		},
 		{
 			type: 'textinput',
 			id: 'host',
-			label: 'Target IP',
+			label: 'Target IP or hostname',
 			width: 6,
 			default: '192.168.255.250',
-			regex: Regex.IP,
+			// hostnames are allowed too, e.g. <device name>.local, the name a Pearl announces on the network
+			regex: Regex.HOSTNAME,
+			tooltip: 'IP address or hostname of the Pearl, e.g. 192.168.1.20 or <device name>.local',
+			// only needed when no Pearl is selected in the Bonjour field
+			isVisibleExpression: '!$(options:bonjourHost)',
 		},
 		{
 			type: 'textinput',
@@ -25,6 +43,7 @@ const get_config_fields = () => {
 			width: 6,
 			default: '80',
 			regex: Regex.PORT,
+			isVisibleExpression: '!$(options:bonjourHost)',
 		},
 		{
 			type: 'textinput',
@@ -48,12 +67,6 @@ const get_config_fields = () => {
 			default: 10,
 			min: 1,
 			max: 300,
-		},
-		{
-			type: 'checkbox',
-			id: 'use_api_v2',
-			label: 'Use API v2.0 (if available)',
-			default: true,
 		},
 		{
 			type: 'checkbox',

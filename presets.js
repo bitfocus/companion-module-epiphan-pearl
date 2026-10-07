@@ -6,15 +6,16 @@ module.exports = {
 	 *
 	 * @access protected
 	 * @since 2.0.0
-	 * @returns {Object[]} - the available presets
+	 * @returns {{structure: Object[], presets: Object}} - the preset sections and the available presets
 	 */
 	getPresets() {
 		let presets = {}
 
+		// Fix: preset keys are built from the ids instead of the labels, labels are not unique
+		// (e.g. two recorders with the same name) and overwrote each other
 		for (const layout of this.choicesChannelLayout()) {
-			presets[`layout_${layout.label}`] = {
-				type: 'button',
-				category: 'Channels',
+			presets[`layout_${layout.id}`] = {
+				type: 'simple',
 				name: layout.label,
 				style: {
 					text: layout.label.replace(' - ', '\\n'),
@@ -51,10 +52,10 @@ module.exports = {
 		}
 
 		for (const publisher of this.choicesChannelPublishers()) {
-			presets[`publisher_${publisher.label}`] = {
-				type: 'button',
-				category: 'Publishers',
-				label: publisher.label,
+			presets[`publisher_${publisher.id}`] = {
+				type: 'simple',
+				// Fix: presets need 'name', 'label' is an old property
+				name: publisher.label,
 				style: {
 					text: publisher.label.replace(' - ', '\\n'),
 					size: 7,
@@ -91,10 +92,10 @@ module.exports = {
 		}
 
 		for (const recorder of this.choicesRecorders()) {
-			presets[`recorder_${recorder.label}`] = {
-				type: 'button',
-				category: 'Recorders',
-				label: recorder.label,
+			presets[`recorder_${recorder.id}`] = {
+				type: 'simple',
+				// Fix: presets need 'name', 'label' is an old property
+				name: recorder.label,
 				style: {
 					text: recorder.label + '\\n▶️/⏹',
 					size: 14,
@@ -128,10 +129,10 @@ module.exports = {
 					},
 				],
 			}
-			presets[`recorder_${recorder.label}_reset`] = {
-				type: 'button',
-				category: 'Recorders',
-				label: recorder.label,
+			presets[`recorder_${recorder.id}_reset`] = {
+				type: 'simple',
+				// Fix: presets need 'name', 'label' is an old property
+				name: recorder.label + ' Reset',
 				style: {
 					text: recorder.label + '\\n🔁',
 					size: 14,
@@ -167,6 +168,14 @@ module.exports = {
 			}
 		}
 
-		return presets
+		// module-base 2.x: the 'category' property was replaced by a separate structure of sections
+		const idsWithPrefix = (prefix) => Object.keys(presets).filter((id) => id.startsWith(prefix))
+		const structure = [
+			{ id: 'channels', name: 'Channels', definitions: idsWithPrefix('layout_') },
+			{ id: 'publishers', name: 'Publishers', definitions: idsWithPrefix('publisher_') },
+			{ id: 'recorders', name: 'Recorders', definitions: idsWithPrefix('recorder_') },
+		]
+
+		return { structure, presets }
 	},
 }

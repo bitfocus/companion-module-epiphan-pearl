@@ -1,6 +1,9 @@
 node_modules/
-pkg
-pkg.tgz
+package-lock.json
+/pkg
+/*.tgz
+DEBUG-*
+/.yarn
 
 # Temp store for pearl files.
 # Which cannot be commited due to licence

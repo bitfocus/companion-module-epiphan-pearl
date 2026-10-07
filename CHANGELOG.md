@@ -8,6 +8,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.2.0] (2026-10-07)
+
+### Important
+
+- Requires Companion 5.0 or newer
+- The option "Use API v2.0" was removed. The module now automatically uses the best connection method for the firmware of your Pearl.
+- "Get layout data" no longer asks for a custom variable. Choose where to store the result directly in Companion, like for other actions that return a value. Existing buttons are converted automatically.
+
+### New Features
+
+- If your Pearl runs a firmware older than 4.24.1, the connection shows a warning recommending a firmware update
+- If the Pearl is not reachable, the module tries to reconnect every 10 seconds
+- Pearls in the same network are found automatically and can be selected by their device name in the connection settings. For a Pearl in another network, the address is entered manually as before.
+- The Pearl can be entered by hostname as well as by IP address, e.g. `<serial number>.local`
+- A wrong username or password is shown as such in the connection status
+- New variables (firmware 4.24.1 or newer):
+  - Storage of the internal drive and USB drives: state, total, used and free space in GB and %, and the estimated remaining recording time based on the running recordings
+  - Input signal (OK / No signal) and current total bitrate of each channel
+  - Recording duration, stream duration and system uptime as hh:mm:ss
+  - Stream reconnections and error description
+  - Warnings for high CPU load and CPU temperature, using the thresholds of the Pearl
+
+### Bug Fixes
+
+- The settings page did not open when adding a new Pearl connection
+- Changed settings (e.g. IP address or password) now take effect immediately, without restarting the connection
+- With firmware 4.24.1 or newer, layouts were missing, and changing layouts, inserting markers, resetting recorders and getting or setting layout data did not work
+- Streaming feedbacks from very old configurations lost their colors after updating
+- Buttons and feedbacks could stop updating when the Pearl was not reachable or did not support a feature
+- Presets now have proper names, and recorders with the same name each get their own presets
+- Recorders without a name no longer show up as "undefined"
+- The feedbacks for streaming and recording changed only with the next status query, up to the polling frequency after pressing the button. They now follow within about one to two seconds, and the variable of the active layout changes right away too.
+- The bitrate variable showed 0 instead of the current bitrate when the bitrate is set to automatic
+- The variables for resolution and bitrate stayed empty with firmware older than 4.24.1
+- "Set Content Metadata" updated the metadata variables even if the Pearl rejected the new values
+- The connection was shown as failed when the Pearl only rejected a single command, e.g. a marker
+- Clearer error messages, e.g. when a marker can't be set because the channel is not recording
+- Improved stability and error handling
+
 ## [2.2.0] (2025-10-20)
 
 ### New Features

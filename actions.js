@@ -1,5 +1,5 @@
 const { InstanceStatus } = require('@companion-module/base')
-const variables = require('./variables')
+const http = require('http')
 
 // use global fetch provided by Node 18+
 if (typeof global.fetch !== 'function') {
@@ -40,9 +40,10 @@ module.exports = {
 				) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Channel and layout are not known! Please review your button config'
+						'Channel and layout are not known! Please review your button config',
 					)
-					this.debug('channelIdlayoutId: ' + action.options.channelIdlayoutId)
+					// Fix: InstanceBase has no debug() method, use log()
+					this.log('debug', 'channelIdlayoutId: ' + action.options.channelIdlayoutId)
 					return
 				}
 
@@ -50,7 +51,7 @@ module.exports = {
 				if (!this.state.channels[channelId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing channel! Please review your button config'
+						'Action on non existing channel! Please review your button config',
 					)
 					this.log('error', 'Action on non existing channel: ' + channelId)
 					return
@@ -58,7 +59,7 @@ module.exports = {
 				if (!this.state.channels[channelId].layouts[layoutId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing layout! Please review your button config'
+						'Action on non existing layout! Please review your button config',
 					)
 					this.log('error', 'Action on non existing layout ' + layoutId + ' on channel ' + channelId)
 					return
@@ -66,15 +67,24 @@ module.exports = {
 
 				type = 'put'
 				url = '/api/channels/' + channelId + '/layouts/active'
-				body = { id: Number(layoutId) }
+				if (this.usesApiV2()) {
+					// API v2.0 expects the layout id as query parameter instead of a JSON body
+					url += '?id=' + encodeURIComponent(layoutId)
+				} else {
+					body = { id: Number(layoutId) }
+				}
 				callback = (response) => {
 					if (response && response.status === 'ok') {
-						this.updateActiveChannelLayout(channelId, layoutId)
+						// return the promise so a failing refresh is caught below
+						return this.updateActiveChannelLayout(channelId)
 					}
 				}
 
 				// Send request
-				this.sendRequest(type, url, body).then(callback)
+				// Fix: sendRequest() throws on any failure, without catch this was an unhandled promise rejection
+				this.sendRequest(type, url, body)
+					.then(callback)
+					.catch((error) => this.log('error', 'Layout could not be changed: ' + error.message))
 			},
 		}
 
@@ -114,9 +124,10 @@ module.exports = {
 				) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Channel or Publisher are not valid! Please review your button config'
+						'Channel or Publisher are not valid! Please review your button config',
 					)
-					this.debug('Undefined channelIdpublisherId ... ' + action.options.channelIdpublisherId)
+					// Fix: InstanceBase has no debug() method, use log()
+					this.log('debug', 'Undefined channelIdpublisherId ... ' + action.options.channelIdpublisherId)
 					return
 				}
 
@@ -124,7 +135,7 @@ module.exports = {
 				if (!this.state.channels[channelId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing channel! Please review your button config.'
+						'Action on non existing channel! Please review your button config.',
 					)
 					this.log('error', 'Action on non existing channel: ' + channelId)
 					return
@@ -132,7 +143,7 @@ module.exports = {
 				if (publisherId !== 'all' && !this.state.channels[channelId].publishers[publisherId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing publisher! Please review your button config.'
+						'Action on non existing publisher! Please review your button config.',
 					)
 					this.log('error', 'Action on non existing publisher ' + publisherId + ' on channel ' + channelId)
 					return
@@ -146,12 +157,13 @@ module.exports = {
 					// toggle
 					let isStreaming
 					const channel = this.state.channels[channelId]
+					// Fix: status is missing if the publisher status request failed, use optional chaining
 					if (publisherId !== 'all') {
-						isStreaming = channel.publishers[publisherId].status.state === 'started'
+						isStreaming = channel.publishers[publisherId].status?.state === 'started'
 					} else {
 						// if we should toggle all, check if there is at least one not streaming and then turn it on
 						isStreaming = !Object.keys(channel.publishers)
-							.map((id) => channel.publishers[id].status.state)
+							.map((id) => channel.publishers[id].status?.state)
 							.some((state) => state !== 'started')
 					}
 					startStopAction = isStreaming ? 'stop' : 'start'
@@ -163,8 +175,28 @@ module.exports = {
 					url = '/api/channels/' + channelId + '/publishers/control/' + startStopAction
 				}
 
+				// the publishers whose state has to reach the target of the command
+				const publisherIds =
+					publisherId === 'all' ? Object.keys(this.state.channels[channelId].publishers) : [publisherId]
+				const command = startStopAction
+
 				// Send request
+				// Fix: catch request errors to avoid an unhandled promise rejection
 				this.sendRequest(type, url, body)
+					.then(() =>
+						// Fix: the streaming feedback only changed with the next regular poll before
+						this.followUpState(
+							() => this.updatePublisherStatus(channelId),
+							() =>
+								publisherIds.every((id) =>
+									this.constructor.stateReached(
+										this.state.channels[channelId]?.publishers[id]?.status?.state,
+										command,
+									),
+								),
+						),
+					)
+					.catch((error) => this.log('error', 'Streaming could not be controlled: ' + error.message))
 			},
 		}
 
@@ -202,12 +234,13 @@ module.exports = {
 				if (!this.state.recorders[recorderId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing recorder! Please review your button config.'
+						'Action on non existing recorder! Please review your button config.',
 					)
 					this.log('warn', 'Action on non existing recorder ' + recorderId)
 					return
 				}
 
+				const requestOptions = {}
 				let startStopAction = action.options.startStopAction
 				if (startStopAction === 3) {
 					// Toggle
@@ -224,24 +257,37 @@ module.exports = {
 					url = `/api/recorders/${recorderId}/control/start`
 				} else if (startStopAction === 2) {
 					url = `/api/recorders/${recorderId}/control/reset`
+					// API v2.0 has no reset command, so this always uses the v1 API
+					requestOptions.legacy = true
 				} else if (startStopAction === 99) {
 					return
 				} else {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Called an unknown action! Please review your button config.'
+						'Called an unknown action! Please review your button config.',
 					)
 					this.log('error', 'Called an unknown action: ' + action.options.startStopAction)
 					return
 				}
 
-				callback = async (response) => {
-					if (response && response.status === 'ok') {
-						this.updateRecorderStatus(recorderId)
-					}
-				}
+				// Fix: a single refresh right after the command usually still returned the old state, so
+				// the recording feedback only changed with the next regular poll. Now the state is asked
+				// for repeatedly until the Pearl reports it. A reset has no fixed target state, there it is
+				// enough that the recorder is no longer starting.
+				const command = startStopAction === 0 ? 'stop' : startStopAction === 1 ? 'start' : undefined
+				callback = () =>
+					this.followUpState(
+						() => this.updateRecorderStatus(),
+						() => {
+							const state = this.state.recorders[recorderId]?.status?.state
+							return command ? this.constructor.stateReached(state, command) : state !== 'starting'
+						},
+					)
 				// Send request
-				this.sendRequest(type, url, body).then(callback)
+				// Fix: catch request errors to avoid an unhandled promise rejection
+				this.sendRequest(type, url, body, requestOptions)
+					.then(callback)
+					.catch((error) => this.log('error', 'Recorder could not be controlled: ' + error.message))
 			},
 		}
 
@@ -267,16 +313,23 @@ module.exports = {
 			callback: async (action) => {
 				let type = 'post'
 				let url = `/api/channels/${action.options.channel}/bookmarks`
-				let body = {
-					text: await this.parseVariablesInString(action.options.markertext),
+				// module-base 2.x: Companion already replaced the variables in options with useVariables
+				const text = action.options.markertext
+				let body = {}
+				if (this.usesApiV2()) {
+					// API v2.0 expects the text as query parameter instead of a JSON body
+					url += '?text=' + encodeURIComponent(text)
+				} else {
+					body = { text }
 				}
 
 				// Send request
 				try {
 					await this.sendRequest(type, url, body)
-					this.log('info', 'marker successful sent: ' + body.text)
+					this.log('info', 'marker successful sent: ' + text)
 				} catch (error) {
-					this.log('error', 'marker could not be set')
+					// the reason matters here, e.g. the Pearl refuses markers if the channel is not recording
+					this.log('error', 'marker could not be set: ' + error.message)
 				}
 			},
 		}
@@ -290,12 +343,11 @@ module.exports = {
 					choices: this.choicesChannelLayout(),
 					default: this.firstId(this.choicesChannelLayout()),
 				},
-				{
-					id: 'destination',
-					type: 'custom-variable',
-					label: 'Destination Variable',
-				},
 			],
+			// module-base 2.x: the 'custom-variable' option is deprecated, the action returns the layout data
+			// as result instead and the user chooses in Companion where to store it. Existing buttons are
+			// converted by an upgrade script (see upgrades.js).
+			hasResult: true,
 			callback: async (action) => {
 				if (
 					typeof action.options.channelIdlayoutId !== 'string' ||
@@ -303,9 +355,10 @@ module.exports = {
 				) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Channel and layout are not known! Please review your button config'
+						'Channel and layout are not known! Please review your button config',
 					)
-					this.debug('channelIdlayoutId: ' + action.options.channelIdlayoutId)
+					// Fix: InstanceBase has no debug() method, use log()
+					this.log('debug', 'channelIdlayoutId: ' + action.options.channelIdlayoutId)
 					return
 				}
 
@@ -313,7 +366,7 @@ module.exports = {
 				if (!this.state.channels[channelId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing channel! Please review your button config'
+						'Action on non existing channel! Please review your button config',
 					)
 					this.log('error', 'Action on non existing channel: ' + channelId)
 					return
@@ -321,7 +374,7 @@ module.exports = {
 				if (!this.state.channels[channelId].layouts[layoutId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing layout! Please review your button config'
+						'Action on non existing layout! Please review your button config',
 					)
 					this.log('error', 'Action on non existing layout ' + layoutId + ' on channel ' + channelId)
 					return
@@ -330,12 +383,13 @@ module.exports = {
 				//get the data
 				const url = '/api/channels/' + channelId + '/layouts/' + layoutId + '/settings'
 				try {
-					const layoutData = JSON.stringify(await this.sendRequest('GET', url, {}))
+					// API v2.0 has no layout settings, so this always uses the v1 API
+					const layoutData = JSON.stringify(await this.sendRequest('GET', url, {}, { legacy: true }))
 					this.log(
 						'debug',
-						`Layout Data retrieved for Channel ${this.state.channels[channelId].name}, Layout ${this.state.channels[channelId].layouts[layoutId].name}:\n${layoutData}`
+						`Layout Data retrieved for Channel ${this.state.channels[channelId].name}, Layout ${this.state.channels[channelId].layouts[layoutId].name}:\n${layoutData}`,
 					)
-					this.setCustomVariableValue(action.options.destination, layoutData)
+					return layoutData
 				} catch (error) {
 					this.log('error', 'Layout data could not be retrieved or stored')
 				}
@@ -368,9 +422,10 @@ module.exports = {
 				) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Channel and layout are not known! Please review your button config'
+						'Channel and layout are not known! Please review your button config',
 					)
-					this.debug('channelIdlayoutId: ' + action.options.channelIdlayoutId)
+					// Fix: InstanceBase has no debug() method, use log()
+					this.log('debug', 'channelIdlayoutId: ' + action.options.channelIdlayoutId)
 					return
 				}
 
@@ -378,7 +433,7 @@ module.exports = {
 				if (!this.state.channels[channelId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing channel! Please review your button config'
+						'Action on non existing channel! Please review your button config',
 					)
 					this.log('error', 'Action on non existing channel: ' + channelId)
 					return
@@ -386,7 +441,7 @@ module.exports = {
 				if (!this.state.channels[channelId].layouts[layoutId]) {
 					this.setStatus(
 						InstanceStatus.UnknownWarning,
-						'Action on non existing layout! Please review your button config'
+						'Action on non existing layout! Please review your button config',
 					)
 					this.log('error', 'Action on non existing layout ' + layoutId + ' on channel ' + channelId)
 					return
@@ -396,13 +451,15 @@ module.exports = {
 				const url = '/api/channels/' + channelId + '/layouts/' + layoutId + '/settings'
 				let body = {}
 				try {
-					body = JSON.parse(await this.parseVariablesInString(action.options.source))
+					// module-base 2.x: Companion already replaced the variables in options with useVariables
+					body = JSON.parse(action.options.source)
 				} catch (error) {
 					this.log('error', 'Option is no valid JSON')
 					return
 				}
 				try {
-					await this.sendRequest('PUT', url, body)
+					// API v2.0 has no layout settings, so this always uses the v1 API
+					await this.sendRequest('PUT', url, body, { legacy: true })
 				} catch (error) {
 					this.log('error', 'Layout data could not be sent')
 				}
@@ -413,7 +470,10 @@ module.exports = {
 			name: 'Reboot system',
 			options: [],
 			callback: () => {
-				this.sendRequest('post', '/api/system/control/reboot', {})
+				// Fix: catch request errors to avoid an unhandled promise rejection
+				this.sendRequest('post', '/api/system/control/reboot', {}).catch((error) =>
+					this.log('error', 'System reboot failed: ' + error.message),
+				)
 			},
 		}
 
@@ -421,7 +481,10 @@ module.exports = {
 			name: 'Shutdown system',
 			options: [],
 			callback: () => {
-				this.sendRequest('post', '/api/system/control/shutdown', {})
+				// Fix: catch request errors to avoid an unhandled promise rejection
+				this.sendRequest('post', '/api/system/control/shutdown', {}).catch((error) =>
+					this.log('error', 'System shutdown failed: ' + error.message),
+				)
 			},
 		}
 
@@ -481,33 +544,46 @@ module.exports = {
 				const channel = action.options.channel
 				const apiHost = this.config.host
 				const apiPort = this.config.host_port
-				const titleRaw = await this.parseVariablesInString(action.options.title)
-				const authorRaw = await this.parseVariablesInString(action.options.author)
-				const prefixRaw = await this.parseVariablesInString(action.options.prefix)
-				const urlObj = new URL(`http://${apiHost}:${apiPort}/admin/channel${channel}/set_params.cgi`)
-				urlObj.searchParams.set('title', titleRaw)
-				urlObj.searchParams.set('author', authorRaw)
-				urlObj.searchParams.set('rec_prefix', prefixRaw)
-				const url = urlObj.toString()
+				// module-base 2.x: Companion already replaced the variables in options with useVariables
+				const titleRaw = action.options.title
+				const authorRaw = action.options.author
+				const prefixRaw = action.options.prefix
+				// same validation as when reading the metadata, the channel id becomes part of the URL path
+				if (!/^[a-zA-Z0-9_-]+$/.test(String(channel))) {
+					this.log('error', `Invalid channel: ${channel}`)
+					return
+				}
+				// encodeURIComponent encodes spaces as %20, which every CGI understands, unlike the '+' of URLSearchParams
+				const query = [
+					['title', titleRaw],
+					['author', authorRaw],
+					['rec_prefix', prefixRaw],
+				]
+					.map(([key, value]) => `${key}=${encodeURIComponent(value ?? '')}`)
+					.join('&')
+				const url = `http://${apiHost}:${apiPort}/admin/channel${channel}/set_params.cgi?${query}`
 				if (this.config.verbose) {
 					this.log('debug', `Action set metadata for channel ${channel}`)
 				}
 				try {
-					await fetchFunc(url, {
+					const response = await fetchFunc(url, {
 						method: 'GET',
+						// Fix: without a timeout the action never finishes if the device is unreachable
+						signal: AbortSignal.timeout(3000),
 						headers: {
 							Authorization:
 								'Basic ' +
 								Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
 						},
 					})
-					if (!this.metadata[channel]) this.metadata[channel] = {}
-					this.metadata[channel].title = titleRaw
-					this.metadata[channel].author = authorRaw
-					this.metadata[channel].rec_prefix = prefixRaw
-					variables.updateVariables(this)
+					// Fix: the values were stored locally even if the Pearl rejected them
+					if (!response.ok) {
+						throw new Error(http.STATUS_CODES[response.status])
+					}
+					// read the values back, so the variables show what the Pearl actually stored
+					await this.fetchMetadata(channel)
 				} catch (e) {
-					this.log('error', 'Failed to set metadata')
+					this.log('error', 'Failed to set metadata: ' + e.message)
 				}
 			},
 		}
