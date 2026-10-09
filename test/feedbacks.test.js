@@ -13,6 +13,7 @@ const { colors } = require('../src/style')
 const FEEDBACK_IDS = [
 	'action_failed',
 	'recorder_state',
+	'recorder_blink',
 	'stream_state',
 	'layout_active',
 	'layout_preview',

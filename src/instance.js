@@ -13,6 +13,7 @@ const actions = require('./actions')
 const feedbacks = require('./feedbacks')
 const presets = require('./presets')
 const meter = require('./meter')
+const blink = require('./blink')
 const { getConfigFields } = require('./config')
 const upgrades = require('./upgrades')
 const { emptyState, firmwareVersionNumber, clampNumber } = require('./utils')
@@ -310,6 +311,7 @@ class EpiphanEncoder extends InstanceBase {
 		// outlive this instance
 		this.clearConfirmTimer()
 		this.clearRotaryTimers()
+		this.clearBlinkTimer()
 		this.clearFailureTimers()
 	}
 
@@ -408,7 +410,7 @@ class EpiphanEncoder extends InstanceBase {
 	}
 }
 
-Object.assign(EpiphanEncoder.prototype, api, poller, choices, actions, feedbacks, presets, meter)
+Object.assign(EpiphanEncoder.prototype, api, poller, choices, actions, feedbacks, presets, meter, blink)
 
 const upgradeToBooleanFeedbacks = CreateConvertToBooleanFeedbackUpgradeScript({
 	channelLayout: {

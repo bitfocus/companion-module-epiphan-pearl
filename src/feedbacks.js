@@ -283,6 +283,33 @@ module.exports = {
 			},
 		}
 
+		feedbacks['recorder_blink'] = {
+			type: 'boolean',
+			name: 'Recorder paused (blink)',
+			description:
+				'True during the "on" half of a 500 ms blink while the selected recorder (or, for "All recorders", any ' +
+				'recorder) is paused, false the rest of the time. Place it after a Paused style on a button to make that ' +
+				'style flash; the Recording presets do this on their Pause / Resume keys.',
+			defaultStyle: stateStyle(colors.amber),
+			options: [
+				{
+					type: 'dropdown',
+					id: 'recorderId',
+					label: 'Recorder',
+					choices: this.choicesRecordersWithAll(),
+					default: 'all',
+				},
+			],
+			callback: (feedback) => {
+				try {
+					return this.blinkPhase === true && this.recorderPaused(String(feedback.options.recorderId ?? 'all'))
+				} catch (error) {
+					this.log('error', `recorder_blink feedback failed: ${error?.message ?? error}`)
+					return false
+				}
+			},
+		}
+
 		feedbacks['stream_state'] = {
 			type: 'boolean',
 			name: 'Stream state',

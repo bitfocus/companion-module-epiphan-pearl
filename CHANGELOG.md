@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [3.0.0] (2026-09-21)
+## [3.0.0] (2026-10-09)
 
 The control set now matches the Epiphan Encoders Stream Deck plugin: the same actions, feedbacks, variables,
 preset categories, colours and state words, so an operator can move between the two without relearning.
@@ -21,23 +21,28 @@ production connection.
 - Full coverage of the REST API v2.0 (firmware 4.24.1 and newer), with automatic fallback to the legacy API
   on older firmware.
 - Actions `singletouch`, `output` (switch an output's source), `preset` (apply a configuration preset),
-  `event` (start, stop, pause, resume, extend or toggle a CMS event, by alias or id), `storage` (eject
-  removable media) and `audio` (nudge an input's gain or delay by a step; on a Stream Deck+ the dial does the
-  same). `recorder` can address all recorders at once and `stream` all publishers of a channel.
+  `event` (pause / resume, stop or extend the ongoing CMS event, start the upcoming one, or control a specific
+  event by id) and `audio` (nudge the gain of an analog input or the delay of any audio input by a step; on a
+  Stream Deck+ the dial does the same). `recorder` offers Start / Stop and Pause / Resume, each a toggle that
+  reads the recorder's state, and can address all recorders at once; `stream` all publishers of a channel.
 - **Confirm with a second press** on Apply Preset, Reboot / Shutdown and Storage eject, on by default: the
   first press arms the button and shows `Press again`, the same button pressed again within 3 seconds sends
   the command.
 - Feedbacks `singletouch_active`, `event_state`, `event_applies`, `system` (CPU load, temperature and AFU
   conditions), `storage_level`, `output_set`, `confirm_pending`, `action_failed` (red `Failed` for three
-  seconds on a button whose command the device rejected), `preview` and `layout_preview` (live pictures of
-  channels, inputs, outputs and layouts on the button) and `audio`, a stereo level meter drawn on the button.
+  seconds on a button whose command the device rejected), `recorder_blink` (the "on" half of a 500 ms blink
+  while a recorder is paused), `preview` and `layout_preview` (live pictures of channels, inputs, outputs and
+  layouts on the button) and `audio`, a stereo level meter drawn on the button.
 - Variables for publishers (per channel), inputs (name, gain, delay and audio levels), outputs, storages,
   single touch, CMS events (titles, times and countdowns, corrected for the device's own clock), system
   status text, AFU details, configuration presets, `confirm_hint` and `last_error`, plus `_state_word` and
   `_text` variants ready for button text.
 - Presets in eleven categories (Recording, Streaming, Layouts, Single touch, Bookmarks, Previews,
   Configuration presets, CMS events, System, Power, Storage), each with the Stream Deck plugin's icon and
-  colours. The connection setting **Preset categories to generate** chooses which appear in the preset list.
+  colours. The Recording keys carry a state glyph that follows the recorder: on the Start / Stop key a record
+  dot that becomes a red stop square while recording, on the Pause / Resume key a green pause bar while
+  recording and a blinking amber play triangle while paused. Storage keys are display only. The connection
+  setting **Preset categories to generate** chooses which categories appear in the preset list.
 - Connection settings **Use HTTPS** and **Accept self-signed certificate**, **Request timeout (ms)**,
   **Preview image refresh interval** and **Preview image width**, and **Poll CMS schedule**.
 - A removed action that is still on a button is reported once per start in the connection log, with the
@@ -46,8 +51,8 @@ production connection.
 ### Changed
 
 - Action ids follow the Stream Deck plugin; the upgrade script rewrites existing buttons in place:
-  `channelChangeLayout` → `layout` (which gains a typed-id fallback for firmware that does not list layouts),
-  `controlStreaming` → `stream`, `recorderRecording` → `recorder`, `insertMarker` → `bookmark`,
+  `channelChangeLayout` → `layout`, `controlStreaming` → `stream`, `recorderRecording` → `recorder` (a Start or
+  Stop button becomes the Start / Stop toggle), `insertMarker` → `bookmark`,
   `systemReboot` and `systemShutdown` → `power`. Feedbacks: `channelLayout` → `layout_active`,
   `streamingState` → `stream_state`, `recorderRecording` → `recorder_state`.
 - Recording and Streaming toggles stop a recorder or stream that is in an error state instead of sending
@@ -75,7 +80,8 @@ production connection.
 ### Upgrade notes
 
 Opening an existing connection runs the upgrade script `convertToParityV300` once: actions and feedbacks are
-rewritten to their new ids and options in place, `pollfreq` becomes `poll_interval` in milliseconds, every
+rewritten to their new ids and options in place (a 2.2.0 Start or Stop recorder button becomes the Start / Stop
+toggle, which reads the recorder's state), `pollfreq` becomes `poll_interval` in milliseconds, every
 preset category is enabled, and the confirm option is left off on buttons that existed before, so they keep
 firing on the first press. Removed actions cannot be converted and are left as they were; the connection log
 names each one still in use. Button text that uses a renamed or removed variable needs updating by hand.

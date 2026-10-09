@@ -1,3 +1,4 @@
+const { isAnalogInput } = require('./utils')
 /**
  * Dropdown choice builders. All return [{ id, label }] in the order the device lists them.
  * Mixed into the instance prototype, so `this` is the instance.
@@ -127,6 +128,22 @@ module.exports = {
 				id: String(input.id),
 				label: input.type ? `${input.name ?? input.id} (${input.type})` : `${input.name ?? input.id}`,
 			}))
+	},
+
+	/** Ids of the analog audio inputs, the only ones whose gain the `audio` action may adjust (utils.isAnalogInput) */
+	analogInputIds() {
+		return Object.values(this.state?.inputs || {})
+			.filter((input) => isAnalogInput(input))
+			.map((input) => String(input.id))
+	},
+
+	/**
+	 * Is this input an analog audio input?
+	 * @param {string} inputId
+	 * @returns {boolean}
+	 */
+	isAnalogInput(inputId) {
+		return isAnalogInput(this.state?.inputs?.[inputId])
 	},
 
 	/** Outputs -> id did */

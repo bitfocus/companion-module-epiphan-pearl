@@ -35,33 +35,41 @@ The setting names below are the labels shown in the connection's settings page.
 ### Actions, feedbacks, variables and presets
 
 Actions never disable the connection when the encoder rejects a request: the device's own error message is
-logged and written to the `last_error` variable. Text options that accept variables (`Bookmark`'s Text,
-`Layout`'s Layout ID) are expanded with Companion's variable parser before being sent.
+logged and written to the `last_error` variable. Text options that accept variables (`Bookmark`'s Text, `Event`'s
+Event) are expanded with Companion's variable parser before being sent.
 
 #### Recorder
 
-Start, stop, pause or toggle a recorder. Toggle starts a stopped recorder and stops a running or
-paused one; "All recorders" controls every recorder on the device.
+Start / Stop starts a stopped recorder and stops a running or paused one; Pause / Resume pauses a running
+recorder and resumes a paused one; "All recorders" controls every recorder on the device.
 
-| Option       | Values                                    | Default       |
-| ------------ | ----------------------------------------- | ------------- |
-| **Recorder** | "All recorders" or a specific recorder    | All recorders |
-| **Action**   | Toggle, Start, Stop, Pause, Resume, Reset | Toggle        |
+| Option       | Values                                 | Default       |
+| ------------ | -------------------------------------- | ------------- |
+| **Recorder** | "All recorders" or a specific recorder | All recorders |
+| **Action**   | Start / Stop, Pause / Resume, Reset    | Start / Stop  |
 
-Pause, Resume and "All recorders" require API v2.0. Start/Stop/Toggle/Reset on a single recorder work on
+Pause / Resume and "All recorders" require API v2.0. Start / Stop and Reset on a single recorder work on
 legacy firmware too — Reset automatically falls back to the legacy endpoint if the v2.0 one is unavailable.
+A Pause / Resume press while the recorder is stopped sends nothing and logs "nothing to pause or resume".
 
 **Feedback — Recorder state** (`recorder_state`): true while the selected recorder — or, for "All
 recorders", the aggregate of every recorder — is in the chosen state (Started, Starting, Paused, Error,
 Stopped, Disabled). The aggregate reports the first of Started, Starting, Paused, Error found among all
 recorders, otherwise Stopped. Style: red badge (used for Started/Error), amber for Paused/Starting.
 
+**Feedback — Recorder paused (blink)** (`recorder_blink`): true during the "on" half of a 500 ms blink while
+the selected recorder (or, for "All recorders", any recorder) is paused, false otherwise. Placed after a
+Paused style on a button it makes that style flash. The blink runs only while something is paused.
+
 **Variables**: `recorder_ID_name`, `_state`, `_state_word` (`REC`/`PAUSED`/`ERR`/`OFF`/`?`), `_duration`
 (seconds), `_duration_text` (`3:45`/`1:02:03`), `_duration_hms` (`HH:MM:SS`); `recorder_all_state_word`,
 `recorders_active_count`.
 
-**Presets — Recording**: one toggle button per recorder plus "All recorders"; red while recording or
-errored, amber while paused or starting.
+**Presets — Recording**: two buttons per recorder plus "All recorders", each with a state glyph at the top
+that follows the recorder. _Start / Stop_ shows a record dot at rest, a red stop square while recording or in
+error, amber pause bars while paused and an amber dot while starting. _Pause / Resume_ shows a green pause bar
+while recording and a blinking amber play triangle while paused; its text greys out while the recorder is
+stopped.
 
 #### Stream
 
@@ -89,14 +97,10 @@ amber STARTING/LISTEN, red ERR.
 
 Switch a channel to a layout. The key lights up while that layout is active.
 
-| Option        | Values                                                     | Default       |
-| ------------- | ---------------------------------------------------------- | ------------- |
-| **Channel**   | the encoder's channels                                     | first channel |
-| **Layout**    | layouts of that channel, labelled "Channel – Layout"       | first entry   |
-| **Layout ID** | text, accepts variables; used only while _Layout_ is empty | `''`          |
-
-_Layout ID_ tooltip (verbatim): "Fallback for firmware that does not list layouts: type the layout ID shown
-in the Admin UI of the encoder (Channel → Layouts). Used only while "Layout" is empty."
+| Option      | Values                                               | Default       |
+| ----------- | ---------------------------------------------------- | ------------- |
+| **Channel** | the encoder's channels                               | first channel |
+| **Layout**  | layouts of that channel, labelled "Channel – Layout" | first entry   |
 
 **Feedback — Layout active** (`layout_active`): true while the selected layout is the active layout of its
 channel. Amber.
@@ -209,18 +213,19 @@ reboot-reporting apply, no icon (device preset names are long); `Press again` in
 
 #### Event
 
-Start, pause, resume, stop or extend a scheduled CMS event. Toggle adapts to the event state; a fixed
-action that does not apply to the event is not sent. _Requires API v2.0._
+Pause / resume, stop or extend the ongoing CMS event, start the upcoming one, or control a specific event. A
+command that does not apply to the event's state is not sent. _Requires API v2.0._
 
-| Option        | Values                                                                                                                                                                     | Default                         |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| **Event**     | Upcoming (next scheduled), Ongoing (running or paused), Running, Paused, Completed (most recent), or a specific polled event (`title (status)`, custom text also accepted) | Ongoing (running or paused)     |
-| **Action**    | Status only (no action), Toggle (start / pause / resume), Start, Stop, Pause, Resume, Extend                                                                               | Toggle (start / pause / resume) |
-| **Extend by** | seconds, 30..21600, shown only for Extend                                                                                                                                  | 300                             |
+| Option        | Values                                                                                                                                                                                  | Default                     |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| **Event**     | Upcoming (next scheduled), Ongoing (running or paused), Running, Paused, Completed (most recent), or a specific polled event (`title (status)`, custom text also accepted)              | Ongoing (running or paused) |
+| **Action**    | Ongoing, Running and Paused: Pause / Resume, Stop, Extend. Upcoming: Start, the only command that applies, so no choice is shown. A specific event: Start, Pause / Resume, Stop, Extend | Pause / Resume              |
+| **Extend by** | seconds, 30..21600, shown only for Extend                                                                                                                                               | 300                         |
 
 _Event_ tooltip (verbatim): "\"Ongoing\" always targets the event that is currently running or paused,
 \"Upcoming\" the next scheduled one. Picking a specific event ties the button to it." The event is resolved
 fresh from the device at press time, not from the last poll, so an alias can never fire on a stale event.
+Pause / Resume pauses a running event and resumes a paused one; it never starts one.
 
 **Feedback — Event state** (`event_state`): true while the resolved event is in the selected state
 (Running, Paused, Ongoing (running or paused), Scheduled, Finished, None). Green (Running), amber (Paused),
@@ -231,14 +236,16 @@ Pause, Resume, Extend) would actually be sent for the resolved event's current s
 Event action itself uses. Cms blue.
 
 **Variables**: `event_upcoming_id`/`_title`/`_start`/`_start_time`/`_starts_in_hms`/`_time_text`
-(`in 5:00`/`Starting…`/`Nothing scheduled`)/`_state_word` (`SCHED`/`—`); `event_ongoing_id`/`_title`/
-`_status`/`_finish`/`_finish_time`/`_remaining_hms`/`_time_text` (`12:30 left`/`No ongoing event`)/
-`_state_word` (`LIVE`/`PAUSED`/`—`); `event_ongoing_toggle_command` (`START`/`PAUSE`/`RESUME`/`''`); aliases
+(`in 5:00`/`Starting…`/`No Upcoming Event`)/`_state_word` (`SCHED`/`—`); `event_ongoing_id`/`_title`/
+`_status`/`_finish`/`_finish_time`/`_remaining_hms`/`_time_text` (`12:30 left`/`No Event Running`)/
+`_state_word` (`LIVE`/`PAUSED`/`—`); `event_ongoing_toggle_command` (`PAUSE`/`RESUME`/`''`); aliases
 `event_title`, `event_state`, `event_remaining` (mirror the ongoing event).
 
-**Presets — CMS events**: ongoing status, upcoming status, toggle, start upcoming, stop, pause, resume,
-extend +5:00. The status/toggle buttons colour by state; the five command buttons grey out their text (an
-inverted **Event command applies**) when the command does not currently apply.
+**Presets — CMS events**: ongoing status (reads `No Event Running` while nothing runs), upcoming status
+(`No Upcoming Event` while nothing is scheduled), Pause / Resume (green `Pause` while running, amber `Resume`
+while paused, grey otherwise), Start upcoming, Stop and Extend +5:00. The status keys colour by state; the
+three command keys grey out their text (an inverted **Event command applies**) when the command does not
+currently apply.
 
 #### System Status
 
@@ -276,15 +283,15 @@ device.
 
 #### Audio
 
-Nudge the capture gain (dB) or the audio delay (ms) of an audio input. "Nothing" only re-reads the input.
-Rotary ticks arriving within 150 ms are combined into one step — see Rotary below. _Requires API v2.0._
+Nudge the capture gain (dB) of an analog input (XLR, TRS, 3.5 mm, RCA) or the audio delay (ms) of any audio
+input. Rotary ticks arriving within 150 ms are combined into one step — see Rotary below. _Requires API v2.0._
 
-| Option            | Values                                                     | Default     |
-| ----------------- | ---------------------------------------------------------- | ----------- |
-| **Input**         | audio-capable inputs                                       | first input |
-| **Press adjusts** | Nothing, Gain, Delay                                       | Nothing     |
-| **Direction**     | Up, Down — shown only while _Press adjusts_ is not Nothing | Up          |
-| **Step**          | 1..100 — shown only while _Press adjusts_ is not Nothing   | 1           |
+| Option        | Values                                                                                                                  | Default     |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------- |
+| **Input**     | audio-capable inputs                                                                                                    | first input |
+| **Adjusts**   | Gain, Delay — offered for analog inputs only; for any other input the choice is hidden and the action adjusts the delay | Gain        |
+| **Direction** | Up, Down                                                                                                                | Up          |
+| **Step**      | 1..100                                                                                                                  | 1           |
 
 _Step_ tooltip (verbatim): "Gain steps are in dB (0–100), delay steps in milliseconds (−300..300)."
 
@@ -298,8 +305,7 @@ Putting this feedback on a button starts a **500 ms level poll** for the whole c
 one off stops it again. One poll covers every metered input (a single request lists them all), so ten meter
 buttons cost the encoder no more than one. The level variables below are filled by that poll only — while no
 meter is placed anywhere in the connection they read empty. If you want a text-only level readout, keep one
-meter button somewhere in the same connection, or press a button with _Press adjusts_ = Nothing, which
-re-reads the levels once.
+meter button somewhere in the same connection.
 
 **Variables**: `input_ID_name` (every input, incl. video-only), and for audio-capable inputs also
 `_peak_dbfs`, `_peak_left`, `_peak_right`, `_level_text` (`-18 dBFS`/`silent`/`No signal`; all four empty
@@ -310,34 +316,24 @@ button works with the action on both rotate steps, see Rotary below).
 
 #### Storage
 
-Eject removable media (SD card / USB) from the encoder. The main storage cannot be ejected.
-_Requires API v2.0._
-
-| Option                          | Values                          | Default                                 |
-| ------------------------------- | ------------------------------- | --------------------------------------- |
-| **Storage**                     | the device's storages           | `main` when present, else the first one |
-| **Confirm with a second press** | checkbox — see Confirm and hold | on                                      |
-
-Ejecting a storage that has nothing to eject (`No media`) logs "Nothing to eject" and does nothing — it
-never arms a confirm.
+Display only: there is no Storage action. The feedback, variables and presets below show each storage's free
+space and condition; ejecting removable media is done on the device itself.
 
 **Feedback — Storage level** (`storage_level`): true while the selected storage is in the selected
 condition — Low (≥ 90 % used), Full (≥ 97 % used), Read-only, No media, Not ready, Formatting, OK. Amber
 (Low), red (Full), grey (No media).
 
-**Feedback**: **Confirm pending** (see Apply Preset above).
-
 **Variables**: `storage_ID_state`, `_free` (human bytes, e.g. `11 GB`), `_total`, `_used_pct`, `_text`
-(`of 128 GB`, read under `_free` as "11 GB of 128 GB"/`No media`/`Not ready`/`Formatting…`/`No data`), `_level_word` (`LOW`/`FULL`/`RO`/`''`),
-`_hint` (`Ejected` for 4 s).
+(`of 128 GB`, read under `_free` as "11 GB of 128 GB"/`No media`/`Not ready`/`Formatting…`/`No data`),
+`_level_word` (`LOW`/`FULL`/`RO`/`''`).
 
-**Presets — Storage**: one button per storage showing free space, status and eject hint; green OK, amber
-Low, red Full, grey No media; red while confirm is armed.
+**Presets — Storage**: one button per storage showing free space and status; green OK, amber Low, red Full,
+grey No media.
 
 ### Confirm and hold
 
 Companion has no press-and-hold progress arc, so the actions the Stream Deck plugin gates behind a hold
-(_Apply Preset_, _Reboot / Shutdown_, _Storage_'s eject) instead offer a **Confirm with a second press**
+(_Apply Preset_, _Reboot / Shutdown_) instead offer a **Confirm with a second press**
 checkbox, ticked by default. With it ticked, the first press only arms the button — it sets the
 `confirm_hint` variable to `Press again` and turns on the **Confirm pending** feedback (red) —
 and sends nothing to the device; pressing the _same_ button again within 3 seconds sends the command. If 3
@@ -350,17 +346,15 @@ armed re-arms the new one and drops the first, rather than the two buttons confi
 If you would rather reproduce the Stream Deck's actual hold gesture, use Companion's own press-duration
 button steps instead: put the action under **Release after N ms** (Companion's button step editor lets you
 add a step for "released after" a given hold time — use 2000 ms for _Reboot / Shutdown_, 1500 ms for _Apply
-Preset_ and _Storage_'s eject, matching the Stream Deck plugin's own hold times) and untick **Confirm with a
+Preset_, matching the Stream Deck plugin's own hold times) and untick **Confirm with a
 second press** on that copy of the action — the command then only fires when the button is held down for at
 least that long and then released, and a short tap does nothing.
 
 ### Rotary (Stream Deck+)
 
 Companion sends **Rotate left** / **Rotate right** (and, on push-capable surfaces, a separate **Press**)
-events for rotary controls. The Audio presets' rotary Gain and rotary Delay buttons wire the _Audio_ action
-into both rotate directions (Down = decrease, Up = increase, both with _Step_ 1) and put the same action
-with _Press adjusts_ set to Nothing on the push step, so pressing the dial simply re-reads the input (its
-levels straight away, the rest with the next poll) instead of changing anything. Ticks that arrive within
+events for rotary controls. Put the _Audio_ action on both rotate directions of a dial button (Down =
+decrease, Up = increase, both with _Step_ 1) and leave the push step empty. Ticks that arrive within
 150 ms of each other (a fast spin of the dial, or several quick presses of a Gain/Delay preset button) are
 combined into a single request carrying their summed step, rather than sending one request per tick — three
 quick clicks of a _Step_ 1 gain dial send one change of +3, not three of +1.
@@ -372,6 +366,7 @@ Add the **Audio meter** feedback to a dial's button to see the bars next to the 
 | Feedback             | Type             | Colour(s)                                                          |
 | -------------------- | ---------------- | ------------------------------------------------------------------ |
 | `recorder_state`     | boolean          | red (Started/Error), amber (Starting/Paused)                       |
+| `recorder_blink`     | boolean          | amber, true in the "on" half of a 500 ms blink while paused        |
 | `stream_state`       | boolean          | green (Started), amber (Starting/Listening), red (Error)           |
 | `layout_active`      | boolean          | amber                                                              |
 | `layout_preview`     | advanced (image) | —                                                                  |
@@ -419,24 +414,26 @@ Every button follows the Stream Deck plugin's key layout, drawn with Companion's
 background with light text, no top bar, the state colour filling the background when a feedback is true,
 and one of two text recipes. A key with the category icon (small, at the top) puts at most two short lines
 of size 14 text below it, the plugin's own budget. A key whose text is a device-provided name or event
-title (recorder, stream, bookmark, configuration preset, the two CMS status keys and the CPU key) carries
+title (stream, bookmark, configuration preset, the two CMS status keys and the CPU key) carries
 no icon and centres its text, so the whole key is there for the wrapped lines and a long name never hides
 the state line. The Single touch summary stands alone at size 22, and on the Previews and Layouts keys the
-live picture replaces the icon. Labels and text size stay editable like any Companion button.
+live picture replaces the icon. The Recording keys carry a state glyph (record dot, stop square, pause bars,
+play triangle) that follows the recorder instead of a category icon. Labels and text size stay editable like
+any Companion button.
 
 | Category                  | Buttons                                                                            |
 | ------------------------- | ---------------------------------------------------------------------------------- |
-| **Recording**             | Toggle per recorder, plus "All recorders".                                         |
+| **Recording**             | Start / Stop and Pause / Resume per recorder, plus "All recorders"; state glyphs.  |
 | **Streaming**             | Toggle per stream (channel, stream name, state), plus a "Streams" key per channel. |
 | **Layouts**               | Switch button per layout, live preview image.                                      |
 | **Single touch**          | Toggle per control.                                                                |
 | **Bookmarks**             | One button per channel (channel name / Bookmark), greyed out while not recording.  |
 | **Previews**              | Live thumbnail per channel, video-capable input and output.                        |
 | **Configuration presets** | Apply button per device preset, confirm-gated.                                     |
-| **CMS events**            | Ongoing/upcoming status, toggle, start/stop/pause/resume, extend +5:00.            |
+| **CMS events**            | Ongoing/upcoming status, Pause / Resume, Start upcoming, Stop, Extend +5:00.       |
 | **System**                | CPU load/status, AFU status, device info.                                          |
 | **Power**                 | Reboot, Shut down; both confirm-gated.                                             |
-| **Storage**               | Status + eject per storage, confirm-gated.                                         |
+| **Storage**               | Status per storage, display only.                                                  |
 
 ### Tips
 
@@ -450,8 +447,8 @@ live picture replaces the icon. Labels and text size stay editable like any Comp
   Previews/Layouts presets) and set _Preview image width (px)_ to roughly the button size (72 for a classic
   Stream Deck key, 144 for XL/+ keys). Keep _Preview image refresh interval_ at 1–2 s and only place the
   previews you actually need — each one costs a request per interval.
-- **Confirm dangerous buttons — or make them a real hold.** _Reboot / Shutdown_, _Storage_ eject and _Apply
-  Preset_ all default to a second-press confirm; untick the checkbox and use Companion's own "Release after
+- **Confirm dangerous buttons — or make them a real hold.** _Reboot / Shutdown_ and _Apply
+  Preset_ both default to a second-press confirm; untick the checkbox and use Companion's own "Release after
   N ms" step instead if you want the actual Stream Deck hold gesture back (see Confirm and hold above).
 - **Many channels or presets?** A slower _Poll interval (ms)_ (for example 5000–10000) reduces load on the
   encoder. If the drag-and-drop preset list feels cluttered (an encoder with many layouts or inputs can produce a
@@ -464,8 +461,7 @@ live picture replaces the icon. Labels and text size stay editable like any Comp
 
 - **Channel/layout/publisher options use composite ids.** Companion dropdowns cannot depend on another
   option's current value, so _Layout_'s and _Publisher_'s choices pack their channel into the id itself
-  (`Channel – Layout`, `Channel – Publisher (type)`). You never need to read or type these ids by hand
-  except in _Layout ID_, the manual fallback.
+  (`Channel – Layout`, `Channel – Publisher (type)`). You never need to read or type these ids by hand.
 - **Display-only Stream Deck settings are not offered.** Things that only changed how a Stream Deck key drew
   itself (show duration/title, per-key refresh rate and image resolution, on-press refresh, hold duration)
   have no Companion option; the same information is available through variables, and the connection's
@@ -487,9 +483,8 @@ live picture replaces the icon. Labels and text size stay editable like any Comp
   one _Audio meter_ feedback is on a button of this connection, so the four level variables read empty
   otherwise; the regular poll interval never fetches levels. On a device where the endpoint is unavailable
   they stay empty rather than erroring.
-- **Output source, applied configuration preset and storage hints are optimistic.** The API can set an
-  output's source, apply a configuration preset and eject a storage, but has no endpoint to read any of
-  those back. `output_ID_source`, `preset_last_applied` and the matching feedbacks therefore only reflect
+- **Output source and applied configuration preset are optimistic.** The API can set an output's source
+  and apply a configuration preset, but has no endpoint to read either back. `output_ID_source`, `preset_last_applied` and the matching feedbacks therefore only reflect
   the last value set through Companion — empty/false after a restart, and stale if changed from the encoder's
   web UI or another controller.
 - **Not exposed on purpose.** Renaming channels/publishers, muting or phantom-powering inputs, editing

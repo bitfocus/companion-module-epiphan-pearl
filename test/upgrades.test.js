@@ -246,7 +246,7 @@ describe('convertToParityV300 (D13)', () => {
 			assert.ok(!result.updatedActions.includes(byControl[controlId]), `${controlId} not in updatedActions`)
 		}
 
-		expectConverted('a01', 'layout', { channelId: '1', layoutId: '1-2', layoutIdManual: '' })
+		expectConverted('a01', 'layout', { channelId: '1', layoutId: '1-2' })
 		expectConverted('a02', 'stream', { channelId: '1', publisherId: '1-0', op: 'start' })
 		expectConverted('a03', 'recorder', { recorderId: '2', op: 'reset' })
 		expectConverted('a04', 'bookmark', { channelId: '3', text: 'Marker', appendTime: false })
@@ -256,7 +256,7 @@ describe('convertToParityV300 (D13)', () => {
 		expectConverted('a08', 'power', { op: 'shutdown', confirm: false })
 		expectRemoved('a09', 'getContentMetadata')
 		expectRemoved('a10', 'setContentMetadata')
-		expectConverted('a11', 'recorder', { recorderId: 'all', op: 'stop' })
+		expectConverted('a11', 'recorder', { recorderId: 'all', op: 'toggle' })
 		expectRemoved('a12', 'setChannelName')
 		expectRemoved('a13', 'setPublisherName')
 		expectRemoved('a14', 'setPublisherEnabled')
@@ -274,19 +274,19 @@ describe('convertToParityV300 (D13)', () => {
 		expectRemoved('a26', 'createNetworkInput')
 		expectConverted('a27', 'singletouch', { stcId: '0' })
 		expectConverted('a28', 'preset', { presetName: 'Show A', sections: ['system'], confirm: false })
-		expectConverted('a29', 'storage', { storageId: 'external', confirm: false })
-		expectConverted('a30', 'event', { eventRef: 'ongoing', op: 'pause', extendSeconds: 300 })
-		expectConverted('a30b', 'event', { eventRef: 'abc123', op: 'stop', extendSeconds: 300 })
-		expectConverted('a31', 'event', { eventRef: 'ongoing', op: 'extend', extendSeconds: 600 })
+		expectRemoved('a29', 'storageEject')
+		expectConverted('a30', 'event', { eventRef: 'ongoing', op: 'toggle', op_event: 'toggle', extendSeconds: 300 })
+		expectConverted('a30b', 'event', { eventRef: 'abc123', op: 'stop', op_event: 'stop', extendSeconds: 300 })
+		expectConverted('a31', 'event', { eventRef: 'ongoing', op: 'extend', op_event: 'extend', extendSeconds: 600 })
 		expectRemoved('a32', 'createAdhocEvent')
 		expectRemoved('a33', 'adhocSessionLogout')
 		expectRemoved('a34', 'refreshConnectivity')
 		expectRemoved('a35', 'runSpeedTest')
 		expectRemoved('a36', 'refreshPoll')
 
-		// 15 legacy action ids convert + one extra eventControl fixture (a30b)
-		// added above to also cover the event==='custom' branch, so 16 fixtures end up in updatedActions
-		assert.equal(result.updatedActions.length, 16, 'exactly the 16 converted action instances were reported')
+		// 14 legacy action ids convert (storageEject no longer has a target) + one extra eventControl fixture
+		// (a30b) added above to also cover the event==='custom' branch, so 15 fixtures end up in updatedActions
+		assert.equal(result.updatedActions.length, 15, 'exactly the 15 converted action instances were reported')
 	})
 
 	it('also handles the plain (non-custom) setOutputSource and non-numeric recorderControlAll values', () => {
@@ -296,7 +296,7 @@ describe('convertToParityV300 (D13)', () => {
 		]
 		convertToParityV300(null, convertProps(actions, [], null))
 		assert.deepEqual(actions[0].options, { outputId: 'D1', source: 'multiview' })
-		assert.deepEqual(actions[1].options, { recorderId: 'all', op: 'start' })
+		assert.deepEqual(actions[1].options, { recorderId: 'all', op: 'toggle' })
 	})
 
 	it('converts every legacy feedback id of PARITY.md table 2.2 to its new id and options', () => {

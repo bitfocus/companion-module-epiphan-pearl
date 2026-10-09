@@ -53,7 +53,7 @@ const PRESET_CATEGORY_IDS = [
  * 2026-09-11) stands alone, and every stream key is named.
  */
 const CATEGORY_ICON = {
-	[CAT_RECORDING]: 'recorder',
+	[CAT_RECORDING]: 'rec',
 	[CAT_LAYOUTS]: 'layout',
 	[CAT_BOOKMARKS]: 'bookmark',
 	[CAT_PREVIEWS]: 'preview',
@@ -134,6 +134,7 @@ const TEXT_SIZE_SUMMARY = 22
  * @param {string} def.name
  * @param {string} def.text
  * @param {boolean} [def.named=false] the text carries a device-provided name or title: no icon, centred
+ * @param {string} [def.icon] icons.js key drawn instead of the category's icon (the Recording state glyphs)
  * @param {number} [def.size=TEXT_SIZE] text size (TEXT_SIZE_SUMMARY on the Single touch summary)
  * @param {number} [def.color] text colour at rest, when not the palette text colour
  * @param {Array<{actionId: string, options: object}>} [def.actions=[]] down actions (Pearl has no
@@ -143,8 +144,19 @@ const TEXT_SIZE_SUMMARY = 22
  *   `options.rotaryActions` and the `rotate_left`/`rotate_right` step arrays alongside `down`
  * @returns {object} preset definition
  */
-function button({ category, name, text, named = false, size, color, actions = [], feedbacks = [], rotary = null }) {
-	const icon = named ? undefined : ICONS[CATEGORY_ICON[category]]
+function button({
+	category,
+	name,
+	text,
+	named = false,
+	icon: iconKey,
+	size,
+	color,
+	actions = [],
+	feedbacks = [],
+	rotary = null,
+}) {
+	const icon = named ? undefined : ICONS[iconKey ?? CATEGORY_ICON[category]]
 	const style = {
 		text,
 		size: size ?? TEXT_SIZE,
@@ -213,42 +225,60 @@ module.exports = {
 		}
 
 		// ---------------------------------------------------------------------
-		// Recording: one toggle button per recorder, plus "All recorders" (recorderId: all)
+		// Recording: per recorder (and "All recorders") a Start / Stop key and a Pause / Resume key. Both carry
+		// a state glyph at the top (a 64 px box, so a wrapped recorder name plus the state line still fit under
+		// it) that follows the recorder: Start / Stop shows a record dot at rest and a red stop square while
+		// recording; Pause / Resume a green pause bar while recording and a blinking amber play triangle while
+		// paused (QA 2026-10-09).
 		// ---------------------------------------------------------------------
 
 		for (const recorder of this.choicesRecordersWithAll()) {
-			const isAll = recorder.id === 'all'
-			const text = isAll
-				? `Recorders\n${v('recorder_all_state_word')} (${v('recorders_active_count')})`
-				: `${recorder.label}\n${v(`recorder_${safeId(recorder.id)}_state_word`)} ${v(`recorder_${safeId(recorder.id)}_duration_text`)}`
+			const rid = recorder.id
+			const isAll = rid === 'all'
+			const name = isAll ? 'Recorders' : recorder.label
+			const state = (s) => ({ feedbackId: 'recorder_state', options: { recorderId: rid, state: s } })
+			const stateText = isAll
+				? `${v('recorder_all_state_word')} (${v('recorders_active_count')})`
+				: `${v(`recorder_${safeId(rid)}_state_word`)} ${v(`recorder_${safeId(rid)}_duration_text`)}`
 			add(
-				presetId(CAT_RECORDING, 'toggle', recorder.id),
+				presetId(CAT_RECORDING, 'toggle', rid),
 				button({
 					category: CAT_RECORDING,
-					name: `${recorder.label} toggle`,
-					text,
-					named: true,
-					actions: [{ actionId: 'recorder', options: { recorderId: recorder.id, op: 'toggle' } }],
+					name: `${recorder.label} start / stop`,
+					text: `${name}\n${stateText}`,
+					icon: 'rec',
+					actions: [{ actionId: 'recorder', options: { recorderId: rid, op: 'toggle' } }],
 					feedbacks: [
+						{ ...state('starting'), style: { ...stateStyle(colors.amber), png64: ICONS.rec } },
+						{ ...state('paused'), style: { ...stateStyle(colors.amber), png64: ICONS.pause } },
+						{ ...state('started'), style: { ...stateStyle(colors.red), png64: ICONS.stop } },
+						{ ...state('error'), style: { ...stateStyle(colors.red), png64: ICONS.stop } },
+					],
+				}),
+			)
+			add(
+				presetId(CAT_RECORDING, 'pause', rid),
+				button({
+					category: CAT_RECORDING,
+					name: `${recorder.label} pause / resume`,
+					text: `${name}\nPause`,
+					icon: 'play',
+					actions: [{ actionId: 'recorder', options: { recorderId: rid, op: 'pause_resume' } }],
+					feedbacks: [
+						// nothing to pause or resume while stopped: grey text, like a CMS command that does not apply
+						{ ...state('stopped'), style: { color: colors.grey } },
+						{ ...state('disabled'), style: { color: colors.grey } },
+						{ ...state('starting'), style: { ...stateStyle(colors.green), png64: ICONS.pause } },
+						{ ...state('started'), style: { ...stateStyle(colors.green), png64: ICONS.pause } },
 						{
-							feedbackId: 'recorder_state',
-							options: { recorderId: recorder.id, state: 'started' },
-							style: stateStyle(colors.red),
+							...state('paused'),
+							style: { ...stateStyle(colors.amber), png64: ICONS.play, text: `${name}\nResume` },
 						},
+						// the blink: every 500 ms while paused the amber drops back to the rest colours (src/blink.js)
 						{
-							feedbackId: 'recorder_state',
-							options: { recorderId: recorder.id, state: 'error' },
-							style: stateStyle(colors.red),
-						},
-						{
-							feedbackId: 'recorder_state',
-							options: { recorderId: recorder.id, state: 'paused' },
-							style: stateStyle(colors.amber),
-						},
-						{
-							feedbackId: 'recorder_state',
-							options: { recorderId: recorder.id, state: 'starting' },
-							style: stateStyle(colors.amber),
+							feedbackId: 'recorder_blink',
+							options: { recorderId: rid },
+							style: { ...restStyle(), png64: ICONS.play, text: `${name}\nResume` },
 						},
 					],
 				}),
@@ -329,7 +359,7 @@ module.exports = {
 						actions: [
 							{
 								actionId: 'layout',
-								options: { channelId: String(channel.id), layoutId, layoutIdManual: '' },
+								options: { channelId: String(channel.id), layoutId },
 							},
 						],
 						feedbacks: [
@@ -459,9 +489,9 @@ module.exports = {
 		}
 
 		// ---------------------------------------------------------------------
-		// CMS events (schedule): the two status keys and the toggle show live variables, the fixed commands
-		// read as the verb alone (reference page, 2026-09-11). The status keys are named: an event title needs
-		// the whole key
+		// CMS events (schedule): the two status keys show live variables and are named (an event title needs the
+		// whole key); the command keys read as the verb alone. The ongoing event only pauses / resumes, stops or
+		// extends, the upcoming event only starts (QA 2026-10-09).
 		// ---------------------------------------------------------------------
 
 		add(
@@ -510,19 +540,24 @@ module.exports = {
 			presetId(CAT_CMS_EVENTS, 'toggle'),
 			button({
 				category: CAT_CMS_EVENTS,
-				name: 'Toggle ongoing / next event',
-				text: v('event_ongoing_toggle_command'),
-				actions: [{ actionId: 'event', options: { eventRef: 'ongoing', op: 'toggle' } }],
+				name: 'Pause / resume ongoing event',
+				text: 'Pause /\nResume',
+				actions: [
+					{
+						actionId: 'event',
+						options: { eventRef: 'ongoing', op: 'toggle', op_event: 'start', extendSeconds: 300 },
+					},
+				],
 				feedbacks: [
 					{
 						feedbackId: 'event_state',
 						options: { eventRef: 'ongoing', state: 'running' },
-						style: stateStyle(colors.green),
+						style: { ...stateStyle(colors.green), text: 'Pause' },
 					},
 					{
 						feedbackId: 'event_state',
 						options: { eventRef: 'ongoing', state: 'paused' },
-						style: stateStyle(colors.amber),
+						style: { ...stateStyle(colors.amber), text: 'Resume' },
 					},
 					{
 						feedbackId: 'event_state',
@@ -538,7 +573,12 @@ module.exports = {
 				category: CAT_CMS_EVENTS,
 				name: 'Start upcoming event',
 				text: 'Start',
-				actions: [{ actionId: 'event', options: { eventRef: 'upcoming', op: 'start' } }],
+				actions: [
+					{
+						actionId: 'event',
+						options: { eventRef: 'upcoming', op: 'toggle', op_event: 'start', extendSeconds: 300 },
+					},
+				],
 				feedbacks: [appliesGreyOut('upcoming', 'start')],
 			}),
 		)
@@ -549,28 +589,13 @@ module.exports = {
 				name: 'Stop ongoing event',
 				text: 'Stop',
 				color: colors.red, // the one red label of the set: the destructive command (reference page)
-				actions: [{ actionId: 'event', options: { eventRef: 'ongoing', op: 'stop' } }],
+				actions: [
+					{
+						actionId: 'event',
+						options: { eventRef: 'ongoing', op: 'stop', op_event: 'start', extendSeconds: 300 },
+					},
+				],
 				feedbacks: [appliesGreyOut('ongoing', 'stop')],
-			}),
-		)
-		add(
-			presetId(CAT_CMS_EVENTS, 'pause'),
-			button({
-				category: CAT_CMS_EVENTS,
-				name: 'Pause event',
-				text: 'Pause',
-				actions: [{ actionId: 'event', options: { eventRef: 'ongoing', op: 'pause' } }],
-				feedbacks: [appliesGreyOut('ongoing', 'pause')],
-			}),
-		)
-		add(
-			presetId(CAT_CMS_EVENTS, 'resume'),
-			button({
-				category: CAT_CMS_EVENTS,
-				name: 'Resume event',
-				text: 'Resume',
-				actions: [{ actionId: 'event', options: { eventRef: 'ongoing', op: 'resume' } }],
-				feedbacks: [appliesGreyOut('ongoing', 'resume')],
 			}),
 		)
 		add(
@@ -579,7 +604,12 @@ module.exports = {
 				category: CAT_CMS_EVENTS,
 				name: 'Extend event +5:00',
 				text: 'Extend\n+5:00',
-				actions: [{ actionId: 'event', options: { eventRef: 'ongoing', op: 'extend', extendSeconds: 300 } }],
+				actions: [
+					{
+						actionId: 'event',
+						options: { eventRef: 'ongoing', op: 'extend', op_event: 'start', extendSeconds: 300 },
+					},
+				],
 				feedbacks: [appliesGreyOut('ongoing', 'extend')],
 			}),
 		)
@@ -652,11 +682,12 @@ module.exports = {
 		)
 
 		// ---------------------------------------------------------------------
-		// Storage: free space / status display per storage, eject on press (confirm, D2)
+		// Storage: free space / status display per storage. Display only: ejecting is left to the device's own
+		// UI (QA 2026-10-09).
 		// ---------------------------------------------------------------------
 
 		for (const storage of this.choicesStorages()) {
-			// the Pearl's internal maintenance partition is not operator storage (reference page, 2026-09-11)
+			// the device's internal maintenance partition is not operator storage (reference page, 2026-09-11)
 			if (/maintenance/i.test(storage.id) || /maintenance/i.test(storage.label)) continue
 			const sid = safeId(storage.id)
 			add(
@@ -664,10 +695,7 @@ module.exports = {
 				button({
 					category: CAT_STORAGE,
 					name: `${storage.label} status`,
-					// the "Ejected" hint on the last line; the confirm hint is the confirm_pending feedback's own
-					// text (D2), so it shows on the armed button only
-					text: `${v(`storage_${sid}_free`)}\n${v(`storage_${sid}_text`)}\n${v(`storage_${sid}_hint`)}`,
-					actions: [{ actionId: 'storage', options: { storageId: storage.id, confirm: true } }],
+					text: `${v(`storage_${sid}_free`)}\n${v(`storage_${sid}_text`)}`,
 					feedbacks: [
 						// the three severity levels of utils.storageLevel(), worst last so it wins
 						...STORAGE_SEVERITY.map((level) => ({
@@ -680,7 +708,6 @@ module.exports = {
 							options: { storageId: storage.id, level: 'nomedia' },
 							style: stateStyle(colors.grey),
 						},
-						{ feedbackId: 'confirm_pending', options: {}, style: confirmStyle() },
 					],
 				}),
 			)

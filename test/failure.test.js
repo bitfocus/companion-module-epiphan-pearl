@@ -46,7 +46,8 @@ describe('action_failed flash', () => {
 			status: 'error',
 			message: 'injected: recorder busy',
 		})
-		await runAction(instance, 'recorder', { recorderId: '1', op: 'start' }, { controlId: 'c1' })
+		instance.state.recorders['1'].status = { state: 'stopped' } // so the toggle sends the start the mock refuses
+		await runAction(instance, 'recorder', { recorderId: '1', op: 'toggle' }, { controlId: 'c1' })
 		assert.equal(await runFeedback(instance, 'action_failed', {}, { controlId: 'c1' }), true, 'the failed button')
 		assert.equal(await runFeedback(instance, 'action_failed', {}, { controlId: 'c2' }), false, 'another button')
 		assert.match(String(instance.state.lastError), /injected/, 'the message is recorded as the last error')
@@ -55,7 +56,7 @@ describe('action_failed flash', () => {
 	})
 
 	it('a successful command does not flag the button', async () => {
-		await runAction(instance, 'recorder', { recorderId: '1', op: 'stop' }, { controlId: 'c3' })
+		await runAction(instance, 'recorder', { recorderId: '1', op: 'toggle' }, { controlId: 'c3' })
 		assert.equal(await runFeedback(instance, 'action_failed', {}, { controlId: 'c3' }), false)
 	})
 

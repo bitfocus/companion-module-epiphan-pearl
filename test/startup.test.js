@@ -47,8 +47,8 @@ describe('startup with an unreachable device', () => {
 			assert.equal(instance.currentStatus, InstanceStatus.Connecting)
 			assert.ok(instance.startupPromise, 'first contact runs in the background')
 			// definitions are published immediately so Companion has something to show
-			assert.equal(Object.keys(instance.definitions.actions).length, 11)
-			assert.equal(Object.keys(instance.definitions.feedbacks).length, 14)
+			assert.equal(Object.keys(instance.definitions.actions).length, 10)
+			assert.equal(Object.keys(instance.definitions.feedbacks).length, 15)
 			assert.equal(instance.timer, undefined, 'polling interval starts after the first contact')
 
 			await instance.startupPromise

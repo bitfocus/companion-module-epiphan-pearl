@@ -52,7 +52,7 @@ function clock(unixSeconds) {
 	return n === undefined ? '' : val(formatClock(n))
 }
 
-/** text of a { text, until } marker (preset/power status, storage hint) while `until` is in the future */
+/** text of a { text, until } marker (preset/power status) while `until` is in the future */
 function activeText(marker) {
 	if (!marker || typeof marker !== 'object') return ''
 	const until = num(marker.until)
@@ -131,8 +131,6 @@ function toggleWord(status) {
 			return 'PAUSE'
 		case 'paused':
 			return 'RESUME'
-		case 'scheduled':
-			return 'START'
 		default:
 			return ''
 	}
@@ -140,12 +138,12 @@ function toggleWord(status) {
 
 /** "12:30 left" / "in 5:00" / "Starting…" text for an event that is running, paused or scheduled. */
 function ongoingTimeText(ongoing, nowSeconds) {
-	if (!ongoing) return 'No ongoing event'
+	if (!ongoing) return 'No Event Running'
 	const remaining = compact(Math.max(0, num(ongoing.finish) - nowSeconds))
 	return `${remaining} left`
 }
 function upcomingTimeText(upcoming, nowSeconds) {
-	if (!upcoming) return 'Nothing scheduled'
+	if (!upcoming) return 'No Upcoming Event'
 	const untilStart = num(upcoming.start) - nowSeconds
 	return untilStart > 0 ? `in ${compact(untilStart)}` : 'Starting…'
 }
@@ -270,7 +268,6 @@ function buildVariables(self) {
 		}
 		add(`storage_${stid}_text`, `Storage ${rawStid} Text`, text)
 		add(`storage_${stid}_level_word`, `Storage ${rawStid} Level Word`, levelWord)
-		add(`storage_${stid}_hint`, `Storage ${rawStid} Hint`, activeText(storage.hint))
 	}
 
 	// ---------------------------------------------------------------- recorders
@@ -392,13 +389,9 @@ function buildVariables(self) {
 		'Ongoing Event State Word',
 		ongoing?.status === 'running' ? 'LIVE' : ongoing?.status === 'paused' ? 'PAUSED' : '—',
 	)
-	// PAUSE/RESUME for the ongoing event; falls back to the upcoming event's START when nothing is
-	// ongoing, so a single "toggle" preset button always shows the one sensible next command.
-	add(
-		'event_ongoing_toggle_command',
-		'Ongoing Event Toggle Command',
-		toggleWord(ongoing?.status) || toggleWord(upcoming?.status),
-	)
+	// PAUSE / RESUME for the ongoing event, empty while nothing is running or paused (the upcoming event is
+	// started from its own button, never by the toggle)
+	add('event_ongoing_toggle_command', 'Ongoing Event Toggle Command', toggleWord(ongoing?.status))
 
 	// aliases of the ongoing event
 	add('event_title', 'Event Title', ongoing ? ongoing.title : '')

@@ -132,7 +132,7 @@ function recordRemovedLegacy(kind, id, controlId) {
 }
 
 /** legacy `recorderRecording` / `recorderControlAll` numeric-or-string op -> the new `recorder.op` */
-const RECORDER_OP_MAP = { 0: 'stop', 1: 'start', 2: 'reset', 3: 'toggle', 99: 'toggle' }
+const RECORDER_OP_MAP = { 0: 'toggle', 1: 'toggle', 2: 'reset', 3: 'toggle', 99: 'toggle' }
 /** legacy `controlStreaming` numeric op -> the new `stream.op` */
 const STREAM_OP_MAP = { 0: 'stop', 1: 'start', 3: 'toggle', 99: 'toggle' }
 /** legacy `storageState` value -> the new `storage_level.level` */
@@ -164,6 +164,22 @@ function legacyEventRef(opt) {
 }
 
 /**
+ * Options of the new `event` action for a legacy eventControl / eventExtend: the ongoing aliases only
+ * pause, resume (both now the one Pause / Resume toggle), stop or extend; the upcoming alias only starts; a
+ * specific event keeps start, stop and extend and folds pause / resume into the toggle.
+ * @param {string} eventRef
+ * @param {unknown} action legacy action word
+ * @param {number} extendSeconds
+ */
+function legacyEventOptions(eventRef, action, extendSeconds) {
+	const word = String(action ?? 'toggle')
+	const folded = word === 'pause' || word === 'resume' || word === 'status' ? 'toggle' : word
+	const ongoingOp = folded === 'stop' || folded === 'extend' ? folded : 'toggle'
+	const eventOp = ['start', 'stop', 'extend', 'toggle'].includes(folded) ? folded : 'toggle'
+	return { eventRef, op: ongoingOp, op_event: eventOp, extendSeconds }
+}
+
+/**
  * Companion parity control-set rewrite: converts every legacy action/feedback id to its new
  * counterpart and the connection config to the new field set. Actions
  * and feedbacks with no Stream Deck counterpart are left exactly as stored (an upgrade script has no way
@@ -186,7 +202,6 @@ function convertToParityV300(context, props) {
 				action.options = {
 					channelId: pair ? pair[0] : '',
 					layoutId: typeof opt.channelIdlayoutId === 'string' ? opt.channelIdlayoutId : '',
-					layoutIdManual: '',
 				}
 				result.updatedActions.push(action)
 				break
@@ -235,7 +250,7 @@ function convertToParityV300(context, props) {
 				// numeric startStopAction of recorderRecording, so it is copied through rather than
 				// looked up in RECORDER_OP_MAP
 				action.actionId = 'recorder'
-				action.options = { recorderId: 'all', op: opt.action === 'stop' ? 'stop' : 'start' }
+				action.options = { recorderId: 'all', op: 'toggle' }
 				result.updatedActions.push(action)
 				break
 			}
@@ -276,24 +291,19 @@ function convertToParityV300(context, props) {
 				result.updatedActions.push(action)
 				break
 			}
-			case 'storageEject': {
-				action.actionId = 'storage'
-				action.options = { storageId: opt.storage ?? '', confirm: false }
-				result.updatedActions.push(action)
-				break
-			}
 			case 'eventControl': {
 				action.actionId = 'event'
-				action.options = { eventRef: legacyEventRef(opt), op: opt.action ?? 'toggle', extendSeconds: 300 }
+				action.options = legacyEventOptions(legacyEventRef(opt), opt.action, 300)
 				result.updatedActions.push(action)
 				break
 			}
 			case 'eventExtend': {
 				action.actionId = 'event'
-				action.options = { eventRef: legacyEventRef(opt), op: 'extend', extendSeconds: opt.seconds ?? 300 }
+				action.options = legacyEventOptions(legacyEventRef(opt), 'extend', opt.seconds ?? 300)
 				result.updatedActions.push(action)
 				break
 			}
+			case 'storageEject':
 			case 'getLayoutData':
 			case 'setLayoutData':
 			case 'getContentMetadata':

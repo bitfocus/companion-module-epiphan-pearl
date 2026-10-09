@@ -10,6 +10,7 @@ const {
 	splitPair,
 	clampNumber,
 	recorderToggleOp,
+	recorderPauseResumeOp,
 	publisherToggleOp,
 	eventToggleOp,
 	eventApplies,
@@ -18,11 +19,8 @@ const {
 const { readGain, gainPatch, readDelay, delayPatch } = require('./audio')
 
 const CHOICES_RECORDER_OPS = [
-	{ id: 'toggle', label: 'Toggle' },
-	{ id: 'start', label: 'Start' },
-	{ id: 'stop', label: 'Stop' },
-	{ id: 'pause', label: 'Pause' },
-	{ id: 'resume', label: 'Resume' },
+	{ id: 'toggle', label: 'Start / Stop' },
+	{ id: 'pause_resume', label: 'Pause / Resume' },
 	{ id: 'reset', label: 'Reset' },
 ]
 const CHOICES_STREAM_OPS = [
@@ -30,21 +28,37 @@ const CHOICES_STREAM_OPS = [
 	{ id: 'start', label: 'Start' },
 	{ id: 'stop', label: 'Stop' },
 ]
+/** commands for the ongoing event (and the Running / Paused aliases): it is already started */
 const CHOICES_EVENT_OPS = [
-	{ id: 'status', label: 'Status only (no action)' },
-	{ id: 'toggle', label: 'Toggle (start / pause / resume)' },
-	{ id: 'start', label: 'Start' },
+	{ id: 'toggle', label: 'Pause / Resume' },
 	{ id: 'stop', label: 'Stop' },
-	{ id: 'pause', label: 'Pause' },
-	{ id: 'resume', label: 'Resume' },
 	{ id: 'extend', label: 'Extend' },
 ]
+/** commands for a specific event, which may still be scheduled */
+const CHOICES_EVENT_OPS_SPECIFIC = [
+	{ id: 'start', label: 'Start' },
+	{ id: 'toggle', label: 'Pause / Resume' },
+	{ id: 'stop', label: 'Stop' },
+	{ id: 'extend', label: 'Extend' },
+]
+/** the aliases that always resolve to an event that is running or paused */
+const ONGOING_EVENT_REFS = ['ongoing', 'running', 'paused']
+/**
+ * The command an Event button sends: Start for the upcoming event (the only command that applies to it),
+ * the ongoing set for the ongoing aliases, the full set for a specific event.
+ * @param {string} eventRef
+ * @param {Record<string, unknown>} options
+ * @returns {string}
+ */
+function eventOpFor(eventRef, options) {
+	if (eventRef === 'upcoming') return 'start'
+	return String((ONGOING_EVENT_REFS.includes(eventRef) ? options.op : options.op_event) ?? 'toggle')
+}
 const CHOICES_POWER_OPS = [
 	{ id: 'reboot', label: 'Reboot' },
 	{ id: 'shutdown', label: 'Shut down' },
 ]
 const CHOICES_AUDIO_CONTROL = [
-	{ id: 'none', label: 'Nothing' },
 	{ id: 'gain', label: 'Gain' },
 	{ id: 'delay', label: 'Delay' },
 ]
@@ -67,7 +81,7 @@ const CHOICES_PRESET_SECTIONS = [
 
 const RECORDER_OP_IDS = CHOICES_RECORDER_OPS.map((c) => c.id)
 const STREAM_OP_IDS = CHOICES_STREAM_OPS.map((c) => c.id)
-const EVENT_OP_IDS = CHOICES_EVENT_OPS.map((c) => c.id)
+const EVENT_OP_IDS = [...new Set([...CHOICES_EVENT_OPS, ...CHOICES_EVENT_OPS_SPECIFIC].map((c) => c.id))]
 const POWER_OP_IDS = CHOICES_POWER_OPS.map((c) => c.id)
 const SECTION_IDS = CHOICES_PRESET_SECTIONS.map((c) => c.id)
 
@@ -75,8 +89,6 @@ const SECTION_IDS = CHOICES_PRESET_SECTIONS.map((c) => c.id)
 const PRESET_REBOOT_MS = 60000
 /** how long `power_status` says the reboot / shutdown command was sent */
 const POWER_STATUS_MS = 30000
-/** how long a storage keeps its `Ejected` hint */
-const STORAGE_HINT_MS = 4000
 
 /** gain / delay steps accepted by the audio action */
 const STEP_MIN = 1
@@ -174,7 +186,7 @@ module.exports = {
 		actions['recorder'] = {
 			name: 'Recorder',
 			description:
-				'Start, stop, pause or toggle a recorder. Toggle starts a stopped recorder and stops a running or paused one; "All recorders" controls every recorder on the device.',
+				'Start / Stop starts a stopped recorder and stops a running or paused one; Pause / Resume pauses a running recorder and resumes a paused one; "All recorders" controls every recorder on the device.',
 			options: [
 				{
 					type: 'dropdown',
@@ -203,9 +215,18 @@ module.exports = {
 					fail(label, `unknown action ${requested}`)
 					return
 				}
-				if ((rid === 'all' || requested === 'pause' || requested === 'resume') && !requireV2(label)) return
+				let op = requested
+				if (requested === 'toggle') {
+					op = recorderToggleOp(this.state.recorders, rid)
+				} else if (requested === 'pause_resume') {
+					op = recorderPauseResumeOp(this.state.recorders, rid)
+					if (!op) {
+						this.log('info', `Recorder ${rid}: nothing to pause or resume`)
+						return
+					}
+				}
+				if ((rid === 'all' || op === 'pause' || op === 'resume') && !requireV2(label)) return
 
-				const op = requested === 'toggle' ? recorderToggleOp(this.state.recorders, rid) : requested
 				const path =
 					rid === 'all' ? `/recorders/control/${enc(op)}` : `/recorders/${enc(rid)}/control/${enc(op)}`
 
@@ -311,40 +332,22 @@ module.exports = {
 					choices: this.choicesLayouts(),
 					default: this.firstId(this.choicesLayouts()),
 				},
-				{
-					type: 'textinput',
-					id: 'layoutIdManual',
-					label: 'Layout ID',
-					default: '',
-					useVariables: true,
-					tooltip:
-						'Fallback for firmware that does not list layouts: type the layout ID shown in the Admin UI of the encoder (Channel → Layouts). Used only while "Layout" is empty.',
-				},
 			],
 			callback: wrap('Layout', async (action) => {
 				const label = 'Layout'
 				const pair = splitPair(String(action.options.layoutId ?? ''))
-				let cid
-				let lid
-				if (pair) {
-					cid = pair[0]
-					lid = pair[1]
-					if (!this.state.channels[cid]) {
-						fail(label, `unknown channel ${cid}`)
-						return
-					}
-					if (!this.state.channels[cid].layouts?.[lid]) {
-						fail(label, `unknown layout ${lid} on channel ${cid}`)
-						return
-					}
-				} else {
-					cid = parseChannel(label, action.options.channelId)
-					if (!cid) return
-					lid = (await parse(action.options.layoutIdManual)).trim()
-					if (!lid) {
-						fail(label, 'no layout selected and no layout ID given')
-						return
-					}
+				if (!pair) {
+					fail(label, 'no layout selected')
+					return
+				}
+				const [cid, lid] = pair
+				if (!this.state.channels[cid]) {
+					fail(label, `unknown channel ${cid}`)
+					return
+				}
+				if (!this.state.channels[cid].layouts?.[lid]) {
+					fail(label, `unknown layout ${lid} on channel ${cid}`)
+					return
 				}
 				const numeric = Number(lid)
 				// v1 wants the id in the body, v2 wants it as a query parameter; both accept both
@@ -554,7 +557,7 @@ module.exports = {
 		actions['event'] = {
 			name: 'Event',
 			description:
-				'Start, pause, resume, stop or extend a scheduled CMS event. Toggle adapts to the event state; a fixed action that does not apply to the event is not sent.',
+				"Pause / resume, stop or extend the ongoing CMS event, start the upcoming one, or control a specific event. A command that does not apply to the event's state is not sent.",
 			options: [
 				{
 					type: 'dropdown',
@@ -572,6 +575,30 @@ module.exports = {
 					label: 'Action',
 					choices: CHOICES_EVENT_OPS,
 					default: 'toggle',
+					tooltip:
+						'Pause / Resume pauses a running event and resumes a paused one. An ongoing event is already started; the upcoming event is started from an "Upcoming" button.',
+					isVisible: (options) => {
+						const ref = String(options.eventRef)
+						return ref === 'ongoing' || ref === 'running' || ref === 'paused'
+					},
+				},
+				{
+					type: 'static-text',
+					id: 'op_upcoming',
+					label: 'Action',
+					value: 'Start, the only command that applies to the upcoming event.',
+					isVisible: (options) => String(options.eventRef) === 'upcoming',
+				},
+				{
+					type: 'dropdown',
+					id: 'op_event',
+					label: 'Action',
+					choices: CHOICES_EVENT_OPS_SPECIFIC,
+					default: 'start',
+					isVisible: (options) => {
+						const ref = String(options.eventRef)
+						return ref !== 'ongoing' && ref !== 'running' && ref !== 'paused' && ref !== 'upcoming'
+					},
 				},
 				{
 					type: 'number',
@@ -582,22 +609,23 @@ module.exports = {
 					max: EXTEND_MAX,
 					step: 30,
 					tooltip: 'Seconds added to the finish time of the event.',
-					isVisible: (options) => options.op === 'extend',
+					isVisible: (options) => {
+						const ref = String(options.eventRef)
+						const ongoing = ref === 'ongoing' || ref === 'running' || ref === 'paused'
+						const op = ref === 'upcoming' ? 'start' : ongoing ? options.op : options.op_event
+						return op === 'extend'
+					},
 				},
 			],
 			callback: wrap('Event', async (action) => {
 				const label = 'Event'
 				if (!requireV2(label)) return
-				const op = String(action.options.op ?? 'toggle')
+				const ref = (await parse(action.options.eventRef)).trim() || 'ongoing'
+				const op = eventOpFor(ref, action.options)
 				if (!EVENT_OP_IDS.includes(op)) {
 					fail(label, `unknown action ${op}`)
 					return
 				}
-				if (op === 'status') {
-					this.schedulePollSoon()
-					return
-				}
-				const ref = (await parse(action.options.eventRef)).trim() || 'ongoing'
 
 				// resolve live: an alias may point at a different event than the last poll saw
 				const event = await this.request('GET', `/schedule/events/${enc(ref)}`, {
@@ -615,7 +643,10 @@ module.exports = {
 				if (op === 'toggle') {
 					command = eventToggleOp(status)
 					if (!command) {
-						this.log('warn', `${label}: "${title}" is ${status ?? 'unknown'} and cannot be toggled`)
+						this.log(
+							'warn',
+							`${label}: "${title}" is ${status ?? 'unknown'} and cannot be paused or resumed`,
+						)
 						return
 					}
 				} else {
@@ -692,7 +723,7 @@ module.exports = {
 		actions['audio'] = {
 			name: 'Audio',
 			description:
-				'Nudge the capture gain (dB) or the audio delay (ms) of an audio input. "Nothing" only re-reads the input. Rotary ticks arriving within 150 ms are combined into one step.',
+				'Nudge the capture gain (dB) of an analog input (XLR, TRS, 3.5 mm, RCA) or the audio delay (ms) of any audio input. Rotary ticks arriving within 150 ms are combined into one step.',
 			options: [
 				{
 					type: 'dropdown',
@@ -704,9 +735,23 @@ module.exports = {
 				{
 					type: 'dropdown',
 					id: 'control',
-					label: 'Press adjusts',
+					label: 'Adjusts',
 					choices: CHOICES_AUDIO_CONTROL,
-					default: 'none',
+					default: 'gain',
+					// gain exists on the analog inputs only; for every other input the choice is hidden and the
+					// action adjusts the delay (the list of analog ids travels with the definition)
+					isVisible: (options, data) =>
+						Array.isArray(data?.analog) && data.analog.includes(String(options.inputId)),
+					isVisibleData: { analog: this.analogInputIds() },
+				},
+				{
+					type: 'static-text',
+					id: 'control_note',
+					label: 'Adjusts',
+					value: 'Delay. Gain can only be adjusted on analog inputs (XLR, TRS, 3.5 mm, RCA).',
+					isVisible: (options, data) =>
+						!(Array.isArray(data?.analog) && data.analog.includes(String(options.inputId))),
+					isVisibleData: { analog: this.analogInputIds() },
 				},
 				{
 					type: 'dropdown',
@@ -714,7 +759,6 @@ module.exports = {
 					label: 'Direction',
 					choices: CHOICES_AUDIO_DIRECTION,
 					default: 'up',
-					isVisible: (options) => options.control !== 'none',
 				},
 				{
 					type: 'number',
@@ -725,7 +769,6 @@ module.exports = {
 					max: STEP_MAX,
 					step: 1,
 					tooltip: 'Gain steps are in dB (0–100), delay steps in milliseconds (−300..300).',
-					isVisible: (options) => options.control !== 'none',
 				},
 			],
 			callback: wrap('Audio', async (action) => {
@@ -740,16 +783,8 @@ module.exports = {
 					fail(label, `unknown input ${sid}`)
 					return
 				}
-				const control = String(action.options.control ?? 'none')
-				if (control === 'none') {
-					// push / "Nothing": re-read the input instead of changing anything — the levels
-					// right away (one legacy /sources/status), the rest with the next poll
-					this.pollMeterLevels().catch((error) =>
-						this.log('debug', `Audio level re-read failed: ${error?.message || error}`),
-					)
-					this.schedulePollSoon()
-					return
-				}
+				// only an analog input has an adjustable gain; everything else nudges the delay
+				const control = this.isAnalogInput(sid) ? String(action.options.control ?? 'gain') : 'delay'
 				if (control !== 'gain' && control !== 'delay') {
 					fail(label, `unknown control ${control}`)
 					return
@@ -763,58 +798,6 @@ module.exports = {
 					(total) => this.nudgeInputAudio(label, sid, control, total, action.controlId),
 					this.rotaryWindowMs,
 				)
-			}),
-		}
-
-		// ------------------------------------------------------------------
-		// Storage
-		// ------------------------------------------------------------------
-
-		actions['storage'] = {
-			name: 'Storage',
-			description: 'Eject removable media (SD card / USB) from the encoder. The main storage cannot be ejected.',
-			options: [
-				{
-					type: 'dropdown',
-					id: 'storageId',
-					label: 'Storage',
-					choices: this.choicesStorages(),
-					default: this.preferredId(this.choicesStorages(), 'main'),
-				},
-				optConfirm(),
-			],
-			callback: wrap('Storage', async (action) => {
-				const label = 'Storage'
-				if (!requireV2(label)) return
-				const stid = String(action.options.storageId ?? '')
-				if (!stid) {
-					fail(label, 'no storage selected')
-					return
-				}
-				const storage = this.state.storages?.[stid]
-				if (!storage) {
-					fail(label, `unknown storage ${stid}`)
-					return
-				}
-				if (storage.status?.state === 'nodev') {
-					this.log('info', `Storage ${stid}: Nothing to eject`)
-					return
-				}
-				if (action.options.confirm !== false && !this.confirmGate(action, label)) {
-					// a fresh confirm arm supersedes any hint text left over from a previous eject, so
-					// confirm_hint and storage_<id>_hint never render at the same time on the button (D2)
-					if (storage.hint) {
-						storage.hint = undefined
-						refreshVariables()
-					}
-					return
-				}
-
-				await this.request('POST', `/system/storages/${enc(stid)}/control/eject`)
-				storage.hint = { text: 'Ejected', until: Date.now() + STORAGE_HINT_MS }
-				this.log('info', `Storage ${stid} ejected`)
-				refreshVariables()
-				this.schedulePollSoon()
 			}),
 		}
 

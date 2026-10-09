@@ -49,7 +49,7 @@ describe('poller diffing (D7 feedback ids)', () => {
 		assert.equal(instance.variableValues.channel_1_publisher_0_state, 'started')
 	})
 
-	it('a recorder status change (via a real HTTP call) re-checks only recorder_state', async () => {
+	it('a recorder status change (via a real HTTP call) re-checks only the recorder feedbacks', async () => {
 		instance.checkedFeedbacks.length = 0
 		const res = await fetch(`${mock.url}/api/v2.0/recorders/2/control/start`, {
 			method: 'POST',
@@ -58,7 +58,7 @@ describe('poller diffing (D7 feedback ids)', () => {
 		assert.equal(res.status, 200)
 		await instance.pollAll()
 		assert.equal(instance.state.recorders['2'].status.state, 'started')
-		assert.deepEqual(new Set(instance.checkedFeedbacks.flat()), new Set(['recorder_state']))
+		assert.deepEqual(new Set(instance.checkedFeedbacks.flat()), new Set(['recorder_state', 'recorder_blink']))
 		mock.state.recorders['2'].status = { state: 'stopped' }
 		await instance.pollAll()
 	})

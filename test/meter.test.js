@@ -5,7 +5,7 @@
 const { describe, it, before, after, beforeEach } = require('node:test')
 const assert = require('node:assert/strict')
 
-const { createInstance, runAction, runFeedback, subscribeFeedback, unsubscribeFeedback } = require('./harness')
+const { createInstance, runFeedback, subscribeFeedback, unsubscribeFeedback } = require('./harness')
 const { startMockPearl } = require('./mock-pearl')
 const meter = require('../src/meter')
 
@@ -286,15 +286,10 @@ describe('audio level poll (500 ms, ref-counted by the audio feedback)', () => {
 		assert.equal(typeof instance.variableValues['input_analog-a_peak_dbfs'], 'number')
 	})
 
-	it('the audio action with "Nothing" fetches the levels once, immediately', async () => {
-		await runAction(instance, 'audio', { inputId: 'analog-a', control: 'none', direction: 'up', step: 1 })
+	it('pollMeterLevels() fetches the levels once, immediately, without a meter placed', async () => {
+		await instance.pollMeterLevels()
 		await waitFor(() => levelRequests(mock).length >= 1)
 		assert.equal(levelRequests(mock).length, 1)
-		assert.equal(
-			mock.requests.filter((r) => r.method === 'PATCH').length,
-			0,
-			'"Nothing" changes nothing on the device',
-		)
 		assert.ok(instance.state.inputs['analog-a'].levels, 'the levels are read even without a meter placed')
 	})
 

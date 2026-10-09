@@ -73,7 +73,6 @@ describe('actions against a v2.0 device', () => {
 			'preset',
 			'recorder',
 			'singletouch',
-			'storage',
 			'stream',
 		])
 		const names = Object.fromEntries(
@@ -90,7 +89,6 @@ describe('actions against a v2.0 device', () => {
 			event: 'Event',
 			power: 'Reboot / Shutdown',
 			audio: 'Audio',
-			storage: 'Storage',
 		})
 		for (const [id, def] of Object.entries(instance.definitions.actions)) {
 			assert.ok(def.name.length <= 30, `${id}: name longer than 30 characters`)
@@ -142,29 +140,45 @@ describe('actions against a v2.0 device', () => {
 	// ------------------------------------------------------------------
 
 	describe('recorder', () => {
-		it('start on a stopped recorder', async () => {
+		it('Start / Stop starts a stopped recorder and stops a started one', async () => {
 			instance.state.recorders['2'].status = { state: 'stopped' }
-			await runAction(instance, 'recorder', { recorderId: '2', op: 'start' })
+			await runAction(instance, 'recorder', { recorderId: '2', op: 'toggle' })
 			one(mock, 'POST', `${V2}/recorders/2/control/start`)
 			assert.equal(mock.state.recorders['2'].status.state, 'started')
-		})
 
-		it('stop on a started recorder', async () => {
 			mock.state.recorders['1'].status = { state: 'started', duration: 30 }
-			await runAction(instance, 'recorder', { recorderId: '1', op: 'stop' })
+			instance.state.recorders['1'].status = { state: 'started', duration: 30 }
+			await runAction(instance, 'recorder', { recorderId: '1', op: 'toggle' })
 			one(mock, 'POST', `${V2}/recorders/1/control/stop`)
 			assert.equal(mock.state.recorders['1'].status.state, 'stopped')
 		})
 
-		it('pause on a started recorder, resume on a paused one', async () => {
+		it('Pause / Resume pauses a started recorder, resumes a paused one, does nothing while stopped', async () => {
 			mock.state.recorders['1'].status = { state: 'started', duration: 30 }
-			await runAction(instance, 'recorder', { recorderId: '1', op: 'pause' })
+			instance.state.recorders['1'].status = { state: 'started', duration: 30 }
+			await runAction(instance, 'recorder', { recorderId: '1', op: 'pause_resume' })
 			one(mock, 'POST', `${V2}/recorders/1/control/pause`)
 			assert.equal(mock.state.recorders['1'].status.state, 'paused')
 
-			await runAction(instance, 'recorder', { recorderId: '1', op: 'resume' })
+			instance.state.recorders['1'].status = { state: 'paused', duration: 30 }
+			await runAction(instance, 'recorder', { recorderId: '1', op: 'pause_resume' })
 			one(mock, 'POST', `${V2}/recorders/1/control/resume`)
 			assert.equal(mock.state.recorders['1'].status.state, 'started')
+
+			instance.state.recorders['1'].status = { state: 'stopped' }
+			mock.requests.length = 0
+			await runAction(instance, 'recorder', { recorderId: '1', op: 'pause_resume' })
+			assert.equal(mock.requests.length, 0)
+			assert.match(logged(instance, 'info').join('\n'), /nothing to pause or resume/)
+		})
+
+		it('start, stop, pause and resume are no longer actions of their own', async () => {
+			for (const op of ['start', 'stop', 'pause', 'resume']) {
+				instance.calls.log.length = 0
+				await runAction(instance, 'recorder', { recorderId: '1', op })
+				assert.match(logged(instance, 'error').join('\n'), new RegExp(`unknown action ${op}`))
+			}
+			assert.equal(mock.requests.length, 0)
 		})
 
 		it('reset falls back to the legacy base (recorder reset is legacy-only)', async () => {
@@ -211,7 +225,7 @@ describe('actions against a v2.0 device', () => {
 		})
 
 		it('an unknown recorder is reported, nothing is sent', async () => {
-			await runAction(instance, 'recorder', { recorderId: 'nope', op: 'start' })
+			await runAction(instance, 'recorder', { recorderId: 'nope', op: 'toggle' })
 			assert.equal(mock.requests.length, 0)
 			assert.match(logged(instance, 'error').join('\n'), /unknown recorder nope/)
 			assert.match(instance.state.lastError, /unknown recorder nope/)
@@ -288,30 +302,24 @@ describe('actions against a v2.0 device', () => {
 
 	describe('layout', () => {
 		it('sends the layout id as both query and body', async () => {
-			await runAction(instance, 'layout', { channelId: '1', layoutId: '1-2', layoutIdManual: '' })
+			await runAction(instance, 'layout', { channelId: '1', layoutId: '1-2' })
 			const req = one(mock, 'PUT', `${V2}/channels/1/layouts/active`)
 			assert.equal(req.query.id, '2')
 			assert.deepEqual(req.body, { id: 2 })
 			assert.equal(mock.state.channels['1'].layouts.find((l) => l.id === '2').active, true)
 		})
 
-		it('falls back to the manual id when no layout is picked from the list', async () => {
-			await runAction(instance, 'layout', { channelId: '2', layoutId: '', layoutIdManual: '1' })
-			const req = one(mock, 'PUT', `${V2}/channels/2/layouts/active`)
-			assert.equal(req.query.id, '1')
-		})
-
-		it('an unknown channel or layout is reported, nothing is sent', async () => {
-			await runAction(instance, 'layout', { channelId: '99', layoutId: '', layoutIdManual: '1' })
+		it('an unknown channel or layout, or no layout at all, is reported and nothing is sent', async () => {
+			await runAction(instance, 'layout', { channelId: '1', layoutId: '99-1' })
 			assert.match(logged(instance, 'error').join('\n'), /unknown channel 99/)
 
 			instance.calls.log.length = 0
-			await runAction(instance, 'layout', { channelId: '1', layoutId: '1-9', layoutIdManual: '' })
+			await runAction(instance, 'layout', { channelId: '1', layoutId: '1-9' })
 			assert.match(logged(instance, 'error').join('\n'), /unknown layout 9/)
 			assert.equal(recorded(mock, 'PUT').length, 0)
 
 			instance.calls.log.length = 0
-			await runAction(instance, 'layout', { channelId: '1', layoutId: '', layoutIdManual: '' })
+			await runAction(instance, 'layout', { channelId: '1', layoutId: '' })
 			assert.match(logged(instance, 'error').join('\n'), /no layout selected/)
 		})
 	})
@@ -461,12 +469,16 @@ describe('actions against a v2.0 device', () => {
 			assert.match(logged(instance, 'warn').join('\n'), /cannot start/)
 		})
 
-		it('a fixed command that does apply is sent', async () => {
+		it('Pause / Resume pauses a running event and resumes a paused one', async () => {
 			mock.state.events[0].status = 'running'
 			const id = mock.state.events[0].id
-			await runAction(instance, 'event', { eventRef: 'ongoing', op: 'pause', extendSeconds: 300 })
+			const options = { eventRef: 'ongoing', op: 'toggle', op_event: 'start', extendSeconds: 300 }
+			await runAction(instance, 'event', options)
 			one(mock, 'POST', `${V2}/schedule/events/${id}/control/pause`)
 			assert.equal(mock.state.events[0].status, 'paused')
+			await runAction(instance, 'event', options)
+			one(mock, 'POST', `${V2}/schedule/events/${id}/control/resume`)
+			assert.equal(mock.state.events[0].status, 'running')
 		})
 
 		it('extend sends the seconds as finish', async () => {
@@ -479,9 +491,21 @@ describe('actions against a v2.0 device', () => {
 			assert.equal(mock.state.events[0].finish, finishBefore + 600)
 		})
 
-		it('status only re-polls, nothing is sent to the event endpoint', async () => {
-			await runAction(instance, 'event', { eventRef: 'ongoing', op: 'status', extendSeconds: 300 })
-			assert.equal(mock.requests.length, 0)
+		it('the upcoming event only ever starts, whatever the dropdowns hold; a specific event takes its own action', async () => {
+			mock.state.events[0].status = 'scheduled'
+			const id = mock.state.events[0].id
+			await runAction(instance, 'event', {
+				eventRef: 'upcoming',
+				op: 'stop',
+				op_event: 'stop',
+				extendSeconds: 300,
+			})
+			one(mock, 'POST', `${V2}/schedule/events/${id}/control/start`)
+			assert.equal(mock.state.events[0].status, 'running')
+
+			mock.requests.length = 0
+			await runAction(instance, 'event', { eventRef: id, op: 'toggle', op_event: 'stop', extendSeconds: 300 })
+			one(mock, 'POST', `${V2}/schedule/events/${id}/control/stop`)
 		})
 
 		it('an eventRef that resolves to nothing warns and sends nothing', async () => {
@@ -614,57 +638,34 @@ describe('actions against a v2.0 device', () => {
 			assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/sdi-a/settings`).body, { sdi: { audio: { delay: -20 } } })
 		})
 
-		it('"Nothing" (control none) changes nothing; it only re-reads the levels', async () => {
+		it('gain on an input that is not analog is ignored: the action adjusts the delay instead', async () => {
 			instance.rotaryWindowMs = 10
-			await runAction(instance, 'audio', { inputId: 'analog-a', control: 'none', direction: 'up', step: 1 })
-			await new Promise((resolve) => setTimeout(resolve, 60))
-			// the immediate level fetch (src/meter.js) is the only thing it sends; nothing is written
-			assert.equal(recorded(mock, 'GET', '/api/sources/status').length, 1)
-			assert.equal(recorded(mock, 'PATCH').length, 0)
-			assert.equal(recorded(mock, 'POST').length, 0)
-			assert.equal(recorded(mock, 'PUT').length, 0)
+			assert.equal(instance.isAnalogInput('analog-a'), true)
+			assert.equal(instance.isAnalogInput('sdi-a'), false)
+			mock.state.inputs['sdi-a'].settings.sdi.audio.delay = 0
+			await runAction(instance, 'audio', { inputId: 'sdi-a', control: 'gain', direction: 'up', step: 5 })
+			await waitFor(() => recorded(mock, 'PATCH', `${V2}/inputs/sdi-a/settings`).length === 1)
+			assert.deepEqual(one(mock, 'PATCH', `${V2}/inputs/sdi-a/settings`).body, { sdi: { audio: { delay: 5 } } })
 		})
 
 		it('an input with no gain/delay setting warns (from the coalesced flush) and sends nothing', async () => {
 			instance.rotaryWindowMs = 10
-			await runAction(instance, 'audio', { inputId: 'SRT1', control: 'gain', direction: 'up', step: 1 })
-			await new Promise((resolve) => setTimeout(resolve, 60))
-			assert.equal(recorded(mock, 'PATCH').length, 0)
-			assert.match(logged(instance, 'warn').join('\n'), /no gain setting/)
+			// an input whose settings carry no delay: the nudge reads them, finds nothing to move and warns
+			const saved = mock.state.inputs.SRT1.settings.audio
+			delete mock.state.inputs.SRT1.settings.audio
+			try {
+				await runAction(instance, 'audio', { inputId: 'SRT1', control: 'delay', direction: 'up', step: 1 })
+				await new Promise((resolve) => setTimeout(resolve, 60))
+				assert.equal(recorded(mock, 'PATCH').length, 0)
+				assert.match(logged(instance, 'warn').join('\n'), /no audio delay setting/)
+			} finally {
+				mock.state.inputs.SRT1.settings.audio = saved
+			}
 		})
 
 		it('an unknown input is reported, nothing is sent', async () => {
 			await runAction(instance, 'audio', { inputId: 'nope', control: 'gain', direction: 'up', step: 1 })
 			assert.match(logged(instance, 'error').join('\n'), /unknown input nope/)
-			assert.equal(mock.requests.length, 0)
-		})
-	})
-
-	// ------------------------------------------------------------------
-	// Storage
-	// ------------------------------------------------------------------
-
-	describe('storage', () => {
-		it('nothing to eject on a storage without media (nodev), no confirm is armed', async () => {
-			instance.state.storages.external.status = { state: 'nodev' }
-			await runAction(instance, 'storage', { storageId: 'external', confirm: true })
-			assert.equal(mock.requests.length, 0)
-			assert.match(logged(instance, 'info').join('\n'), /Nothing to eject/)
-			assert.equal(instance.isConfirmPending('c1'), false)
-		})
-
-		it('eject sets the Ejected hint for 4 s', async () => {
-			instance.state.storages.external.status = { state: 'ready', total: 100, free: 50 }
-			const before = Date.now()
-			await runAction(instance, 'storage', { storageId: 'external', confirm: false })
-			one(mock, 'POST', `${V2}/system/storages/external/control/eject`)
-			assert.equal(instance.state.storages.external.hint.text, 'Ejected')
-			assert.ok(instance.state.storages.external.hint.until >= before + 3000)
-		})
-
-		it('an unknown storage is reported, nothing is sent', async () => {
-			await runAction(instance, 'storage', { storageId: 'nope', confirm: false })
-			assert.match(logged(instance, 'error').join('\n'), /unknown storage nope/)
 			assert.equal(mock.requests.length, 0)
 		})
 	})
@@ -713,9 +714,9 @@ describe('actions against a v2.0 device', () => {
 
 		it('a press after the window has expired only re-arms (shortened confirmWindowMs)', async () => {
 			instance.confirmWindowMs = 20
-			await runAction(instance, 'storage', { storageId: 'main', confirm: true }, { controlId: 'confirm3' })
+			await runAction(instance, 'power', { op: 'reboot', confirm: true }, { controlId: 'confirm3' })
 			await new Promise((resolve) => setTimeout(resolve, 60))
-			await runAction(instance, 'storage', { storageId: 'main', confirm: true }, { controlId: 'confirm3' })
+			await runAction(instance, 'power', { op: 'reboot', confirm: true }, { controlId: 'confirm3' })
 			assert.equal(mock.requests.length, 0)
 			assert.equal(instance.variableValues.confirm_hint, 'Press again')
 			assert.equal(instance.isConfirmPending('confirm3'), true)
@@ -780,7 +781,7 @@ describe('actions against a legacy-only device', () => {
 	})
 
 	it('actions that do not need v2 use the legacy /api base', async () => {
-		await runAction(instance, 'layout', { channelId: '1', layoutId: '1-2', layoutIdManual: '' })
+		await runAction(instance, 'layout', { channelId: '1', layoutId: '1-2' })
 		const layoutReq = mock.requests.find((r) => r.method === 'PUT')
 		assert.equal(layoutReq.path, '/api/channels/1/layouts/active')
 
@@ -793,20 +794,18 @@ describe('actions against a legacy-only device', () => {
 		assert.equal(mock.requests[0].path, '/api/channels/1/bookmarks')
 
 		mock.requests.length = 0
-		await runAction(instance, 'recorder', { recorderId: '2', op: 'start' })
+		await runAction(instance, 'recorder', { recorderId: '2', op: 'toggle' })
 		assert.equal(mock.requests[0].path, '/api/recorders/2/control/start')
 	})
 
-	it('v2-only actions (recorder all/pause/resume, singletouch, output, preset, event, audio, storage) warn and send nothing', async () => {
+	it('v2-only actions (recorder all, singletouch, output, preset, event, audio) warn and send nothing', async () => {
 		const v2Only = [
-			['recorder', { recorderId: 'all', op: 'start' }],
-			['recorder', { recorderId: '1', op: 'pause' }],
+			['recorder', { recorderId: 'all', op: 'toggle' }],
 			['singletouch', { stcId: '0' }],
 			['output', { outputId: 'D1', source: 'console' }],
 			['preset', { presetName: 'Default', sections: [], confirm: false }],
-			['event', { eventRef: 'ongoing', op: 'toggle', extendSeconds: 300 }],
+			['event', { eventRef: 'ongoing', op: 'toggle', op_event: 'start', extendSeconds: 300 }],
 			['audio', { inputId: 'analog-a', control: 'gain', direction: 'up', step: 1 }],
-			['storage', { storageId: 'external', confirm: false }],
 		]
 		for (const [id, options] of v2Only) {
 			mock.requests.length = 0

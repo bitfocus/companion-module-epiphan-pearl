@@ -20,13 +20,13 @@ function isGreyTextOnly(style) {
 }
 
 /**
- * Keys whose text carries a device-provided name or event title (recorder, stream, bookmark, configuration
- * preset, the two CMS status keys and the CPU key): no icon and centred text, so the whole key is there for
- * the wrapped lines (QA 2026-09-14).
+ * Keys whose text carries a device-provided name or event title (stream, bookmark, configuration preset, the
+ * two CMS status keys and the CPU key): no icon and centred text, so the whole key is there for the wrapped
+ * lines (QA 2026-09-14). Recording keys carry a state glyph instead (QA 2026-10-09).
  */
 function isNamedKey(id, preset) {
 	return (
-		['Recording', 'Streaming', 'Bookmarks', 'Configuration presets'].includes(preset.category) ||
+		['Streaming', 'Bookmarks', 'Configuration presets'].includes(preset.category) ||
 		/^cms_events_status_/.test(id) ||
 		id === 'system_cpu'
 	)
@@ -53,18 +53,21 @@ describe('style.js palette and helpers', () => {
 })
 
 describe('icons.js', () => {
-	it('has exactly the 10 Pearl category icons, all valid PNG payloads', () => {
+	it('has exactly the 9 category icons and the 4 recorder state glyphs, all valid PNG payloads', () => {
 		assert.deepEqual(
 			Object.keys(ICONS).sort(),
 			[
 				'bookmark',
 				'event',
 				'layout',
+				'pause',
+				'play',
 				'power',
 				'preset',
 				'preview',
-				'recorder',
+				'rec',
 				'singletouch',
+				'stop',
 				'storage',
 				'system',
 			].sort(),
@@ -176,7 +179,7 @@ describe('presets', () => {
 
 	it('every preset is restStyle() at rest, with its category icon top / text bottom (Single touch, Streaming: no icon)', () => {
 		const categoryIcon = {
-			Recording: 'recorder',
+			Recording: 'rec',
 			Layouts: 'layout',
 			Bookmarks: 'bookmark',
 			Previews: 'preview',
@@ -189,7 +192,12 @@ describe('presets', () => {
 		for (const [id, preset] of Object.entries(presets)) {
 			assert.equal(preset.style.bgcolor, colors.bg, `${id}: rest bgcolor`)
 			assert.equal(preset.style.color, id === 'cms_events_stop' ? colors.red : colors.text, `${id}: rest color`)
-			const icon = isNamedKey(id, preset) ? undefined : ICONS[categoryIcon[preset.category]]
+			// the Recording Pause / Resume keys rest on the play glyph, the Start / Stop keys on the record dot
+			const icon = isNamedKey(id, preset)
+				? undefined
+				: /^recording_pause_/.test(id)
+					? ICONS.play
+					: ICONS[categoryIcon[preset.category]]
 			assert.equal(preset.style.png64, icon, `${id}: category icon`)
 			assert.equal(preset.style.pngalignment, icon ? 'center:top' : undefined, `${id}: pngalignment`)
 			assert.equal(
@@ -230,9 +238,9 @@ describe('presets', () => {
 			const expected = preset.category === 'Single touch' ? 22 : 14
 			assert.equal(preset.style.size, expected, `${id}: text size`)
 			if (preset.style.png64) {
-				// Companion 5.0.4 at 288 px: two lines fit below the glyph; the Storage keys' third line is the
-				// transient eject hint, empty at rest, and a trailing empty line costs nothing
-				const max = preset.category === 'Storage' ? 3 : 2
+				// Companion 5.0.4 at 288 px: two lines fit below a category glyph; the Recording keys' state glyphs are
+				// drawn in a 64 px box, which leaves room for a wrapped recorder name plus the state line (three lines)
+				const max = preset.category === 'Recording' ? 3 : 2
 				assert.ok(preset.style.text.split('\n').length <= max, `${id}: at most ${max} lines below the icon`)
 			}
 		}
@@ -248,14 +256,10 @@ describe('presets', () => {
 			'$(encoder:channel_1_name)\nStreams\n$(encoder:channel_1_publishers_state_word)',
 		)
 		assert.equal(presets.bookmarks_1.style.text, '$(encoder:channel_1_name)\nBookmark')
-		assert.equal(presets.cms_events_toggle.style.text, '$(encoder:event_ongoing_toggle_command)')
+		assert.equal(presets.cms_events_toggle.style.text, 'Pause /\nResume')
 		assert.equal(presets.cms_events_stop.style.text, 'Stop')
 		assert.equal(presets.cms_events_stop.style.color, colors.red, 'Stop is the one red label')
-		for (const [id, verb] of [
-			['cms_events_start_upcoming', 'Start'],
-			['cms_events_pause', 'Pause'],
-			['cms_events_resume', 'Resume'],
-		]) {
+		for (const [id, verb] of [['cms_events_start_upcoming', 'Start']]) {
 			assert.equal(presets[id].style.text, verb, `${id}: verb only`)
 		}
 		assert.equal(presets.single_touch_toggle_0.style.text, '$(encoder:singletouch_0_summary)')
@@ -290,7 +294,19 @@ describe('presets', () => {
 			for (const [id, preset] of Object.entries(presets)) {
 				for (const feedback of preset.feedbacks) {
 					if (!feedback.style) continue
-					if (feedback.style.bgcolor !== undefined) {
+					if (feedback.style.bgcolor === colors.bg) {
+						// the "off" half of the Pause / Resume blink: back to the rest colours
+						assert.equal(
+							feedback.feedbackId,
+							'recorder_blink',
+							`${id}/${feedback.feedbackId}: rest colours`,
+						)
+						assert.equal(
+							feedback.style.color,
+							colors.text,
+							`${id}/${feedback.feedbackId}: rest text colour`,
+						)
+					} else if (feedback.style.bgcolor !== undefined) {
 						assert.equal(feedback.style.color, colors.badgeText, `${id}/${feedback.feedbackId}: badge text`)
 					} else {
 						assert.ok(
@@ -303,18 +319,26 @@ describe('presets', () => {
 		},
 	)
 
-	it('grey text-only overrides are exactly event_applies and recorder_state, both isInverted', () => {
+	it('grey text-only overrides are exactly event_applies and recorder_state (inverted, or the stopped / disabled states)', () => {
 		const found = []
 		for (const [id, preset] of Object.entries(presets)) {
 			for (const feedback of preset.feedbacks) {
 				if (feedback.style && isGreyTextOnly(feedback.style)) {
-					found.push({ id, feedbackId: feedback.feedbackId, isInverted: feedback.isInverted === true })
+					found.push({
+						id,
+						feedbackId: feedback.feedbackId,
+						state: feedback.options?.state,
+						isInverted: feedback.isInverted === true,
+					})
 				}
 			}
 		}
 		assert.ok(found.length > 0)
 		for (const entry of found) {
-			assert.equal(entry.isInverted, true, `${entry.id}: grey-out must be isInverted`)
+			// a Pause / Resume key greys out while the recorder is stopped or disabled: a plain state, not inverted
+			const plainGreyState =
+				entry.feedbackId === 'recorder_state' && ['stopped', 'disabled'].includes(entry.state)
+			if (!plainGreyState) assert.equal(entry.isInverted, true, `${entry.id}: grey-out must be isInverted`)
 			assert.ok(
 				entry.feedbackId === 'event_applies' || entry.feedbackId === 'recorder_state',
 				`${entry.id}: unexpected grey-out feedback ${entry.feedbackId}`,
@@ -322,23 +346,34 @@ describe('presets', () => {
 		}
 	})
 
-	it('CMS events: the three status buttons lead with an event variable; the command buttons grey out via event_applies', () => {
+	it('CMS events: the two status keys lead with an event variable; Pause / Resume colours by state; Start, Stop and Extend grey out via event_applies', () => {
 		const cms = Object.values(presets).filter((p) => p.category === 'CMS events')
 		const status = cms.filter((p) => /^\$\(encoder:event_/.test(p.style.text))
-		assert.equal(status.length, 3, 'status_ongoing, status_upcoming and toggle')
-		for (const p of status) {
-			// status keys: title and time; the toggle: the command alone (reference page, 2026-09-11)
-			assert.equal(p.style.text.split('\n').length, p.name.startsWith('Toggle') ? 1 : 2, `${p.name}: line count`)
-		}
-		// the command buttons (start/stop/pause/resume/extend) name the command first
-		const withoutCmsPrefix = cms.filter((p) => !status.includes(p))
-		assert.equal(withoutCmsPrefix.length, cms.length - 3)
-		for (const p of withoutCmsPrefix) {
+		assert.equal(status.length, 2, 'status_ongoing and status_upcoming')
+		for (const p of status) assert.equal(p.style.text.split('\n').length, 2, `${p.name}: title and time`)
+		assert.deepEqual(
+			cms.map((p) => p.name).sort(),
+			[
+				'Extend event +5:00',
+				'Ongoing event status',
+				'Pause / resume ongoing event',
+				'Start upcoming event',
+				'Stop ongoing event',
+				'Upcoming event status',
+			],
+			'no solo pause or resume keys',
+		)
+		const toggle = presets.cms_events_toggle
+		assert.equal(toggle.steps[0].down[0].options.op, 'toggle')
+		assert.ok(toggle.feedbacks.some((f) => f.feedbackId === 'event_state' && f.style.text === 'Pause'))
+		assert.ok(toggle.feedbacks.some((f) => f.feedbackId === 'event_state' && f.style.text === 'Resume'))
+		for (const p of cms.filter((x) => !status.includes(x) && x !== toggle)) {
 			assert.ok(
 				p.feedbacks.some((f) => f.feedbackId === 'event_applies'),
 				`${p.name}: greys out via event_applies`,
 			)
 		}
+		assert.equal(presets.cms_events_start_upcoming.steps[0].down[0].options.eventRef, 'upcoming')
 	})
 
 	it('Pearl ships no rotary presets (the Audio group, the only one with dials, is not generated)', () => {
@@ -350,8 +385,12 @@ describe('presets', () => {
 		assert.equal(withUpActions.length, 0)
 	})
 
-	it('confirm-gated categories (Power, Configuration presets, Storage) carry confirm_pending -> stateStyle(red)', () => {
-		const confirmCategories = ['Power', 'Configuration presets', 'Storage']
+	it('confirm-gated categories (Power, Configuration presets) carry confirm_pending -> stateStyle(red); Storage is display only', () => {
+		for (const p of Object.values(presets).filter((x) => x.category === 'Storage')) {
+			assert.equal(p.steps[0].down.length, 0, `${p.name}: no action (ejecting is left to the device UI)`)
+			assert.ok(!p.feedbacks.some((f) => f.feedbackId === 'confirm_pending'), `${p.name}: nothing to confirm`)
+		}
+		const confirmCategories = ['Power', 'Configuration presets']
 		const confirmPresets = Object.values(presets).filter((p) => confirmCategories.includes(p.category))
 		assert.ok(confirmPresets.length > 0)
 		for (const preset of confirmPresets) {
@@ -362,7 +401,7 @@ describe('presets', () => {
 				!preset.style.text.includes('confirm_hint'),
 				`${preset.name}: the hint is the feedback's text, not a global variable`,
 			)
-			const action = preset.steps[0].down.find((a) => ['power', 'preset', 'storage'].includes(a.actionId))
+			const action = preset.steps[0].down.find((a) => ['power', 'preset'].includes(a.actionId))
 			assert.equal(action.options.confirm, true, `${preset.name}: confirm option is true`)
 		}
 	})

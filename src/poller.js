@@ -30,7 +30,7 @@ function settled(entry, fallback = undefined) {
 const DOMAIN_FEEDBACKS = {
 	layouts: ['layout_active'],
 	publishers: ['stream_state'],
-	recorders: ['recorder_state'],
+	recorders: ['recorder_state', 'recorder_blink'],
 	storages: ['storage_level'],
 	singleTouch: ['singletouch_active'],
 	afu: ['system'],
@@ -238,6 +238,7 @@ module.exports = {
 							id: String(input.id),
 							name: input.name ?? String(input.id),
 							type: input.type,
+							device: input.real_device_name,
 							audio: input.audio === true,
 							video: input.video === true,
 							real_device_name: input.real_device_name,
@@ -418,6 +419,7 @@ module.exports = {
 		}
 
 		this.state = state
+		this.syncBlinkTimer()
 
 		if (structureChanged) {
 			this.updateSystem()

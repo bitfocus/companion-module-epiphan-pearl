@@ -269,6 +269,34 @@ function recorderToggleOp(recorders, recorderId) {
 }
 
 /**
+ * Command a Pause / Resume press sends for a recorder: 'pause' while it (or, for 'all', any recorder) is
+ * started or starting, 'resume' while paused, '' when nothing applies (stopped, disabled, error).
+ * @param {Record<string, {status?: {state?: string}}>} recorders state.recorders
+ * @param {string} recorderId a recorder id or 'all'
+ * @returns {'pause'|'resume'|''}
+ */
+function recorderPauseResumeOp(recorders, recorderId) {
+	const list = recorderId === 'all' ? Object.values(recorders || {}) : [recorders?.[recorderId]].filter(Boolean)
+	const states = list.map((r) => r?.status?.state)
+	if (states.some((s) => s === 'started' || s === 'starting')) return 'pause'
+	if (states.some((s) => s === 'paused')) return 'resume'
+	return ''
+}
+
+/**
+ * Analog audio inputs (XLR, TRS, 3.5 mm, RCA) are the only inputs whose capture gain a controller may
+ * adjust. The API types them `embedded` like HDMI and SDI, so the id and the hardware name
+ * (`real_device_name`, kept as `device` in the state) are what tell them apart.
+ * @param {{id?: string, device?: string}|undefined} input
+ * @returns {boolean}
+ */
+const ANALOG_INPUT_RE = /analog|xlr|trs|rca|3[.,]5\s?mm|line[ -]?in|\bmic/i
+function isAnalogInput(input) {
+	if (!input) return false
+	return ANALOG_INPUT_RE.test(String(input.id ?? '')) || ANALOG_INPUT_RE.test(String(input.device ?? ''))
+}
+
+/**
  * Command a toggle press sends for a publisher: 'stop' when it (or, for 'all', any publisher of the
  * channel) reports `started: true` (the API's own running flag, true throughout an error state) or a
  * state of started, starting, listening or error, otherwise 'start'.
@@ -286,7 +314,8 @@ function publisherToggleOp(publishers, publisherId) {
 /**
  * Command a toggle press sends for a scheduled event
  * @param {string|undefined} status event status
- * @returns {'pause'|'resume'|'start'|''} '' when no command applies
+ * @returns {'pause'|'resume'|''} '' when no command applies (a scheduled event is started from an
+ *   "Upcoming" button, never by a toggle)
  */
 function eventToggleOp(status) {
 	switch (status) {
@@ -294,8 +323,6 @@ function eventToggleOp(status) {
 			return 'pause'
 		case 'paused':
 			return 'resume'
-		case 'scheduled':
-			return 'start'
 		default:
 			return ''
 	}
@@ -425,6 +452,8 @@ module.exports = {
 	normaliseInputId,
 	sameInputId,
 	recorderToggleOp,
+	recorderPauseResumeOp,
+	isAnalogInput,
 	publisherToggleOp,
 	eventToggleOp,
 	eventApplies,

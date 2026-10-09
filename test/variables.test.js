@@ -59,7 +59,7 @@ function expectedVariableIds(state) {
 		'last_error',
 	])
 	for (const stid of Object.keys(state.storages || {})) {
-		for (const suffix of ['state', 'free', 'total', 'used_pct', 'text', 'level_word', 'hint']) {
+		for (const suffix of ['state', 'free', 'total', 'used_pct', 'text', 'level_word']) {
 			ids.add(`storage_${stid}_${suffix}`)
 		}
 	}
@@ -205,7 +205,11 @@ describe('variables: exact id set for the seeded mock', () => {
 		assert.equal(instance.variableValues.storage_external_text, 'No media')
 		assert.match(String(instance.variableValues.storage_main_text), /^of /)
 		// nothing ongoing, but the upcoming event is scheduled -> falls back to START
-		assert.equal(instance.variableValues.event_ongoing_toggle_command, 'START')
+		assert.equal(
+			instance.variableValues.event_ongoing_toggle_command,
+			'',
+			'nothing running or paused: the toggle has nothing to pause or resume (the upcoming event starts from its own button)',
+		)
 		assert.equal(instance.variableValues.confirm_hint, '')
 		assert.equal(instance.variableValues.last_error, '')
 	})
@@ -253,10 +257,10 @@ describe('variables: word/format rules (via buildVariables, no device needed)', 
 		assert.equal(values.event_upcoming_state_word, 'SCHED')
 	})
 
-	it('nothing scheduled reads "Nothing scheduled" (standard text)', () => {
+	it('nothing scheduled reads "No Upcoming Event" (standard text)', () => {
 		const self = selfWith({ state: { events: { upcoming: null, ongoing: null, list: [] } } })
 		const { values } = buildVariables(self)
-		assert.equal(values.event_upcoming_time_text, 'Nothing scheduled')
+		assert.equal(values.event_upcoming_time_text, 'No Upcoming Event')
 		assert.equal(values.event_upcoming_state_word, '—')
 	})
 
@@ -277,10 +281,10 @@ describe('variables: word/format rules (via buildVariables, no device needed)', 
 		assert.equal(values.event_ongoing_toggle_command, 'PAUSE')
 	})
 
-	it('no ongoing event reads "No ongoing event" (standard text)', () => {
+	it('no ongoing event reads "No Event Running" (standard text)', () => {
 		const self = selfWith({ state: { events: { upcoming: null, ongoing: null, list: [] } } })
 		const { values } = buildVariables(self)
-		assert.equal(values.event_ongoing_time_text, 'No ongoing event')
+		assert.equal(values.event_ongoing_time_text, 'No Event Running')
 	})
 
 	it('uptime reads "3d 4h" (days present)', () => {

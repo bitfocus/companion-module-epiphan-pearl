@@ -180,10 +180,10 @@ describe('utils', () => {
 		assert.equal(utils.publisherToggleOp({ a: { status: { state: 'stopped', started: false } } }, 'a'), 'start')
 	})
 
-	it('eventToggleOp: running->pause, paused->resume, scheduled->start, otherwise none applies', () => {
+	it('eventToggleOp: running->pause, paused->resume, otherwise none applies (a scheduled event is never started by a toggle)', () => {
 		assert.equal(utils.eventToggleOp('running'), 'pause')
 		assert.equal(utils.eventToggleOp('paused'), 'resume')
-		assert.equal(utils.eventToggleOp('scheduled'), 'start')
+		assert.equal(utils.eventToggleOp('scheduled'), '')
 		assert.equal(utils.eventToggleOp('finished'), '')
 		assert.equal(utils.eventToggleOp(undefined), '')
 	})
