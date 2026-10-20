@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.1] (2026-10-19)
+
+### Bug Fixes
+
+- Startup hanging when the device is unreachable, requests now time out after 3 seconds
+
 ## [2.2.0] (2025-10-20)
 
 ### New Features

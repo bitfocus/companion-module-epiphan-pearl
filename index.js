@@ -22,6 +22,8 @@ const variables = require('./variables')
 const upgradeScripts = require('./upgrades')
 // Minimum firmware version (4.24.01) that supports API v2.0
 const MIN_API_V2_VERSION = 42401
+// native fetch ignores a `timeout` option, so deadlines are enforced with an AbortSignal
+const REQUEST_TIMEOUT = 3000
 
 /**
  * Companion instance class for the Epiphan Pearl.
@@ -168,7 +170,7 @@ class EpiphanPearl extends InstanceBase {
 		try {
 			const response = await fetchFunc(url, {
 				method: 'GET',
-				timeout: 3000,
+				signal: AbortSignal.timeout(REQUEST_TIMEOUT),
 				headers: {
 					Authorization:
 						'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
@@ -282,7 +284,7 @@ class EpiphanPearl extends InstanceBase {
 		try {
 			let options = {
 				method: type,
-				timeout: 3000,
+				signal: AbortSignal.timeout(REQUEST_TIMEOUT),
 				headers: {
 					Authorization:
 						'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
@@ -296,7 +298,7 @@ class EpiphanPearl extends InstanceBase {
 
 			response = await fetchFunc(requestUrl, options)
 		} catch (error) {
-			if (error.name === 'AbortError') {
+			if (error.name === 'AbortError' || error.name === 'TimeoutError') {
 				this.setStatus(
 					InstanceStatus.ConnectionFailure,
 					'Request was aborted: ' + requestUrl + ' reason: ' + error.message
@@ -736,6 +738,7 @@ class EpiphanPearl extends InstanceBase {
 		try {
 			const response = await fetchFunc(url, {
 				method: 'GET',
+				signal: AbortSignal.timeout(REQUEST_TIMEOUT),
 				headers: {
 					Authorization:
 						'Basic ' + Buffer.from(this.config.username + ':' + this.config.password).toString('base64'),
@@ -759,7 +762,7 @@ class EpiphanPearl extends InstanceBase {
 			}
 			variables.updateVariables(this)
 		} catch (e) {
-			this.log('error', 'Failed to get metadata')
+			this.log('error', 'Failed to get metadata: ' + e.message)
 		}
 	}
 }
