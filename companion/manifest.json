@@ -1,7 +1,7 @@
 {
 	"id": "epiphan-pearl",
 	"name": "epiphan-pearl",
-	"shortname": "encoder",
+	"shortname": "pearl",
 	"description": "Epiphan Encoders for Companion: Pearl-2, Pearl Mini, Pearl Nano and Pearl Nexus (REST API v2.0)",
 	"version": "0.0.0",
 	"license": "MIT",
@@ -33,6 +33,6 @@
 		"entrypoint": "../index.js"
 	},
 	"manufacturer": "Epiphan",
-	"products": ["Pearl-2", "Pearl Mini", "Pearl Nano", "Pearl Nexus"],
+	"products": ["Pearl", "Pearl-2", "Pearl Mini", "Pearl Nano", "Pearl Nexus"],
 	"keywords": ["Stream", "Encoder", "Encode", "Recording", "Epiphan", "Pearl", "SRT", "RTMP", "NDI"]
 }
