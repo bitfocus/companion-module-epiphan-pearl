@@ -24,6 +24,6 @@
 	},
 	"prettier": "@companion-module/tools/.prettierrc.json",
 	"engines": {
-		"node": "^22.8"
+		"node": ">=22.8"
 	}
 }
