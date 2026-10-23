@@ -88,6 +88,12 @@ names each one still in use. Button text that uses a renamed or removed variable
 
 ---
 
+## [2.2.1] (2026-10-19)
+
+### Bug Fixes
+
+- Startup hanging when the device is unreachable, requests now time out after 3 seconds
+
 ## [2.2.0] (2025-10-20)
 
 ### New Features
