@@ -448,6 +448,12 @@ module.exports = {
 		} catch (error) {
 			this.log('error', `Updating variables failed: ${error?.message || error}`)
 		}
+
+		// ---- 8. content metadata: not part of the REST API, read once per channel (and again by the Get action)
+		for (const cid of Object.keys(state.channels)) {
+			if (gen !== this.configGeneration) return
+			if (!this.metadataRequested.has(cid)) await this.fetchMetadata(cid)
+		}
 	},
 
 	/**

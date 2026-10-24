@@ -4,13 +4,12 @@
  * Serves the target 3.0.0 control set's endpoints
  * under both `/api/v2.0/...` and the legacy `/api/...` prefix, plus the legacy-only endpoints that are
  * still used (layout list/active/preview, the audio settings PATCH, the
- * legacy `/sources/status` levels). Routes that only served a feature the 3.0.0 rewrite removed (admin CGI
- * content metadata, network connectivity/speedtest, recorder archive files, ad-hoc CMS sessions, publisher
+ * legacy `/sources/status` levels, and the admin CGI content metadata read/write). Routes that only served
+ * a feature the 3.0.0 rewrite removed (network connectivity/speedtest, recorder archive files, ad-hoc CMS sessions, publisher
  * create/rename/settings, channel rename, input creation, layout settings GET/PUT, and a handful of GETs
  * nothing in the module ever called) are gone.
- * One admin CGI route (`GET get_params.cgi`) is kept anyway: `test/request.test.js` uses it as a generic
- * text/plain endpoint to exercise the request layer's `base:'raw'`/`text:true` handling, unrelated to the
- * removed content-metadata feature itself.
+ * `get_params.cgi` is also a generic text/plain endpoint that `test/request.test.js` uses to exercise the
+ * request layer's `base:'raw'`/`text:true` handling.
  *
  * Recorder control (`applyRecorderOp`) answers pause/resume alongside start/stop (verified against real
  * hardware, even though the published API description lists start/stop only; behaviour verified on
@@ -1036,17 +1035,21 @@ async function startMockPearl({
 		}
 	}
 
-	// GET /admin/channel{cid}/get_params.cgi?title&author&rec_prefix: the content-metadata feature this
-	// once backed (getContentMetadata/setContentMetadata, fetchMetadata) is removed along with set_params,
-	// but this read is kept as a real text/plain endpoint test/request.test.js exercises the request
-	// layer's base:'raw'/text:true handling against — see the mock's header comment.
+	// GET /admin/channel{cid}/get_params.cgi?title&author&rec_prefix and set_params.cgi?title=..&author=..&rec_prefix=..:
+	// the content metadata behind getContentMetadata/setContentMetadata (text/plain, legacy admin CGI).
 	function handleAdmin(req, res, url, query) {
-		const m = /^\/admin\/channel([^/]+)\/get_params\.cgi$/.exec(url.pathname)
+		const m = /^\/admin\/channel([^/]+)\/(get|set)_params\.cgi$/.exec(url.pathname)
 		if (!m) return false
 		const channel = state.channels[m[1]]
 		if (!channel) {
 			res.writeHead(404, { 'Content-Type': 'text/plain' })
 			res.end('Channel not found')
+			return true
+		}
+		if (m[2] === 'set') {
+			for (const k of ['title', 'author', 'rec_prefix']) if (k in query) channel.metadata[k] = query[k]
+			res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Length': 0 })
+			res.end()
 			return true
 		}
 		const keys = Object.keys(query).filter((k) => k in channel.metadata)

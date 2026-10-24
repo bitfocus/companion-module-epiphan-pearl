@@ -67,11 +67,13 @@ describe('actions against a v2.0 device', () => {
 			'audio',
 			'bookmark',
 			'event',
+			'getContentMetadata',
 			'layout',
 			'output',
 			'power',
 			'preset',
 			'recorder',
+			'setContentMetadata',
 			'singletouch',
 			'stream',
 		])
@@ -89,6 +91,8 @@ describe('actions against a v2.0 device', () => {
 			event: 'Event',
 			power: 'Reboot / Shutdown',
 			audio: 'Audio',
+			getContentMetadata: 'Get Content Metadata',
+			setContentMetadata: 'Set Content Metadata',
 		})
 		for (const [id, def] of Object.entries(instance.definitions.actions)) {
 			assert.ok(def.name.length <= 30, `${id}: name longer than 30 characters`)
@@ -817,5 +821,63 @@ describe('actions against a legacy-only device', () => {
 				`${id} did not warn`,
 			)
 		}
+	})
+})
+
+describe('content metadata (legacy admin CGI)', () => {
+	let mock
+	let instance
+
+	before(async () => {
+		mock = await startMockPearl()
+		instance = await createInstance({ mock })
+	})
+
+	after(async () => {
+		await instance.destroy()
+		await mock.close()
+	})
+
+	it('reads title, author and prefix of every channel into variables after the first poll', () => {
+		assert.equal(instance.variableValues.channel_1_metadata_title, 'Morning Show')
+		assert.equal(instance.variableValues.channel_1_metadata_author, 'Epiphan')
+		assert.equal(instance.variableValues.channel_1_metadata_rec_prefix, 'HDMI-A')
+		assert.equal(instance.variableValues.channel_2_metadata_title, '')
+		assert.equal(instance.variableValues.channel_2_metadata_rec_prefix, 'Multi')
+	})
+
+	it('Set Content Metadata writes to the device and updates the variables', async () => {
+		mock.requests.length = 0
+		await runAction(instance, 'setContentMetadata', {
+			channel: '1',
+			title: 'Evening Show & Q=A',
+			author: 'Jo',
+			prefix: 'EVE',
+		})
+		const req = mock.requests.find((r) => r.path === '/admin/channel1/set_params.cgi')
+		assert.ok(req, 'no set_params request')
+		assert.equal(instance.variableValues.channel_1_metadata_title, 'Evening Show & Q=A')
+		assert.equal(instance.variableValues.channel_1_metadata_author, 'Jo')
+		assert.equal(instance.variableValues.channel_1_metadata_rec_prefix, 'EVE')
+
+		// the device really stored it: Get re-reads it unchanged, special characters included
+		await runAction(instance, 'getContentMetadata', { channel: '1' })
+		assert.equal(instance.variableValues.channel_1_metadata_title, 'Evening Show & Q=A')
+	})
+
+	it('Get Content Metadata picks up a change made on the device', async () => {
+		await runAction(instance, 'setContentMetadata', { channel: '2', title: 'x', author: '', prefix: 'p' })
+		mock.state.channels['2'].metadata.title = 'Changed on device'
+		await runAction(instance, 'getContentMetadata', { channel: '2' })
+		assert.equal(instance.variableValues.channel_2_metadata_title, 'Changed on device')
+	})
+
+	it('a rejected Set leaves the variables as they were and reports a failure', async () => {
+		const before = instance.variableValues.channel_1_metadata_title
+		mock.failNext('GET', '/admin/channel1/set_params.cgi', 500, 'nope')
+		instance.calls.log.length = 0
+		await runAction(instance, 'setContentMetadata', { channel: '1', title: 'Rejected', author: '', prefix: '' })
+		assert.equal(instance.variableValues.channel_1_metadata_title, before)
+		assert.ok(instance.calls.log.some((l) => l.level === 'error'))
 	})
 })

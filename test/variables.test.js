@@ -72,6 +72,9 @@ function expectedVariableIds(state) {
 		ids.add(`channel_${cid}_name`)
 		ids.add(`channel_${cid}_active_layout`)
 		ids.add(`channel_${cid}_active_layout_id`)
+		ids.add(`channel_${cid}_metadata_title`)
+		ids.add(`channel_${cid}_metadata_author`)
+		ids.add(`channel_${cid}_metadata_rec_prefix`)
 		ids.add(`channel_${cid}_publishers_state_word`)
 		for (const pid of Object.keys(channel.publishers || {})) {
 			for (const suffix of ['name', 'type', 'state', 'state_word', 'error']) {
@@ -106,7 +109,6 @@ const LEGACY_IDS = [
 	'channel_1_bitrate',
 	'channel_1_publishers_count',
 	'channel_1_streaming_count',
-	'channel_1_metadata_title',
 	'stream_1_0_bitrate',
 	'stream_1_0_duration',
 	'stream_1_0_configured',

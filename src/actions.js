@@ -438,6 +438,57 @@ module.exports = {
 		}
 
 		// ------------------------------------------------------------------
+		// Content metadata (legacy admin CGI; ids kept from 2.x so existing buttons keep working)
+		// ------------------------------------------------------------------
+
+		actions['getContentMetadata'] = {
+			name: 'Get Content Metadata',
+			description: "Read a channel's title, author and filename prefix into its metadata variables.",
+			options: [
+				{
+					type: 'dropdown',
+					id: 'channel',
+					label: 'Channel',
+					choices: this.choicesChannel(),
+					default: this.firstId(this.choicesChannel()),
+				},
+			],
+			callback: wrap('Get Content Metadata', async (action) => {
+				const cid = parseChannel('Get Content Metadata', action.options.channel)
+				if (!cid) return
+				await this.fetchMetadata(cid)
+			}),
+		}
+
+		actions['setContentMetadata'] = {
+			name: 'Set Content Metadata',
+			description: "Set a channel's title, author and filename prefix.",
+			options: [
+				{
+					type: 'dropdown',
+					id: 'channel',
+					label: 'Channel',
+					choices: this.choicesChannel(),
+					default: this.firstId(this.choicesChannel()),
+				},
+				{ id: 'title', type: 'textinput', label: 'Title', default: '', useVariables: true },
+				{ id: 'author', type: 'textinput', label: 'Author', default: '', useVariables: true },
+				{ id: 'prefix', type: 'textinput', label: 'Filename Prefix', default: '', useVariables: true },
+			],
+			callback: wrap('Set Content Metadata', async (action) => {
+				const cid = parseChannel('Set Content Metadata', action.options.channel)
+				if (!cid) return
+				const values = {
+					title: await parse(action.options.title),
+					author: await parse(action.options.author),
+					rec_prefix: await parse(action.options.prefix),
+				}
+				await this.setMetadata(cid, values)
+				this.log('debug', `Metadata set on channel ${cid}`)
+			}),
+		}
+
+		// ------------------------------------------------------------------
 		// Output source
 		// ------------------------------------------------------------------
 

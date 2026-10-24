@@ -50,6 +50,9 @@ production connection.
 
 ### Changed
 
+- Actions `getContentMetadata` and `setContentMetadata` and the variables `channel_CID_metadata_title`/
+  `_author`/`_rec_prefix` are kept unchanged, so existing buttons and button text keep working. A set that
+  the encoder rejects is now reported and no longer updates the variables.
 - Action ids follow the Stream Deck plugin; the upgrade script rewrites existing buttons in place:
   `channelChangeLayout` → `layout`, `controlStreaming` → `stream`, `recorderRecording` → `recorder` (a Start or
   Stop button becomes the Start / Stop toggle), `insertMarker` → `bookmark`,
@@ -70,10 +73,10 @@ production connection.
 
 ### Removed
 
-- Actions `getLayoutData`, `setLayoutData`, `getContentMetadata` and `setContentMetadata` (no Stream Deck
-  counterpart). A button that still holds one keeps its old definition and is named in the connection log.
-- Variables `channel_CID_resolution`/`_fps`/`_bitrate`, `channel_CID_metadata_title`/`_author`/
-  `_rec_prefix`, `recorder_RID_active`, `stream_CID_PID_bitrate`, `system_status_date`, `identity_location`
+- Actions `getLayoutData` and `setLayoutData` (no Stream Deck counterpart; the layouts and their data are
+  covered by the Layout action, the layout presets and the layout variables). A button that still holds one
+  keeps its old definition and is named in the connection log.
+- Variables `channel_CID_resolution`/`_fps`/`_bitrate`, `recorder_RID_active`, `stream_CID_PID_bitrate`, `system_status_date`, `identity_location`
   and `identity_description`.
 - Preset categories `Channels`, `Publishers` and `Recorders` are now `Layouts`, `Streaming` and `Recording`.
 

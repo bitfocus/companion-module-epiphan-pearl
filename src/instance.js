@@ -89,6 +89,10 @@ class EpiphanEncoder extends InstanceBase {
 
 		/** device state, rebuilt on every poll */
 		this.state = emptyState()
+		/** content metadata per channel id: { [cid]: { title, author, rec_prefix } } (legacy admin CGI, not part of the poll) */
+		this.metadata = {}
+		/** channel ids whose metadata was already requested under the current configuration */
+		this.metadataRequested = new Set()
 		/** cached preview images: { [key]: { png64, fetchedAt } } */
 		this.previews = {}
 		/** preview subscriptions maintained by the preview feedbacks: Map<key, count> */
@@ -211,6 +215,8 @@ class EpiphanEncoder extends InstanceBase {
 
 		this.applyStatus(InstanceStatus.Connecting)
 		this.state = emptyState()
+		this.metadata = {}
+		this.metadataRequested.clear()
 		this.previews = {}
 		this.previewFailedKeys.clear()
 		this.pollCounter = 0

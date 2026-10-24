@@ -305,6 +305,10 @@ function buildVariables(self) {
 		const activeLayout = channel.active_layout
 		add(`channel_${cid}_active_layout`, `${chLabel} Active Layout`, activeLayout ? activeLayout.name : '')
 		add(`channel_${cid}_active_layout_id`, `${chLabel} Active Layout ID`, activeLayout ? activeLayout.id : '')
+		const md = self?.metadata?.[cid]
+		add(`channel_${cid}_metadata_title`, `${chLabel} Metadata Title`, md?.title)
+		add(`channel_${cid}_metadata_author`, `${chLabel} Metadata Author`, md?.author)
+		add(`channel_${cid}_metadata_rec_prefix`, `${chLabel} Metadata Filename Prefix`, md?.rec_prefix)
 
 		const publishers = channel.publishers || {}
 		for (const rawPid of Object.keys(publishers)) {

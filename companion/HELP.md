@@ -9,7 +9,7 @@ Control and monitor Epiphan encoders (Pearl-2, Pearl Mini, Pearl Nano, Pearl Nex
 - A device user with **admin** rights (the default `admin` account). Operator accounts cannot change settings.
 - Network access from the Companion host to the encoder's HTTP port (80 by default), or its HTTPS port (443 by default) when _Use HTTPS_ is ticked.
 
-If you are upgrading a connection created before this module's 3.0.0 release, an upgrade script converts every action and feedback that still has a Stream Deck counterpart to its new id automatically (your buttons keep working, though a few option layouts changed — see the changelog). Four actions had no Stream Deck counterpart at all (layout data and content metadata, get and set) and are gone; if any button still holds one, the connection log prints one warning per removed id the first time it starts, naming how many buttons carried it.
+If you are upgrading a connection created before this module's 3.0.0 release, an upgrade script converts every action and feedback that still has a Stream Deck counterpart to its new id automatically (your buttons keep working, though a few option layouts changed — see the changelog). Two actions had no Stream Deck counterpart at all (layout data, get and set) and are gone; the content metadata actions are kept as they were; if any button still holds one, the connection log prints one warning per removed id the first time it starts, naming how many buttons carried it.
 
 ### Connection settings
 
@@ -149,6 +149,20 @@ id, so no variables are added either.
 
 **Presets — Bookmarks**: one button per channel, text `Bookmark` / `Marker`; grey text while the channel's
 recorder is not recording (an inverted **Recorder state** feedback).
+
+#### Get / Set Content Metadata
+
+Read or write a channel's title, author and filename prefix (kept from earlier versions; ids unchanged).
+The values are read once per channel at start-up, and again by **Get Content Metadata**.
+
+| Option              | Values                             | Default       |
+| ------------------- | ---------------------------------- | ------------- |
+| **Channel**         | the encoder's channels             | first channel |
+| **Title**           | text, accepts variables (Set only) | empty         |
+| **Author**          | text, accepts variables (Set only) | empty         |
+| **Filename Prefix** | text, accepts variables (Set only) | empty         |
+
+**Variables**: `channel_CID_metadata_title`, `_metadata_author`, `_metadata_rec_prefix`.
 
 #### Preview
 
@@ -489,7 +503,7 @@ any Companion button.
   web UI or another controller.
 - **Not exposed on purpose.** Renaming channels/publishers, muting or phantom-powering inputs, editing
   RTMP/SRT destinations, creating publishers or network inputs, ad-hoc CMS sessions, network
-  connectivity/speed test and content metadata have no Stream Deck counterpart and are not offered by this
+  connectivity/speed test and layout data have no Stream Deck counterpart and are not offered by this
   module (see Requirements above for what happens to a button that still has one from an older connection).
 - **Legacy firmware** (before 4.24.1, or with _Use API v2.0 (if available)_ unticked) only offers the
   actions and feedbacks marked above as not requiring it. Every action/feedback marked _requires API v2.0_

@@ -254,8 +254,10 @@ describe('convertToParityV300 (D13)', () => {
 		expectRemoved('a06', 'setLayoutData')
 		expectConverted('a07', 'power', { op: 'reboot', confirm: false })
 		expectConverted('a08', 'power', { op: 'shutdown', confirm: false })
-		expectRemoved('a09', 'getContentMetadata')
-		expectRemoved('a10', 'setContentMetadata')
+		// content metadata is kept under its 2.x ids, so these two buttons need no conversion and are not reported
+		assert.equal(byControl.a09.actionId, 'getContentMetadata')
+		assert.equal(byControl.a10.actionId, 'setContentMetadata')
+		assert.ok(!result.updatedActions.includes(byControl.a09) && !result.updatedActions.includes(byControl.a10))
 		expectConverted('a11', 'recorder', { recorderId: 'all', op: 'toggle' })
 		expectRemoved('a12', 'setChannelName')
 		expectRemoved('a13', 'setPublisherName')

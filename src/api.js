@@ -1,6 +1,7 @@
 const { InstanceStatus } = require('@companion-module/base')
 const { fetch, Agent } = require('undici')
 const { toQueryString, splitPair } = require('./utils')
+const variables = require('./variables')
 
 const DEFAULT_TIMEOUT = 5000
 /** changes of the device clock offset smaller than this (the Date header has 1 s resolution) are ignored */
@@ -282,6 +283,63 @@ module.exports = {
 			this.applyStatus(InstanceStatus.Ok)
 		}
 		return result
+	},
+
+	/**
+	 * Read a channel's content metadata (title, author, filename prefix) through the legacy admin CGI,
+	 * store it in this.metadata and refresh the variables. Never throws.
+	 *
+	 * @param {string|number} channelId
+	 */
+	async fetchMetadata(channelId) {
+		const cid = String(channelId)
+		if (!/^[a-zA-Z0-9_-]+$/.test(cid)) {
+			this.log('error', `Invalid channel id: ${cid}`)
+			return
+		}
+		this.metadataRequested.add(cid)
+		const generation = this.configGeneration
+		try {
+			const text = await this.request('GET', `/admin/channel${cid}/get_params.cgi?title&author&rec_prefix`, {
+				base: 'raw',
+				text: true,
+				optional: true,
+			})
+			if (generation !== this.configGeneration) return
+			if (text === null) {
+				this.log('debug', `Channel ${cid} has no content metadata on this device`)
+				return
+			}
+			const parsed = {}
+			for (const line of String(text).split('\n')) {
+				const eq = line.indexOf('=')
+				if (eq < 1) continue
+				parsed[line.slice(0, eq).trim()] = line.slice(eq + 1).trim()
+			}
+			this.metadata[cid] = { ...this.metadata[cid], ...parsed }
+			variables.updateVariables(this)
+		} catch (e) {
+			this.log('error', `Failed to get metadata for channel ${cid}: ${e?.message || e}`)
+		}
+	},
+
+	/**
+	 * Write a channel's content metadata through the legacy admin CGI. Throws when the device rejects it,
+	 * in which case the stored values (and variables) stay as they were.
+	 *
+	 * @param {string|number} channelId
+	 * @param {{title: string, author: string, rec_prefix: string}} values
+	 */
+	async setMetadata(channelId, values) {
+		const cid = String(channelId)
+		if (!/^[a-zA-Z0-9_-]+$/.test(cid)) throw new Error(`Invalid channel id: ${cid}`)
+		await this.request('GET', `/admin/channel${cid}/set_params.cgi`, {
+			base: 'raw',
+			text: true,
+			query: { title: values.title, author: values.author, rec_prefix: values.rec_prefix },
+		})
+		this.metadata[cid] = { ...this.metadata[cid], ...values }
+		variables.updateVariables(this)
 	},
 
 	/**

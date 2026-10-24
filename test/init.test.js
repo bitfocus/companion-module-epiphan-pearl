@@ -130,7 +130,7 @@ describe('init against a v2.0 device', () => {
 		const feedbacks = instance.definitions.feedbacks
 		const presets = instance.definitions.presets
 
-		assert.equal(Object.keys(actions).length, 10)
+		assert.equal(Object.keys(actions).length, 12)
 		assert.equal(Object.keys(feedbacks).length, 15)
 		for (const [id, def] of Object.entries(actions)) {
 			assert.equal(typeof def.callback, 'function', `action ${id} callback`)
