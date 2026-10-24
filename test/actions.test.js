@@ -176,8 +176,24 @@ describe('actions against a v2.0 device', () => {
 			assert.match(logged(instance, 'info').join('\n'), /nothing to pause or resume/)
 		})
 
-		it('start, stop, pause and resume are no longer actions of their own', async () => {
-			for (const op of ['start', 'stop', 'pause', 'resume']) {
+		it('Start and Stop send exactly that command, whatever state the recorder is in', async () => {
+			mock.state.recorders['1'].status = { state: 'started', duration: 30 }
+			instance.state.recorders['1'].status = { state: 'started', duration: 30 }
+			await runAction(instance, 'recorder', { recorderId: '1', op: 'start' })
+			one(mock, 'POST', `${V2}/recorders/1/control/start`)
+
+			mock.requests.length = 0
+			instance.state.recorders['1'].status = { state: 'stopped' }
+			await runAction(instance, 'recorder', { recorderId: '1', op: 'stop' })
+			one(mock, 'POST', `${V2}/recorders/1/control/stop`)
+
+			mock.requests.length = 0
+			await runAction(instance, 'recorder', { recorderId: 'all', op: 'stop' })
+			one(mock, 'POST', `${V2}/recorders/control/stop`)
+		})
+
+		it('pause and resume are not actions of their own', async () => {
+			for (const op of ['pause', 'resume']) {
 				instance.calls.log.length = 0
 				await runAction(instance, 'recorder', { recorderId: '1', op })
 				assert.match(logged(instance, 'error').join('\n'), new RegExp(`unknown action ${op}`))

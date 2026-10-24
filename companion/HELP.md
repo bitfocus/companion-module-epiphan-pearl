@@ -40,13 +40,14 @@ Event) are expanded with Companion's variable parser before being sent.
 
 #### Recorder
 
-Start / Stop starts a stopped recorder and stops a running or paused one; Pause / Resume pauses a running
+Start / Stop starts a stopped recorder and stops a running or paused one; Start and Stop send that one
+command whatever the recorder is doing (what the 2.x Control recording action did); Pause / Resume pauses a running
 recorder and resumes a paused one; "All recorders" controls every recorder on the device.
 
-| Option       | Values                                 | Default       |
-| ------------ | -------------------------------------- | ------------- |
-| **Recorder** | "All recorders" or a specific recorder | All recorders |
-| **Action**   | Start / Stop, Pause / Resume, Reset    | Start / Stop  |
+| Option       | Values                                           | Default       |
+| ------------ | ------------------------------------------------ | ------------- |
+| **Recorder** | "All recorders" or a specific recorder           | All recorders |
+| **Action**   | Start / Stop, Start, Stop, Pause / Resume, Reset | Start / Stop  |
 
 Pause / Resume and "All recorders" require API v2.0. Start / Stop and Reset on a single recorder work on
 legacy firmware too — Reset automatically falls back to the legacy endpoint if the v2.0 one is unavailable.

@@ -132,7 +132,7 @@ function recordRemovedLegacy(kind, id, controlId) {
 }
 
 /** legacy `recorderRecording` / `recorderControlAll` numeric-or-string op -> the new `recorder.op` */
-const RECORDER_OP_MAP = { 0: 'toggle', 1: 'toggle', 2: 'reset', 3: 'toggle', 99: 'toggle' }
+const RECORDER_OP_MAP = { 0: 'stop', 1: 'start', 2: 'reset', 3: 'toggle', 99: 'toggle' }
 /** legacy `controlStreaming` numeric op -> the new `stream.op` */
 const STREAM_OP_MAP = { 0: 'stop', 1: 'start', 3: 'toggle', 99: 'toggle' }
 /** legacy `storageState` value -> the new `storage_level.level` */
@@ -250,7 +250,10 @@ function convertToParityV300(context, props) {
 				// numeric startStopAction of recorderRecording, so it is copied through rather than
 				// looked up in RECORDER_OP_MAP
 				action.actionId = 'recorder'
-				action.options = { recorderId: 'all', op: 'toggle' }
+				action.options = {
+					recorderId: 'all',
+					op: opt.action === 'start' || opt.action === 'stop' ? opt.action : 'toggle',
+				}
 				result.updatedActions.push(action)
 				break
 			}

@@ -24,7 +24,7 @@ production connection.
   `event` (pause / resume, stop or extend the ongoing CMS event, start the upcoming one, or control a specific
   event by id) and `audio` (nudge the gain of an analog input or the delay of any audio input by a step; on a
   Stream Deck+ the dial does the same). `recorder` offers Start / Stop and Pause / Resume, each a toggle that
-  reads the recorder's state, and can address all recorders at once; `stream` all publishers of a channel.
+  reads the recorder's state, plus plain Start and Stop, and can address all recorders at once; `stream` all publishers of a channel.
 - **Confirm with a second press** on Apply Preset, Reboot / Shutdown and Storage eject, on by default: the
   first press arms the button and shows `Press again`, the same button pressed again within 3 seconds sends
   the command.
@@ -54,8 +54,8 @@ production connection.
   `_author`/`_rec_prefix` are kept unchanged, so existing buttons and button text keep working. A set that
   the encoder rejects is now reported and no longer updates the variables.
 - Action ids follow the Stream Deck plugin; the upgrade script rewrites existing buttons in place:
-  `channelChangeLayout` → `layout`, `controlStreaming` → `stream`, `recorderRecording` → `recorder` (a Start or
-  Stop button becomes the Start / Stop toggle), `insertMarker` → `bookmark`,
+  `channelChangeLayout` → `layout`, `controlStreaming` → `stream`, `recorderRecording` → `recorder` (Start, Stop,
+  Reset and Toggle keep their meaning), `insertMarker` → `bookmark`,
   `systemReboot` and `systemShutdown` → `power`. Feedbacks: `channelLayout` → `layout_active`,
   `streamingState` → `stream_state`, `recorderRecording` → `recorder_state`.
 - Recording and Streaming toggles stop a recorder or stream that is in an error state instead of sending
@@ -83,8 +83,8 @@ production connection.
 ### Upgrade notes
 
 Opening an existing connection runs the upgrade script `convertToParityV300` once: actions and feedbacks are
-rewritten to their new ids and options in place (a 2.2.0 Start or Stop recorder button becomes the Start / Stop
-toggle, which reads the recorder's state), `pollfreq` becomes `poll_interval` in milliseconds, every
+rewritten to their new ids and options in place (a 2.2.0 recorder button keeps its Start, Stop, Reset or Toggle
+command), `pollfreq` becomes `poll_interval` in milliseconds, every
 preset category is enabled, and the confirm option is left off on buttons that existed before, so they keep
 firing on the first press. Removed actions cannot be converted and are left as they were; the connection log
 names each one still in use. Button text that uses a renamed or removed variable needs updating by hand.

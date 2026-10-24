@@ -197,6 +197,9 @@ describe('convertToParityV300 (D13)', () => {
 			action('channelChangeLayout', { channelIdlayoutId: '1-2' }, 'a01'),
 			action('controlStreaming', { channelIdpublisherId: '1-0', startStopAction: 1 }, 'a02'),
 			action('recorderRecording', { recorderId: '2', startStopAction: 2 }, 'a03'),
+			action('recorderRecording', { recorderId: '2', startStopAction: 1 }, 'a02b'),
+			action('recorderRecording', { recorderId: '2', startStopAction: 0 }, 'a02c'),
+			action('recorderRecording', { recorderId: '2', startStopAction: 3 }, 'a02d'),
 			action('insertMarker', { channel: '3', markertext: '' }, 'a04'),
 			action('getLayoutData', { channelIdlayoutId: '1-2', destination: 'x' }, 'a05'),
 			action('setLayoutData', { channelIdlayoutId: '1-2', source: 'x' }, 'a06'),
@@ -249,6 +252,9 @@ describe('convertToParityV300 (D13)', () => {
 		expectConverted('a01', 'layout', { channelId: '1', layoutId: '1-2' })
 		expectConverted('a02', 'stream', { channelId: '1', publisherId: '1-0', op: 'start' })
 		expectConverted('a03', 'recorder', { recorderId: '2', op: 'reset' })
+		expectConverted('a02b', 'recorder', { recorderId: '2', op: 'start' })
+		expectConverted('a02c', 'recorder', { recorderId: '2', op: 'stop' })
+		expectConverted('a02d', 'recorder', { recorderId: '2', op: 'toggle' })
 		expectConverted('a04', 'bookmark', { channelId: '3', text: 'Marker', appendTime: false })
 		expectRemoved('a05', 'getLayoutData')
 		expectRemoved('a06', 'setLayoutData')
@@ -258,7 +264,7 @@ describe('convertToParityV300 (D13)', () => {
 		assert.equal(byControl.a09.actionId, 'getContentMetadata')
 		assert.equal(byControl.a10.actionId, 'setContentMetadata')
 		assert.ok(!result.updatedActions.includes(byControl.a09) && !result.updatedActions.includes(byControl.a10))
-		expectConverted('a11', 'recorder', { recorderId: 'all', op: 'toggle' })
+		expectConverted('a11', 'recorder', { recorderId: 'all', op: 'stop' })
 		expectRemoved('a12', 'setChannelName')
 		expectRemoved('a13', 'setPublisherName')
 		expectRemoved('a14', 'setPublisherEnabled')
@@ -287,18 +293,18 @@ describe('convertToParityV300 (D13)', () => {
 		expectRemoved('a36', 'refreshPoll')
 
 		// 14 legacy action ids convert (storageEject no longer has a target) + one extra eventControl fixture
-		// (a30b) added above to also cover the event==='custom' branch, so 15 fixtures end up in updatedActions
-		assert.equal(result.updatedActions.length, 15, 'exactly the 15 converted action instances were reported')
+		// (a30b) added above to also cover the event==='custom' branch, and the Start, Stop and Toggle recorder variants, so 18 fixtures end up in updatedActions
+		assert.equal(result.updatedActions.length, 18, 'exactly the 18 converted action instances were reported')
 	})
 
-	it('also handles the plain (non-custom) setOutputSource and non-numeric recorderControlAll values', () => {
+	it('also handles the plain (non-custom) setOutputSource and string recorderControlAll start/stop values', () => {
 		const actions = [
 			action('setOutputSource', { output: 'D1', source: 'multiview' }, 'b1'),
 			action('recorderControlAll', { action: 'start' }, 'b2'),
 		]
 		convertToParityV300(null, convertProps(actions, [], null))
 		assert.deepEqual(actions[0].options, { outputId: 'D1', source: 'multiview' })
-		assert.deepEqual(actions[1].options, { recorderId: 'all', op: 'toggle' })
+		assert.deepEqual(actions[1].options, { recorderId: 'all', op: 'start' })
 	})
 
 	it('converts every legacy feedback id of PARITY.md table 2.2 to its new id and options', () => {

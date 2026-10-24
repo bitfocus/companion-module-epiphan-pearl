@@ -20,6 +20,8 @@ const { readGain, gainPatch, readDelay, delayPatch } = require('./audio')
 
 const CHOICES_RECORDER_OPS = [
 	{ id: 'toggle', label: 'Start / Stop' },
+	{ id: 'start', label: 'Start' },
+	{ id: 'stop', label: 'Stop' },
 	{ id: 'pause_resume', label: 'Pause / Resume' },
 	{ id: 'reset', label: 'Reset' },
 ]
@@ -186,7 +188,7 @@ module.exports = {
 		actions['recorder'] = {
 			name: 'Recorder',
 			description:
-				'Start / Stop starts a stopped recorder and stops a running or paused one; Pause / Resume pauses a running recorder and resumes a paused one; "All recorders" controls every recorder on the device.',
+				'Start / Stop starts a stopped recorder and stops a running or paused one; Start and Stop always send that one command; Pause / Resume pauses a running recorder and resumes a paused one; "All recorders" controls every recorder on the device.',
 			options: [
 				{
 					type: 'dropdown',
