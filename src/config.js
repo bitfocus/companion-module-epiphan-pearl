@@ -25,6 +25,17 @@ function getConfigFields() {
 				'Controls an Epiphan encoder (Pearl-2, Pearl Mini, Pearl Nano, Pearl Nexus and newer models) over its REST API. ' +
 				'Firmware 4.24.1 or newer is required for the API v2.0 features (inputs, outputs, storage, single touch, events, presets, previews).',
 		},
+		// Encoders in the same network announce themselves as '_epiphan._tcp' (see bonjourQueries in
+		// companion/manifest.json). Companion lists them here by device name and always offers "Manual",
+		// which is what every connection created before this field existed uses.
+		{
+			type: 'bonjour-device',
+			id: 'bonjourHost',
+			label: 'Encoder',
+			width: 12,
+			tooltip:
+				'Encoders in the same network as Companion are found automatically. Select "Manual" to enter the address yourself, e.g. for an encoder in another network.',
+		},
 		{
 			type: 'textinput',
 			id: 'host',
@@ -32,6 +43,7 @@ function getConfigFields() {
 			width: 6,
 			default: '192.168.255.250',
 			regex: REGEX_IP_OR_HOSTNAME,
+			isVisible: (options) => !options.bonjourHost,
 		},
 		{
 			type: 'textinput',
@@ -40,6 +52,7 @@ function getConfigFields() {
 			width: 6,
 			default: '80',
 			regex: Regex.PORT,
+			isVisible: (options) => !options.bonjourHost,
 		},
 		{
 			type: 'textinput',

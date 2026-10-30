@@ -151,6 +151,11 @@ module.exports = {
 		this.pollCounter = (this.pollCounter || 0) + 1
 		const firstPoll = this.pollCounter === 1
 		const refreshSystemInfo = firstPoll || (this.pollCounter - 1) % STRUCTURE_REFRESH_EVERY === 0
+		// the device was not reachable when the API version was asked for, so it is asked again until it answers
+		if (!this.apiDetected && !firstPoll) {
+			await this.determineApiBase()
+			if (gen !== this.configGeneration) return
+		}
 		const isV2 = this.isV2
 		const prev = this.state || emptyState()
 		const state = emptyState()
@@ -160,9 +165,9 @@ module.exports = {
 		const coreResults = await Promise.allSettled([
 			isV2
 				? req('GET', '/channels', {
-						query: { publishers: true, 'publishers-status': true, active_layout: true },
+						query: { publishers: true, 'publishers-status': true, active_layout: true, encoders: true },
 					})
-				: req('GET', '/channels', { query: { publishers: 'yes' } }),
+				: req('GET', '/channels', { query: { publishers: 'yes', encoders: 'yes' } }),
 			req('GET', '/recorders'),
 			req('GET', '/recorders/status'),
 		])
@@ -198,6 +203,14 @@ module.exports = {
 		// ---- 2. second round: legacy layouts (+ v1 publishers), and v2-only collections
 		const round2 = []
 		const cids = Object.keys(state.channels)
+		// Only the channel status of the legacy API reports the current encoder values (bitrate, fps) and the
+		// input signal, also on firmware with API v2.0; v2.0 only reports the encoder settings, where the
+		// bitrate is 0 when it is set to automatic. Older firmware may not have the request at all.
+		round2.push(
+			req('GET', '/channels/status', { base: 'v1', query: { encoders: 'yes' }, optional: true }).then(
+				(statuses) => this.applyChannelStatuses(state, statuses),
+			),
+		)
 		for (const cid of cids) {
 			round2.push(
 				req('GET', `/channels/${cid}/layouts`, { base: 'v1' }).then((layouts) =>
@@ -470,6 +483,8 @@ module.exports = {
 				layouts: {},
 				publishers: {},
 				active_layout: undefined,
+				encoders: Array.isArray(channel.encoders) ? channel.encoders.map((e) => ({ ...e })) : [],
+				status: undefined,
 			}
 			if (
 				isV2 &&
@@ -491,6 +506,29 @@ module.exports = {
 				}
 			}
 			state.channels[cid] = entry
+		}
+	},
+
+	/**
+	 * INTERNAL: add the legacy channel status (signal, total bitrate) and the current encoder status
+	 * (resolution, fps, bitrate) to the channels of the state
+	 */
+	applyChannelStatuses(state, statuses) {
+		for (const entry of Array.isArray(statuses) ? statuses : []) {
+			const channel = entry && state.channels[String(entry.id)]
+			if (!channel) continue
+			if (entry.status && typeof entry.status === 'object' && !Array.isArray(entry.status)) {
+				channel.status = entry.status
+			}
+			if (!Array.isArray(entry.encoders)) continue
+			const encoders = [...channel.encoders]
+			for (const encoder of entry.encoders) {
+				if (!encoder) continue
+				const index = encoders.findIndex((e) => String(e.id) === String(encoder.id))
+				if (index >= 0) encoders[index] = { ...encoders[index], status: encoder.status }
+				else encoders.push({ ...encoder })
+			}
+			channel.encoders = encoders
 		}
 	},
 

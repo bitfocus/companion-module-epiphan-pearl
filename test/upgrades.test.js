@@ -256,8 +256,12 @@ describe('convertToParityV300 (D13)', () => {
 		expectConverted('a02c', 'recorder', { recorderId: '2', op: 'stop' })
 		expectConverted('a02d', 'recorder', { recorderId: '2', op: 'toggle' })
 		expectConverted('a04', 'bookmark', { channelId: '3', text: 'Marker', appendTime: false })
-		expectRemoved('a05', 'getLayoutData')
-		expectRemoved('a06', 'setLayoutData')
+		// layout data is kept under its 2.x ids and options, so these two buttons need no conversion and are not reported
+		assert.equal(byControl.a05.actionId, 'getLayoutData')
+		assert.deepEqual(byControl.a05.options, { channelIdlayoutId: '1-2', destination: 'x' })
+		assert.equal(byControl.a06.actionId, 'setLayoutData')
+		assert.deepEqual(byControl.a06.options, { channelIdlayoutId: '1-2', source: 'x' })
+		assert.ok(!result.updatedActions.includes(byControl.a05) && !result.updatedActions.includes(byControl.a06))
 		expectConverted('a07', 'power', { op: 'reboot', confirm: false })
 		expectConverted('a08', 'power', { op: 'shutdown', confirm: false })
 		// content metadata is kept under its 2.x ids, so these two buttons need no conversion and are not reported
@@ -446,16 +450,16 @@ describe('REMOVED_LEGACY reporting (D13)', () => {
 		const actions = [
 			action('refreshPoll', {}, 'c1'),
 			action('refreshPoll', {}, 'c2'),
-			action('getLayoutData', {}, 'c3'),
+			action('runSpeedTest', {}, 'c3'),
 		]
 		const feedbacks = [feedback('anyStreaming', {}, 'c4')]
 		convertToParityV300(null, convertProps(actions, feedbacks, null))
 		assert.deepEqual(
 			upgrades.REMOVED_LEGACY.map((r) => [r.kind, r.id, r.controlId]).sort(),
 			[
-				['action', 'getLayoutData', 'c3'],
 				['action', 'refreshPoll', 'c1'],
 				['action', 'refreshPoll', 'c2'],
+				['action', 'runSpeedTest', 'c3'],
 				['feedback', 'anyStreaming', 'c4'],
 			].sort(),
 		)
@@ -468,12 +472,12 @@ describe('REMOVED_LEGACY reporting (D13)', () => {
 			try {
 				const warnings = instance.calls.log.filter((l) => l.level === 'warn').map((l) => l.message)
 				const refreshPollLine = warnings.find((m) => m.includes("'refreshPoll'"))
-				const getLayoutDataLine = warnings.find((m) => m.includes("'getLayoutData'"))
+				const speedTestLine = warnings.find((m) => m.includes("'runSpeedTest'"))
 				const anyStreamingLine = warnings.find((m) => m.includes("'anyStreaming'"))
 				assert.ok(refreshPollLine, 'refreshPoll was reported')
 				assert.match(refreshPollLine, /\(2 buttons\)/)
-				assert.ok(getLayoutDataLine, 'getLayoutData was reported')
-				assert.match(getLayoutDataLine, /\(1 button\)/)
+				assert.ok(speedTestLine, 'runSpeedTest was reported')
+				assert.match(speedTestLine, /\(1 button\)/)
 				assert.ok(anyStreamingLine, 'anyStreaming was reported')
 				assert.equal(upgrades.REMOVED_LEGACY.length, 0, 'the array is emptied after being reported')
 			} finally {

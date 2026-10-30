@@ -443,6 +443,111 @@ module.exports = {
 		// Content metadata (legacy admin CGI; ids kept from 2.x so existing buttons keep working)
 		// ------------------------------------------------------------------
 
+		// ------------------------------------------------------------------
+		// Layout data (kept from 2.2.0 under their original ids and options, so existing buttons keep working)
+		// ------------------------------------------------------------------
+
+		/** split a `${cid}-${lid}` layout choice and check that both exist; returns null (after logging) otherwise */
+		const parseLayout = (label, value) => {
+			const text = typeof value === 'string' ? value : ''
+			const separator = text.indexOf('-')
+			if (separator < 1) {
+				fail(label, 'no channel and layout selected, please review your button config')
+				return null
+			}
+			const cid = text.slice(0, separator)
+			const lid = text.slice(separator + 1)
+			const channel = this.state.channels[cid]
+			if (!channel) {
+				fail(label, `unknown channel ${cid}`)
+				return null
+			}
+			if (!channel.layouts[lid]) {
+				fail(label, `unknown layout ${lid} on channel ${cid}`)
+				return null
+			}
+			return { cid, lid, channel, layout: channel.layouts[lid] }
+		}
+
+		actions['getLayoutData'] = {
+			name: 'Get layout data',
+			description: "Read a layout's settings as JSON and store them in a custom variable.",
+			options: [
+				{
+					type: 'dropdown',
+					id: 'channelIdlayoutId',
+					label: 'Layout to get',
+					choices: this.choicesLayouts(),
+					default: this.firstId(this.choicesLayouts()),
+				},
+				{
+					id: 'destination',
+					type: 'custom-variable',
+					label: 'Destination Variable',
+				},
+			],
+			callback: wrap('Get layout data', async (action) => {
+				const target = parseLayout('Get layout data', action.options.channelIdlayoutId)
+				if (!target) return
+				// API v2.0 has no layout settings, so this always uses the v1 API
+				const data = await this.request(
+					'GET',
+					`/channels/${enc(target.cid)}/layouts/${enc(target.lid)}/settings`,
+					{
+						base: 'v1',
+					},
+				)
+				const layoutData = JSON.stringify(data)
+				this.log(
+					'debug',
+					`Layout data retrieved for channel ${target.channel.name}, layout ${target.layout.name}:\n${layoutData}`,
+				)
+				if (action.options.destination) {
+					this.setCustomVariableValue(action.options.destination, layoutData)
+				}
+			}),
+		}
+
+		actions['setLayoutData'] = {
+			name: 'Set layout data',
+			description: "Write a layout's settings from a JSON text, e.g. one read with 'Get layout data'.",
+			options: [
+				{
+					type: 'dropdown',
+					id: 'channelIdlayoutId',
+					label: 'Layout to set',
+					choices: this.choicesLayouts(),
+					default: this.firstId(this.choicesLayouts()),
+				},
+				{
+					id: 'source',
+					type: 'textinput',
+					label: 'Layout Data',
+					useVariables: true,
+					default: '{}',
+					tooltip:
+						'JSON text describing an encoder layout. A valid text can be retrieved with the Get layout data action. Variables are allowed in this option.',
+				},
+			],
+			callback: wrap('Set layout data', async (action) => {
+				const target = parseLayout('Set layout data', action.options.channelIdlayoutId)
+				if (!target) return
+				let body
+				try {
+					body = JSON.parse(await parse(action.options.source))
+				} catch {
+					fail('Set layout data', 'the layout data is no valid JSON')
+					return
+				}
+				// API v2.0 has no layout settings, so this always uses the v1 API
+				await this.request('PUT', `/channels/${enc(target.cid)}/layouts/${enc(target.lid)}/settings`, {
+					base: 'v1',
+					body,
+				})
+				this.schedulePollSoon()
+			}),
+		}
+
 		actions['getContentMetadata'] = {
 			name: 'Get Content Metadata',
 			description:

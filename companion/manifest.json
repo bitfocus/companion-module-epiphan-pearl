@@ -34,5 +34,11 @@
 	},
 	"manufacturer": "Epiphan",
 	"products": ["Pearl", "Pearl-2", "Pearl Mini", "Pearl Nano", "Pearl Nexus"],
-	"keywords": ["Stream", "Encoder", "Encode", "Recording", "Epiphan", "Pearl", "SRT", "RTMP", "NDI"]
+	"keywords": ["Stream", "Encoder", "Encode", "Recording", "Epiphan", "Pearl", "SRT", "RTMP", "NDI"],
+	"bonjourQueries": {
+		"bonjourHost": {
+			"type": "epiphan",
+			"protocol": "tcp"
+		}
+	}
 }

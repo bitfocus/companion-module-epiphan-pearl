@@ -103,6 +103,31 @@ function publisherWord(state) {
 	}
 }
 
+const GB = 1e9 // decimal gigabytes, like the size printed on the drive
+
+/** hh:mm for a duration in seconds (hours are not wrapped at 24) */
+function hhmm(seconds) {
+	const total = Math.max(0, Math.floor(seconds))
+	return `${String(Math.floor(total / 3600)).padStart(2, '0')}:${String(Math.floor((total % 3600) / 60)).padStart(2, '0')}`
+}
+
+/**
+ * Sum of the current bitrate (kbit/s) of all channels which are being recorded right now.
+ * Multi-source recorders are not included, it is not known which channels they record.
+ *
+ * @param {object} state
+ * @returns {number}
+ */
+function recordingBitrate(state) {
+	let kbps = 0
+	for (const [rid, recorder] of Object.entries(state.recorders || {})) {
+		if (recorder?.status?.state !== 'started' || recorder.multisource) continue
+		// single-source recorders have the id of the channel they record
+		kbps += num(state.channels?.[rid]?.status?.bitrate) ?? 0
+	}
+	return kbps
+}
+
 /**
  * Aggregate status of a list of {status:{state}} entities: the first status of `order` found among
  * them, or `fallback` when none matches (including an empty list). Mirrors the recorder_state /
@@ -206,6 +231,14 @@ function buildVariables(self) {
 	if (cpuTemp !== undefined) statusParts.push(`${Math.round(cpuTemp)}°C`)
 	if (uptimeSeconds !== undefined && uptimeSeconds > 0) statusParts.push(`up ${formatUptime(uptimeSeconds)}`)
 	add('system_status_text', 'System Status', statusParts.join(' · '))
+	// the device reports its own thresholds, so the warnings match its admin panel (and the system feedback)
+	const cpuTempThreshold = num(sys.cputemp_threshold)
+	add('cpu_load_high', 'CPU Load High', sys.cpuload_high === true)
+	add(
+		'cpu_temp_high',
+		'CPU Temperature High',
+		cpuTemp !== undefined && cpuTempThreshold !== undefined ? cpuTemp >= cpuTempThreshold : false,
+	)
 
 	const afuList = Array.isArray(state.afu) ? state.afu : []
 	const afuActive = pickAfu(afuList)
@@ -226,6 +259,7 @@ function buildVariables(self) {
 
 	// ---------------------------------------------------------------- storages
 	const storages = state.storages || {}
+	const recordingKbps = recordingBitrate(state)
 	for (const rawStid of Object.keys(storages)) {
 		const storage = storages[rawStid] || {}
 		const stid = safeId(rawStid)
@@ -242,6 +276,24 @@ function buildVariables(self) {
 		add(`storage_${stid}_free`, `Storage ${rawStid} Free`, free === undefined ? '' : bytesToHuman(free))
 		add(`storage_${stid}_total`, `Storage ${rawStid} Total`, total === undefined ? '' : bytesToHuman(total))
 		add(`storage_${stid}_used_pct`, `Storage ${rawStid} Used (%)`, usedPct === undefined ? '' : round1(usedPct))
+		// numbers for expressions, decimal gigabytes like the size printed on the drive
+		const hasSize = total !== undefined && total > 0 && free !== undefined
+		add(`storage_${stid}_total_gb`, `Storage ${rawStid} Total (GB)`, hasSize ? round1(total / GB) : '')
+		add(`storage_${stid}_used_gb`, `Storage ${rawStid} Used (GB)`, hasSize ? round1((total - free) / GB) : '')
+		add(`storage_${stid}_free_gb`, `Storage ${rawStid} Free (GB)`, hasSize ? round1(free / GB) : '')
+		add(`storage_${stid}_free_pct`, `Storage ${rawStid} Free (%)`, hasSize ? round1((free / total) * 100) : '')
+		// estimated from the bitrate of the running recordings, empty while nothing is recorded
+		const remainingSeconds = hasSize && recordingKbps > 0 ? (free * 8) / (recordingKbps * 1000) : undefined
+		add(
+			`storage_${stid}_remaining_time`,
+			`Storage ${rawStid} Remaining Recording Time (hh:mm)`,
+			remainingSeconds === undefined ? '' : hhmm(remainingSeconds),
+		)
+		add(
+			`storage_${stid}_remaining_minutes`,
+			`Storage ${rawStid} Remaining Recording Time (minutes)`,
+			remainingSeconds === undefined ? '' : Math.floor(remainingSeconds / 60),
+		)
 
 		let text
 		let levelWord = ''
@@ -313,6 +365,17 @@ function buildVariables(self) {
 		add(`channel_${cid}_metadata_description`, `${chLabel} Metadata Description`, md?.description)
 		add(`channel_${cid}_metadata_rec_prefix`, `${chLabel} Metadata Filename Prefix`, md?.rec_prefix)
 
+		// the legacy channel status reports the input signal and the current total bitrate (video + audio)
+		if (channel.status) {
+			const noSignal = channel.status.nosignal
+			add(
+				`channel_${cid}_signal`,
+				`${chLabel} Input Signal`,
+				noSignal === undefined ? '' : noSignal ? 'No signal' : 'OK',
+			)
+			add(`channel_${cid}_total_bitrate`, `${chLabel} Total Bitrate (kbit/s)`, num(channel.status.bitrate))
+		}
+
 		const publishers = channel.publishers || {}
 		for (const rawPid of Object.keys(publishers)) {
 			const pub = publishers[rawPid] || {}
@@ -325,6 +388,8 @@ function buildVariables(self) {
 			add(`channel_${cid}_publisher_${pid}_state`, `${pubLabel} State`, status.state)
 			add(`channel_${cid}_publisher_${pid}_state_word`, `${pubLabel} State Word`, publisherWord(status.state))
 			add(`channel_${cid}_publisher_${pid}_error`, `${pubLabel} Error`, status.description)
+			add(`channel_${cid}_publisher_${pid}_duration`, `${pubLabel} Duration (HH:MM:SS)`, hms(status.duration))
+			add(`channel_${cid}_publisher_${pid}_reconnections`, `${pubLabel} Reconnections`, num(status.reconnections))
 		}
 		add(
 			`channel_${cid}_publishers_state_word`,
@@ -455,7 +520,76 @@ function buildVariables(self) {
 	add('confirm_hint', 'Confirm Hint', pending && Date.now() < pending.until ? CONFIRM_HINT : '')
 	add('last_error', 'Last Error', state.lastError)
 
+	addCompatibilityVariables(state, add)
+
 	return { definitions, values }
+}
+
+/**
+ * The variables of module 2.2.x under their original ids, so button text written for 2.2.x keeps working.
+ * They are defined under the same conditions as before (only when the device reported the data). New
+ * buttons should use the ids documented in the help: stream_C_P_name/_state are channel_C_publisher_P_name/_state,
+ * system_status_* are cpu_load, cpu_temp, uptime_seconds, firmware_version is firmware and identity_name
+ * is device_name.
+ *
+ * @param {object} state
+ * @param {(variableId: string, name: string, value: *) => void} add
+ */
+function addCompatibilityVariables(state, add) {
+	for (const rawCid of Object.keys(state.channels || {})) {
+		const channel = state.channels[rawCid] || {}
+		const cid = safeId(rawCid)
+
+		// API v2.0 marks the video encoder with type 'video', the v1 API has no type, there the video encoder
+		// is the one reporting a resolution
+		const encoders = Array.isArray(channel.encoders) ? channel.encoders : []
+		const videoEncoder =
+			encoders.find((e) => e?.type === 'video') ??
+			encoders.find((e) => e && e.type === undefined && (e.status?.resolution || e.resolution))
+		if (videoEncoder) {
+			const encStatus = videoEncoder.status ?? {}
+			add(
+				`channel_${cid}_resolution`,
+				`Channel ${rawCid} Resolution`,
+				encStatus.resolution ?? videoEncoder.resolution,
+			)
+			// the current values of the channel status come first, the encoder settings are only the fallback
+			add(
+				`channel_${cid}_fps`,
+				`Channel ${rawCid} FPS`,
+				encStatus.fps ?? encStatus.framerate ?? videoEncoder.framerate,
+			)
+			add(`channel_${cid}_bitrate`, `Channel ${rawCid} Bitrate`, encStatus.bitrate ?? videoEncoder.bitrate)
+		}
+
+		for (const rawPid of Object.keys(channel.publishers || {})) {
+			const pub = channel.publishers[rawPid] || {}
+			const pid = safeId(rawPid)
+			add(`stream_${cid}_${pid}_name`, `Stream ${rawCid}-${rawPid} Name`, pub.name)
+			add(`stream_${cid}_${pid}_state`, `Stream ${rawCid}-${rawPid} State`, pub.status?.state)
+			const sendRate = pub.status?.statistics?.current?.send_rate
+			if (sendRate !== undefined)
+				add(`stream_${cid}_${pid}_bitrate`, `Stream ${rawCid}-${rawPid} Bitrate`, sendRate)
+		}
+	}
+
+	for (const rawRid of Object.keys(state.recorders || {})) {
+		add(`recorder_${safeId(rawRid)}_active`, `Recorder ${rawRid} Active`, state.recorders[rawRid]?.status?.active)
+	}
+
+	const sys = state.systemStatus
+	if (sys) {
+		add('system_status_date', 'System Status Date', sys.date)
+		add('system_status_uptime', 'System Status Uptime', num(sys.uptime))
+		add('system_status_cpuload', 'System CPU Load', num(sys.cpuload))
+		add('system_status_cputemp', 'System CPU Temp', num(sys.cputemp))
+	}
+	if (state.firmware) add('firmware_version', 'Firmware Version', state.firmware.version)
+	if (state.identity) {
+		add('identity_name', 'Identity Name', state.identity.name)
+		add('identity_location', 'Identity Location', state.identity.location)
+		add('identity_description', 'Identity Description', state.identity.description)
+	}
 }
 
 /**

@@ -20,6 +20,8 @@ const { emptyState, firmwareVersionNumber, clampNumber } = require('./utils')
 
 /** Minimum firmware version (4.24.01) that supports API v2.0 */
 const MIN_API_V2_VERSION = 42401
+/** the same as readable text, for messages */
+const MIN_API_V2_FIRMWARE = '4.24.1'
 /** delay of the coalesced poll triggered after a control action */
 const POLL_SOON_DELAY = 750
 /** poll_interval bounds and fallback (D8); kept in sync with src/config.js and src/poller.js */
@@ -31,6 +33,22 @@ const IP_RE = new RegExp(Regex.IP.slice(1, -1))
 const HOSTNAME_RE = new RegExp(Regex.HOSTNAME.slice(1, -1))
 
 /**
+ * Split the value of the Bonjour field ('host:port', or empty for "Manual") into host and port
+ *
+ * @param {*} value
+ * @returns {{host: string, port: string}|null} null for "Manual"
+ */
+function parseBonjourHost(value) {
+	if (typeof value !== 'string' || value.trim() === '') return null
+	const text = value.trim()
+	const separator = text.lastIndexOf(':')
+	// an IPv6 address has colons of its own, there the port is only taken from behind the closing bracket
+	const hasPort = separator > 0 && !(text.includes(']') ? text.indexOf(']') > separator : text.split(':').length > 2)
+	const host = (hasPort ? text.slice(0, separator) : text).replace(/^\[|\]$/g, '')
+	return { host, port: hasPort ? text.slice(separator + 1) : '80' }
+}
+
+/**
  * Fill missing / invalid config values with sane defaults (in memory only)
  *
  * @param {object} config
@@ -38,6 +56,13 @@ const HOSTNAME_RE = new RegExp(Regex.HOSTNAME.slice(1, -1))
  */
 function normaliseConfig(config) {
 	const c = { ...(config || {}) }
+	// An encoder selected in the Bonjour field is used instead of the manual address. The address is only
+	// used here, it is never written into the saved host / port fields. Companion provides 'host:port'.
+	const bonjour = parseBonjourHost(c.bonjourHost)
+	if (bonjour) {
+		c.host = bonjour.host
+		c.host_port = bonjour.port
+	}
 	c.host = typeof c.host === 'string' ? c.host.trim() : ''
 	c.host_port =
 		c.host_port === undefined || c.host_port === null || c.host_port === '' ? '80' : String(c.host_port).trim()
@@ -223,6 +248,7 @@ class EpiphanEncoder extends InstanceBase {
 		this.pollErrorLogged = false
 		// a new configuration may be a different device entirely; it should not inherit the old one's backoff
 		this.pollFailureCount = 0
+		this.apiDetected = false
 
 		// publish definitions for the (still empty) state right away; the first poll refreshes them
 		this.updateSystem()
@@ -327,7 +353,11 @@ class EpiphanEncoder extends InstanceBase {
 	 */
 	async determineApiBase() {
 		this.apiBasePath = '/api'
+		this.firmwareWarning = undefined
+		// stays false when the device could not be asked, the next poll then tries again
+		this.apiDetected = false
 		if (!this.config.use_api_v2) {
+			this.apiDetected = true
 			this.log('info', 'API v2.0 disabled in configuration, using legacy API')
 			return
 		}
@@ -337,18 +367,23 @@ class EpiphanEncoder extends InstanceBase {
 				optional: true,
 				silent: true,
 			})
+			this.apiDetected = true
 			const verNum = firmwareVersionNumber(typeof version === 'string' ? version : version?.version)
 			if (verNum !== null && verNum >= MIN_API_V2_VERSION) {
 				this.apiBasePath = '/api/v2.0'
 				this.log('info', `Firmware ${version}: using API v2.0`)
 			} else if (version === null) {
+				this.firmwareWarning = `Firmware is older than ${MIN_API_V2_FIRMWARE}, please update the encoder to use all features of this module`
 				this.log('info', 'API v2.0 not available on this device, using legacy API')
 			} else {
-				this.log('info', `Firmware ${version} is older than 4.24.1, using legacy API`)
+				this.firmwareWarning = `Firmware ${version} is older than ${MIN_API_V2_FIRMWARE}, please update the encoder to use all features of this module`
+				this.log('info', `Firmware ${version} is older than ${MIN_API_V2_FIRMWARE}, using legacy API`)
 			}
 		} catch (error) {
-			this.log('warn', `API v2.0 check failed (${error?.message || error}), using legacy API`)
+			this.log('warn', `API v2.0 check failed (${error?.message || error}), using legacy API for now`)
 		}
+		// the version probe already reported 'Ok'; with outdated firmware that becomes a warning
+		if (this.currentStatus === InstanceStatus.Ok) this.applyOkStatus()
 	}
 
 	/**
@@ -435,4 +470,4 @@ const upgradeToBooleanFeedbacks = CreateConvertToBooleanFeedbackUpgradeScript({
 
 const upgradeScripts = [upgradeToBooleanFeedbacks, ...upgrades]
 
-module.exports = { EpiphanEncoder, upgradeScripts, EncoderApiError, normaliseConfig }
+module.exports = { EpiphanEncoder, upgradeScripts, EncoderApiError, normaliseConfig, parseBonjourHost }

@@ -55,7 +55,17 @@ describe('init against a v2.0 device', () => {
 		assert.deepEqual(Object.keys(s.channels['1'].publishers).sort(), ['0', '1'])
 		assert.equal(s.channels['1'].publishers['1'].status.state, 'started')
 		assert.equal(s.channels['1'].publishers['0'].type, 'rtmp')
-		assert.equal('encoders' in s.channels['1'], false, 'encoders were dropped from the state')
+		assert.deepEqual(
+			s.channels['1'].encoders.map((e) => e.type),
+			['video', 'audio'],
+			'the encoders are kept for the resolution / fps / bitrate variables',
+		)
+		assert.equal(s.channels['1'].status.nosignal, false, 'legacy channel status (input signal)')
+		assert.equal(
+			s.channels['1'].encoders[0].status.fps,
+			30,
+			'current encoder values from the legacy channel status',
+		)
 		assert.deepEqual(Object.keys(s.channels['2'].publishers), [])
 
 		assert.deepEqual(Object.keys(s.recorders).sort(), ['1', '2', 'm1'])
@@ -97,13 +107,14 @@ describe('init against a v2.0 device', () => {
 		assert.equal(s.identity.name, 'Pearl Mini')
 	})
 
-	it('sends the v2 boolean flags to GET /channels (no "encoders" flag any more)', () => {
+	it('sends the v2 boolean flags to GET /channels', () => {
 		const req = mock.requests.find((r) => r.method === 'GET' && r.path === '/api/v2.0/channels')
 		assert.ok(req)
 		assert.deepEqual(req.query, {
 			publishers: 'true',
 			'publishers-status': 'true',
 			active_layout: 'true',
+			encoders: 'true',
 		})
 	})
 
@@ -130,7 +141,7 @@ describe('init against a v2.0 device', () => {
 		const feedbacks = instance.definitions.feedbacks
 		const presets = instance.definitions.presets
 
-		assert.equal(Object.keys(actions).length, 12)
+		assert.equal(Object.keys(actions).length, 14)
 		assert.equal(Object.keys(feedbacks).length, 15)
 		for (const [id, def] of Object.entries(actions)) {
 			assert.equal(typeof def.callback, 'function', `action ${id} callback`)
@@ -209,8 +220,13 @@ describe('init against a legacy-only device (firmware 4.20.0)', () => {
 	it('falls back to the legacy API base', () => {
 		assert.equal(instance.apiBasePath, '/api')
 		assert.equal(instance.isV2, false)
-		assert.equal(instance.currentStatus, InstanceStatus.Ok)
 		assert.ok(instance.calls.log.some((l) => l.level === 'info' && /legacy API/.test(l.message)))
+	})
+
+	it('works, but recommends a firmware update in the connection status', () => {
+		assert.equal(instance.currentStatus, InstanceStatus.UnknownWarning)
+		assert.match(instance.currentStatusMessage, /older than 4\.24\.1/)
+		assert.equal(Object.keys(instance.state.channels).length, 2, 'the data is polled all the same')
 	})
 
 	it('has channels, layouts, publishers and recorders; v2-only domains stay empty', () => {
@@ -234,7 +250,7 @@ describe('init against a legacy-only device (firmware 4.20.0)', () => {
 	it('uses the v1 flags and per-channel publisher endpoints', () => {
 		const channels = mock.requests.find((r) => r.method === 'GET' && r.path === '/api/channels')
 		assert.ok(channels)
-		assert.deepEqual(channels.query, { publishers: 'yes' })
+		assert.deepEqual(channels.query, { publishers: 'yes', encoders: 'yes' })
 		assert.ok(mock.requests.some((r) => r.path === '/api/channels/1/publishers/type'))
 		assert.ok(mock.requests.some((r) => r.path === '/api/channels/1/publishers/status'))
 		assert.ok(mock.requests.some((r) => r.path === '/api/recorders/status'))
@@ -255,7 +271,88 @@ describe('init against a legacy-only device (firmware 4.20.0)', () => {
 	})
 })
 
+describe('encoder discovery (Bonjour)', () => {
+	// src/instance binds InstanceBase when it is first required, so the stub has to be in place before
+	installStub()
+	const { parseBonjourHost, normaliseConfig } = require('../src/instance')
+	const { getConfigFields } = require('../src/config')
+
+	it('splits the value of the Bonjour field, "Manual" (empty) gives null', () => {
+		assert.equal(parseBonjourHost(null), null)
+		assert.equal(parseBonjourHost(undefined), null)
+		assert.equal(parseBonjourHost(''), null)
+		assert.deepEqual(parseBonjourHost('192.168.1.20:80'), { host: '192.168.1.20', port: '80' })
+		assert.deepEqual(parseBonjourHost('192.168.1.20:8080'), { host: '192.168.1.20', port: '8080' })
+		assert.deepEqual(parseBonjourHost('192.168.1.20'), { host: '192.168.1.20', port: '80' })
+		assert.deepEqual(parseBonjourHost('pearl.local:80'), { host: 'pearl.local', port: '80' })
+		assert.deepEqual(parseBonjourHost('[fe80::1]:80'), { host: 'fe80::1', port: '80' })
+		assert.deepEqual(parseBonjourHost('fe80::1'), { host: 'fe80::1', port: '80' })
+	})
+
+	it('a connection without the field (every connection of 2.x) keeps using host and port', () => {
+		const c = normaliseConfig({ host: '10.0.0.5', host_port: '8080' })
+		assert.equal(c.host, '10.0.0.5')
+		assert.equal(c.host_port, '8080')
+	})
+
+	it('a selected encoder replaces host and port in memory only', () => {
+		const stored = { host: '10.0.0.5', host_port: '8080', bonjourHost: '192.168.1.20:80' }
+		const c = normaliseConfig(stored)
+		assert.equal(c.host, '192.168.1.20')
+		assert.equal(c.host_port, '80')
+		assert.equal(stored.host, '10.0.0.5', 'the stored manual address is untouched')
+	})
+
+	it('connects to the selected encoder', async () => {
+		const mock = await startMockPearl()
+		const instance = await createInstance({
+			mock,
+			config: { host: 'unused.invalid', host_port: '9', bonjourHost: `127.0.0.1:${mock.port}` },
+		})
+		try {
+			assert.equal(instance.currentStatus, InstanceStatus.Ok)
+			assert.equal(Object.keys(instance.state.channels).length, 2)
+		} finally {
+			await instance.destroy()
+			await mock.close()
+		}
+	})
+
+	it('the field exists, matches the manifest query and hides the manual address while an encoder is selected', () => {
+		const fields = getConfigFields()
+		const field = fields.find((f) => f.type === 'bonjour-device')
+		assert.equal(field.id, 'bonjourHost')
+		const manifest = require('../companion/manifest.json')
+		assert.deepEqual(Object.keys(manifest.bonjourQueries), [field.id])
+		assert.deepEqual(manifest.bonjourQueries[field.id], { type: 'epiphan', protocol: 'tcp' })
+		for (const id of ['host', 'host_port']) {
+			const f = fields.find((x) => x.id === id)
+			assert.equal(f.isVisible({ bonjourHost: '192.168.1.20:80' }), false)
+			assert.equal(f.isVisible({ bonjourHost: null }), true)
+			assert.equal(f.isVisible({}), true)
+		}
+	})
+})
+
 describe('init edge cases', () => {
+	it('asks again for the API version when the device could not answer at startup', async () => {
+		const mock = await startMockPearl()
+		mock.failNext('GET', '/api/v2.0/system/firmware/version', 500)
+		const instance = await createInstance({ mock })
+		try {
+			assert.equal(instance.isV2, false, 'first contact fell back to the legacy API')
+			assert.equal(instance.apiDetected, false)
+			await instance.pollAll()
+			assert.equal(instance.isV2, true, 'the next poll detected API v2.0')
+			assert.equal(instance.apiDetected, true)
+			assert.ok(Object.keys(instance.state.storages).length > 0, 'v2.0 data is polled')
+			assert.equal(instance.currentStatus, InstanceStatus.Ok)
+		} finally {
+			await instance.destroy()
+			await mock.close()
+		}
+	})
+
 	it('uses the legacy API when use_api_v2 is disabled', async () => {
 		const mock = await startMockPearl()
 		const instance = await createInstance({ mock, config: { use_api_v2: false } })

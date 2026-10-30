@@ -307,8 +307,6 @@ function convertToParityV300(context, props) {
 				break
 			}
 			case 'storageEject':
-			case 'getLayoutData':
-			case 'setLayoutData':
 			case 'setChannelName':
 			case 'setPublisherName':
 			case 'setPublisherEnabled':

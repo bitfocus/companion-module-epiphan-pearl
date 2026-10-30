@@ -9,7 +9,7 @@ Control and monitor Epiphan encoders (Pearl-2, Pearl Mini, Pearl Nano, Pearl Nex
 - A device user with **admin** rights (the default `admin` account). Operator accounts cannot change settings.
 - Network access from the Companion host to the encoder's HTTP port (80 by default), or its HTTPS port (443 by default) when _Use HTTPS_ is ticked.
 
-If you are upgrading a connection created before this module's 3.0.0 release, an upgrade script converts every action and feedback that still has a Stream Deck counterpart to its new id automatically (your buttons keep working, though a few option layouts changed — see the changelog). Two actions had no Stream Deck counterpart at all (layout data, get and set) and are gone; the content metadata actions are kept as they were; if any button still holds one, the connection log prints one warning per removed id the first time it starts, naming how many buttons carried it.
+If you are upgrading a connection created before this module's 3.0.0 release, an upgrade script converts every action and feedback that still has a Stream Deck counterpart to its new id automatically (your buttons keep working, though a few option layouts changed — see the changelog). The actions Get layout data, Set layout data, Get Content Metadata and Set Content Metadata are kept exactly as they were; buttons that hold an action which no longer exists are left as they were and the connection log prints one warning per removed id the first time it starts, naming how many buttons carried it. The variable ids of 2.2.x (for example `stream_1_0_state`, `system_status_cpuload`, `identity_name`, `channel_1_bitrate`) still exist next to the new ones, so button text keeps working.
 
 ### Connection settings
 
@@ -17,7 +17,8 @@ The setting names below are the labels shown in the connection's settings page.
 
 | Setting                                                     | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Host**                                                    | IP address or DNS name of the encoder (default `192.168.255.250`).                                                                                                                                                                                                                                                                                                                                                                    |
+| **Encoder**                                                 | Encoders in the same network as Companion announce themselves (Bonjour) and are listed here by their device name. Select one and enter username and password; its address is then used instead of _Host_ and _Port_. **Manual** (the default, and what every connection of earlier versions uses) keeps the address entered in _Host_ and _Port_, e.g. for an encoder in another network or behind a VPN.                             |
+| **Host**                                                    | IP address or DNS name of the encoder (default `192.168.255.250`). Shown while _Encoder_ is **Manual**.                                                                                                                                                                                                                                                                                                                               |
 | **Port**                                                    | HTTP port of the encoder's web UI/API (default `80`; becomes `443` automatically the first time you turn on _Use HTTPS_ if you left it at `80`).                                                                                                                                                                                                                                                                                      |
 | **Username**                                                | Device account name (default `admin`).                                                                                                                                                                                                                                                                                                                                                                                                |
 | **Password**                                                | Password for that account. Leave blank if the device has no password set.                                                                                                                                                                                                                                                                                                                                                             |
@@ -29,7 +30,7 @@ The setting names below are the labels shown in the connection's settings page.
 | **Preview image width (px)**                                | Width in pixels requested from the encoder for preview images (72..720, default `144`). Larger images look sharper on big surfaces but cost more bandwidth and CPU on the encoder.                                                                                                                                                                                                                                                    |
 | **Poll CMS schedule**                                       | Ticked (default): poll the upcoming and ongoing CMS event, plus the next 10 scheduled/recent events, every poll (Kaltura, Panopto, YuJa, Opencast...). Untick if the device is not connected to a CMS.                                                                                                                                                                                                                                |
 | **Enable verbose logging**                                  | Log every request and response at debug level. Useful when reporting a problem; leave off in normal use.                                                                                                                                                                                                                                                                                                                              |
-| **Use API v2.0 (if available)**                             | Ticked (default): probe for the v2.0 API and use it; fall back to the legacy API if it is missing. Untick to force the legacy API.                                                                                                                                                                                                                                                                                                    |
+| **Use API v2.0 (if available)**                             | Ticked (default): probe for the v2.0 API and use it; fall back to the legacy API if it is missing. Untick to force the legacy API. If the encoder could not be reached when the module started, the probe is repeated with the next poll. With firmware older than 4.24.1 the connection shows a warning recommending a firmware update, everything that does not need v2.0 keeps working.                                            |
 | **Preset categories to generate**                           | Multi-select, default: every category. Controls which groups of ready-made buttons appear in the drag-and-drop preset list (see Presets below). Unchecking a group only hides its auto-generated buttons; the underlying actions and feedbacks stay available for a hand-built button, and anything already on a page keeps working.                                                                                                  |
 
 ### Actions, feedbacks, variables and presets
@@ -150,6 +151,17 @@ id, so no variables are added either.
 
 **Presets — Bookmarks**: one button per channel, text `Bookmark` / `Marker`; grey text while the channel's
 recorder is not recording (an inverted **Recorder state** feedback).
+
+#### Get / Set Layout Data
+
+Kept from earlier versions (ids and options unchanged, existing buttons keep working). Always uses the legacy
+API, so they also work on firmware without API v2.0.
+
+| Option                   | Values                                                                      | Default      |
+| ------------------------ | --------------------------------------------------------------------------- | ------------ |
+| **Layout to get / set**  | every layout of every channel                                               | first layout |
+| **Destination Variable** | Get only: the custom variable that receives the layout settings as JSON     | —            |
+| **Layout Data**          | Set only: the JSON text to write, e.g. one stored by Get; accepts variables | `{}`         |
 
 #### Get / Set Content Metadata
 
@@ -404,20 +416,48 @@ character other than letters, digits, `_` and `-` replaced by `_`. Suffixes endi
 `_text`/`_time` suffixes are the ready-to-display forms described in each action's section above. Unknown
 values are always empty, never missing.
 
-| Prefix                                                                                                   | Covered under                                           |
-| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `recorder_*`, `recorders_active_count`                                                                   | Recorder                                                |
-| `channel_*_publisher_*`, `channel_*_publishers_state_word`, `channel_*_name`, `channel_*_active_layout*` | Stream, Layout                                          |
-| `singletouch_*`                                                                                          | Single Touch                                            |
-| `input_*`                                                                                                | Audio                                                   |
-| `output_*`                                                                                               | Output Source                                           |
-| `preset_names`, `preset_last_applied`, `preset_status`                                                   | Apply Preset                                            |
-| `event_*`                                                                                                | Event                                                   |
-| `cpu_*`, `uptime*`, `system_status_text`, `afu_*`, `product_name`, `firmware`, `device_name`             | System Status                                           |
-| `power_status`                                                                                           | Reboot / Shutdown                                       |
-| `storage_*`                                                                                              | Storage                                                 |
-| `confirm_hint`                                                                                           | every confirm-gated action (see Confirm and hold)       |
-| `last_error`                                                                                             | every action (the most recent failure's device message) |
+| Prefix                                                                                                                         | Covered under                                           |
+| ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| `recorder_*`, `recorders_active_count`                                                                                         | Recorder                                                |
+| `channel_*_publisher_*`, `channel_*_publishers_state_word`, `channel_*_name`, `channel_*_active_layout*`                       | Stream, Layout                                          |
+| `singletouch_*`                                                                                                                | Single Touch                                            |
+| `input_*`                                                                                                                      | Audio                                                   |
+| `output_*`                                                                                                                     | Output Source                                           |
+| `preset_names`, `preset_last_applied`, `preset_status`                                                                         | Apply Preset                                            |
+| `event_*`                                                                                                                      | Event                                                   |
+| `cpu_*`, `uptime*`, `system_status_text`, `afu_*`, `product_name`, `firmware`, `device_name`                                   | System Status                                           |
+| `power_status`                                                                                                                 | Reboot / Shutdown                                       |
+| `storage_*`                                                                                                                    | Storage                                                 |
+| `stream_*`, `channel_*_resolution`/`_fps`/`_bitrate`, `recorder_*_active`, `system_status_*`, `firmware_version`, `identity_*` | Compatibility ids of 2.2.x (see below)                  |
+| `confirm_hint`                                                                                                                 | every confirm-gated action (see Confirm and hold)       |
+| `last_error`                                                                                                                   | every action (the most recent failure's device message) |
+
+#### Variables for input signal, bitrate, storage and warnings
+
+- `channel_CID_signal` (`OK` / `No signal`) and `channel_CID_total_bitrate` (kbit/s, video and audio): the
+  current values of the channel, from the legacy channel status.
+- `channel_CID_publisher_PID_duration` (`HH:MM:SS`) and `_reconnections`.
+- `storage_ID_total_gb`, `_used_gb`, `_free_gb` and `_free_pct` as numbers, `storage_ID_remaining_time`
+  (`hh:mm`) and `_remaining_minutes`: the recording time left, estimated from the bitrate of the recordings
+  running right now (empty while nothing is recorded; multi-source recorders are not counted).
+- `cpu_load_high` and `cpu_temp_high` (`true`/`false`): the warnings, using the thresholds of the encoder.
+
+#### Compatibility ids of 2.2.x
+
+Button text written for module 2.2.x keeps working. These ids are defined under the same conditions as
+before and carry the same values; new buttons should use the ids of the new set:
+
+| 2.2.x id                                       | New id                                      |
+| ---------------------------------------------- | ------------------------------------------- |
+| `stream_CID_PID_name`, `_state`                | `channel_CID_publisher_PID_name`, `_state`  |
+| `stream_CID_PID_bitrate`                       | — (send rate of the stream, if reported)    |
+| `channel_CID_resolution`, `_fps`, `_bitrate`   | — (current values of the video encoder)     |
+| `recorder_RID_active`                          | — (active/total of a multi-source recorder) |
+| `system_status_uptime`, `_cpuload`, `_cputemp` | `uptime_seconds`, `cpu_load`, `cpu_temp`    |
+| `system_status_date`                           | —                                           |
+| `firmware_version`                             | `firmware`                                  |
+| `identity_name`                                | `device_name`                               |
+| `identity_location`, `identity_description`    | —                                           |
 
 ### Presets summary
 
@@ -504,7 +544,7 @@ any Companion button.
   web UI or another controller.
 - **Not exposed on purpose.** Renaming channels/publishers, muting or phantom-powering inputs, editing
   RTMP/SRT destinations, creating publishers or network inputs, ad-hoc CMS sessions, network
-  connectivity/speed test and layout data have no Stream Deck counterpart and are not offered by this
+  connectivity/speed test have no Stream Deck counterpart and are not offered by this
   module (see Requirements above for what happens to a button that still has one from an older connection).
 - **Legacy firmware** (before 4.24.1, or with _Use API v2.0 (if available)_ unticked) only offers the
   actions and feedbacks marked above as not requiring it. Every action/feedback marked _requires API v2.0_

@@ -80,6 +80,15 @@ module.exports = {
 	},
 
 	/**
+	 * INTERNAL: the device answers. 'Ok', or a warning that recommends a firmware update when the device only
+	 * supports the legacy API (see determineApiBase).
+	 */
+	applyOkStatus() {
+		if (this.firmwareWarning) this.applyStatus(InstanceStatus.UnknownWarning, this.firmwareWarning)
+		else this.applyStatus(InstanceStatus.Ok)
+	},
+
+	/**
 	 * INTERNAL: replace this.dispatcher with an Agent built from the current configuration.
 	 * The previous Agent is closed gracefully so requests still in flight on it can finish.
 	 */
@@ -279,9 +288,7 @@ module.exports = {
 			}
 		}
 
-		if (this.currentStatus !== InstanceStatus.Ok) {
-			this.applyStatus(InstanceStatus.Ok)
-		}
+		this.applyOkStatus()
 		return result
 	},
 
@@ -301,11 +308,15 @@ module.exports = {
 		this.metadataRequested.add(cid)
 		const generation = this.configGeneration
 		try {
-			const text = await this.request('GET', `/admin/channel${cid}/get_params.cgi?title&author&copyright&comment&description&rec_prefix`, {
-				base: 'raw',
-				text: true,
-				optional: true,
-			})
+			const text = await this.request(
+				'GET',
+				`/admin/channel${cid}/get_params.cgi?title&author&copyright&comment&description&rec_prefix`,
+				{
+					base: 'raw',
+					text: true,
+					optional: true,
+				},
+			)
 			if (generation !== this.configGeneration) return
 			if (text === null) {
 				this.log('debug', `Channel ${cid} has no content metadata on this device`)

@@ -3,10 +3,10 @@
  *
  * Serves the target 3.0.0 control set's endpoints
  * under both `/api/v2.0/...` and the legacy `/api/...` prefix, plus the legacy-only endpoints that are
- * still used (layout list/active/preview, the audio settings PATCH, the
+ * still used (layout list/active/preview/settings, the audio settings PATCH, the
  * legacy `/sources/status` levels, and the admin CGI content metadata read/write). Routes that only served
  * a feature the 3.0.0 rewrite removed (network connectivity/speedtest, recorder archive files, ad-hoc CMS sessions, publisher
- * create/rename/settings, channel rename, input creation, layout settings GET/PUT, and a handful of GETs
+ * create/rename/settings, channel rename, input creation, and a handful of GETs
  * nothing in the module ever called) are gone.
  * `get_params.cgi` is also a generic text/plain endpoint that `test/request.test.js` uses to exercise the
  * request layer's `base:'raw'`/`text:true` handling.
@@ -750,6 +750,23 @@ async function startMockPearl({
 			})
 		return { result }
 	})
+	// the legacy channel status, the only place with the current encoder values and the input signal
+	route('GET', '/channels/status', ({ query }) => ({
+		result: Object.values(state.channels).map((ch) => {
+			const video = (ch.encoders || []).find((e) => e.type === 'video')
+			const out = { id: ch.id, status: { nosignal: false, bitrate: (video?.bitrate ?? 0) + 128 } }
+			if (flag(query.encoders)) {
+				out.encoders = (ch.encoders || []).map((e) => ({
+					id: e.id,
+					status:
+						e.type === 'video'
+							? { resolution: e.resolution, fps: e.framerate, bitrate: e.bitrate }
+							: { bitrate: e.bitrate },
+				}))
+			}
+			return out
+		}),
+	}))
 	route('GET', '/channels/:cid/preview', ({ params }) => {
 		getChannel(params.cid)
 		return { png: true }
@@ -793,6 +810,22 @@ async function startMockPearl({
 	}))
 	// undocumented (not part of the published OpenAPI spec), confirmed by Epiphan: renders the given
 	// layout's own composition, whether or not it is the channel's active one
+	// layout settings are legacy-only (the v2.0 API has none)
+	route('GET', '/channels/:cid/layouts/:lid/settings', ({ params, v2 }) => {
+		if (v2) throw notFound('Not found: layout settings are legacy-only')
+		const ch = getChannel(params.cid)
+		const layout = ch.layouts.find((l) => String(l.id) === params.lid)
+		if (!layout) throw notFound('Layout not found')
+		return { result: layout.settings ?? { id: layout.id, name: layout.name, background: '#000000' } }
+	})
+	route('PUT', '/channels/:cid/layouts/:lid/settings', ({ params, body, v2 }) => {
+		if (v2) throw notFound('Not found: layout settings are legacy-only')
+		const ch = getChannel(params.cid)
+		const layout = ch.layouts.find((l) => String(l.id) === params.lid)
+		if (!layout) throw notFound('Layout not found')
+		layout.settings = body
+		return { ok: true }
+	})
 	route('GET', '/channels/:cid/layouts/:lid/preview', ({ params }) => {
 		const ch = getChannel(params.cid)
 		getLayout(ch, params.lid)

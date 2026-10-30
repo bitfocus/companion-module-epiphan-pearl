@@ -68,12 +68,14 @@ describe('actions against a v2.0 device', () => {
 			'bookmark',
 			'event',
 			'getContentMetadata',
+			'getLayoutData',
 			'layout',
 			'output',
 			'power',
 			'preset',
 			'recorder',
 			'setContentMetadata',
+			'setLayoutData',
 			'singletouch',
 			'stream',
 		])
@@ -93,6 +95,8 @@ describe('actions against a v2.0 device', () => {
 			audio: 'Audio',
 			getContentMetadata: 'Get Content Metadata',
 			setContentMetadata: 'Set Content Metadata',
+			getLayoutData: 'Get layout data',
+			setLayoutData: 'Set layout data',
 		})
 		for (const [id, def] of Object.entries(instance.definitions.actions)) {
 			assert.ok(def.name.length <= 30, `${id}: name longer than 30 characters`)
@@ -837,6 +841,41 @@ describe('actions against a legacy-only device', () => {
 				`${id} did not warn`,
 			)
 		}
+	})
+})
+
+describe('layout data (legacy API, kept from 2.2.0)', () => {
+	let mock
+	let instance
+	before(async () => {
+		mock = await startMockPearl()
+		instance = await createInstance({ mock })
+	})
+	after(async () => {
+		await instance.destroy()
+		await mock.close()
+	})
+
+	it('Get layout data stores the layout settings as JSON in the destination variable', async () => {
+		mock.requests.length = 0
+		await runAction(instance, 'getLayoutData', { channelIdlayoutId: '1-2', destination: 'layout_json' })
+		const req = mock.requests.find((r) => r.method === 'GET' && r.path === '/api/channels/1/layouts/2/settings')
+		assert.ok(req, 'the legacy API is used, also on a device with API v2.0')
+		assert.equal(JSON.parse(instance.customVariables.layout_json).id, '2')
+	})
+
+	it('Set layout data sends the JSON, variables allowed', async () => {
+		await runAction(instance, 'setLayoutData', { channelIdlayoutId: '1-2', source: '{"background":"#ff0000"}' })
+		assert.deepEqual(mock.state.channels['1'].layouts.find((l) => l.id === '2').settings, { background: '#ff0000' })
+	})
+
+	it('Set layout data refuses text that is no JSON and unknown layouts, and sends nothing', async () => {
+		mock.requests.length = 0
+		await runAction(instance, 'setLayoutData', { channelIdlayoutId: '1-2', source: 'not json' })
+		await runAction(instance, 'setLayoutData', { channelIdlayoutId: '9-9', source: '{}' })
+		await runAction(instance, 'getLayoutData', { channelIdlayoutId: '', destination: 'x' })
+		assert.equal(mock.requests.filter((r) => r.path.endsWith('/settings')).length, 0)
+		assert.equal(instance.customVariables.x, undefined)
 	})
 })
 

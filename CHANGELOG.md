@@ -52,17 +52,27 @@ production connection.
 - Connection setting **Poll channel content metadata** to turn the metadata requests off.
 - A removed action that is still on a button is reported once per start in the connection log, with the
   number of buttons that carry it.
+- Encoders in the same network are found automatically (Bonjour) and can be selected by their device name in the
+  new connection setting **Encoder**. **Manual** is the default, so existing connections keep their
+  Host and Port.
+- Variables for the input signal (`channel_CID_signal`) and the current total bitrate (`channel_CID_total_bitrate`)
+  of each channel, the duration and reconnections of each publisher, storage sizes as numbers
+  (`storage_ID_total_gb`, `_used_gb`, `_free_gb`, `_free_pct`), the estimated remaining recording time
+  (`storage_ID_remaining_time`, `_remaining_minutes`) and the warnings `cpu_load_high` and `cpu_temp_high`,
+  using the thresholds of the encoder.
+- With firmware older than 4.24.1 the connection status shows a warning that recommends a firmware update;
+  everything that does not need API v2.0 keeps working.
 
 ### Changed
 
 - Set Content Metadata no longer clears a field that is left empty; tick **Also send empty fields** for that.
-- Actions `getContentMetadata` and `setContentMetadata` and the variables `channel_CID_metadata_title`/
+- Actions `getLayoutData`, `setLayoutData`, `getContentMetadata` and `setContentMetadata` and the variables `channel_CID_metadata_title`/
   `_author`/`_rec_prefix` are kept unchanged, so existing buttons and button text keep working. A set that
   the encoder rejects is now reported and no longer updates the variables.
 - Action ids follow the Stream Deck plugin; the upgrade script rewrites existing buttons in place:
   `channelChangeLayout` → `layout`, `controlStreaming` → `stream`, `recorderRecording` → `recorder` (Start, Stop,
   Reset and Toggle keep their meaning), `insertMarker` → `bookmark`,
-  `systemReboot` and `systemShutdown` → `power`. Feedbacks: `channelLayout` → `layout_active`,
+  `systemReboot` and `systemShutdown` → `power`. `getLayoutData` and `setLayoutData` keep their ids and options. Feedbacks: `channelLayout` → `layout_active`,
   `streamingState` → `stream_state`, `recorderRecording` → `recorder_state`.
 - Recording and Streaming toggles stop a recorder or stream that is in an error state instead of sending
   another start.
@@ -72,28 +82,34 @@ production connection.
 - Variables renamed: `stream_CID_PID_name`/`_state` → `channel_CID_publisher_PID_name`/`_state`,
   `system_status_cpuload`/`_cputemp`/`_uptime` → `cpu_load`/`cpu_temp`/`uptime_seconds` (with `uptime` as
   text), `identity_name` → `device_name`, `firmware_version` → `firmware`. Companion does not rewrite
-  variable references inside button text, so update those by hand.
+  variable references inside button text, so the old ids are still provided next to the new ones
+  (`stream_CID_PID_name`/`_state`/`_bitrate`, `channel_CID_resolution`/`_fps`/`_bitrate`, `recorder_RID_active`,
+  `system_status_date`/`_uptime`/`_cpuload`/`_cputemp`, `firmware_version`, `identity_name`/`_location`/`_description`),
+  so existing button text keeps working. New buttons should use the new ids.
 - The module says "encoder" or "device" rather than "Pearl" in its settings, action descriptions, log and
   help, as the Pearl family will not remain the only Epiphan encoder it drives. New connections are labelled
   `encoder`; the module id is unchanged.
 
+### Fixed
+
+- The API version is asked for again with the next poll when the encoder could not be reached while the module
+  started. Before, such a connection stayed on the legacy API (no inputs, outputs, storage, events or presets)
+  until it was saved again.
+- The variables `channel_CID_resolution`, `_fps` and `_bitrate` show the current values of the encoder, also when
+  the bitrate is set to automatic and on firmware older than 4.24.1.
+
 ### Removed
 
-- Actions `getLayoutData` and `setLayoutData` (no Stream Deck counterpart; the layouts and their data are
-  covered by the Layout action, the layout presets and the layout variables). A button that still holds one
-  keeps its old definition and is named in the connection log.
-- Variables `channel_CID_resolution`/`_fps`/`_bitrate`, `recorder_RID_active`, `stream_CID_PID_bitrate`, `system_status_date`, `identity_location`
-  and `identity_description`.
 - Preset categories `Channels`, `Publishers` and `Recorders` are now `Layouts`, `Streaming` and `Recording`.
 
 ### Upgrade notes
 
 Opening an existing connection runs the upgrade script `convertToParityV300` once: actions and feedbacks are
 rewritten to their new ids and options in place (a 2.2.0 recorder button keeps its Start, Stop, Reset or Toggle
-command), `pollfreq` becomes `poll_interval` in milliseconds, every
+command; Get / Set layout data and Get / Set content metadata need no conversion), `pollfreq` becomes `poll_interval` in milliseconds, every
 preset category is enabled, and the confirm option is left off on buttons that existed before, so they keep
 firing on the first press. Removed actions cannot be converted and are left as they were; the connection log
-names each one still in use. Button text that uses a renamed or removed variable needs updating by hand.
+names each one still in use. No variable of 2.2.0 was dropped, so button text needs no update.
 
 ---
 

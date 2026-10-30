@@ -22,6 +22,8 @@ function expectedVariableIds(state) {
 		'uptime_seconds',
 		'uptime',
 		'system_status_text',
+		'cpu_load_high',
+		'cpu_temp_high',
 		'afu_state',
 		'afu_text',
 		'afu_protocol',
@@ -59,7 +61,20 @@ function expectedVariableIds(state) {
 		'last_error',
 	])
 	for (const stid of Object.keys(state.storages || {})) {
-		for (const suffix of ['state', 'free', 'total', 'used_pct', 'text', 'level_word']) {
+		for (const suffix of [
+			'state',
+			'free',
+			'total',
+			'used_pct',
+			'text',
+			'level_word',
+			'total_gb',
+			'used_gb',
+			'free_gb',
+			'free_pct',
+			'remaining_time',
+			'remaining_minutes',
+		]) {
 			ids.add(`storage_${stid}_${suffix}`)
 		}
 	}
@@ -67,6 +82,7 @@ function expectedVariableIds(state) {
 		for (const suffix of ['name', 'state', 'state_word', 'duration', 'duration_text', 'duration_hms']) {
 			ids.add(`recorder_${rid}_${suffix}`)
 		}
+		ids.add(`recorder_${rid}_active`) // 2.2.x
 	}
 	for (const [cid, channel] of Object.entries(state.channels || {})) {
 		ids.add(`channel_${cid}_name`)
@@ -79,11 +95,37 @@ function expectedVariableIds(state) {
 		ids.add(`channel_${cid}_metadata_description`)
 		ids.add(`channel_${cid}_metadata_rec_prefix`)
 		ids.add(`channel_${cid}_publishers_state_word`)
+		if (channel.status) {
+			ids.add(`channel_${cid}_signal`)
+			ids.add(`channel_${cid}_total_bitrate`)
+		}
+		if ((channel.encoders || []).some((e) => e.type === 'video')) {
+			for (const suffix of ['resolution', 'fps', 'bitrate']) ids.add(`channel_${cid}_${suffix}`)
+		}
 		for (const pid of Object.keys(channel.publishers || {})) {
-			for (const suffix of ['name', 'type', 'state', 'state_word', 'error']) {
+			for (const suffix of ['name', 'type', 'state', 'state_word', 'error', 'duration', 'reconnections']) {
 				ids.add(`channel_${cid}_publisher_${pid}_${suffix}`)
 			}
+			// the 2.2.x ids
+			ids.add(`stream_${cid}_${pid}_name`)
+			ids.add(`stream_${cid}_${pid}_state`)
+			if (channel.publishers[pid].status?.statistics?.current?.send_rate !== undefined) {
+				ids.add(`stream_${cid}_${pid}_bitrate`)
+			}
 		}
+	}
+	// the 2.2.x ids
+	for (const id of [
+		'system_status_date',
+		'system_status_uptime',
+		'system_status_cpuload',
+		'system_status_cputemp',
+		'firmware_version',
+		'identity_name',
+		'identity_location',
+		'identity_description',
+	]) {
+		ids.add(id)
 	}
 	for (const stcid of Object.keys(state.singleTouch || {})) {
 		for (const suffix of ['active', 'status_ok', 'summary', 'state_word']) {
@@ -107,41 +149,26 @@ function expectedVariableIds(state) {
 
 /** ids from a legacy id pattern that must never reappear */
 const LEGACY_IDS = [
-	'channel_1_resolution',
-	'channel_1_fps',
-	'channel_1_bitrate',
 	'channel_1_publishers_count',
 	'channel_1_streaming_count',
-	'stream_1_0_bitrate',
 	'stream_1_0_duration',
 	'stream_1_0_configured',
-	'recorder_1_active',
 	'recorder_1_total',
 	'recorder_1_last_file_name',
 	'publishers_active_count',
 	'input_analog-a_type',
 	'storage_main_media_type',
-	'storage_main_total_gb',
-	'storage_main_free_gb',
 	'storage_main_free_percent',
 	'stc_0_pressed',
 	'stc_0_status',
 	'afu_queue_size_mb',
 	'afu_file_name',
 	'afu_file_progress_percent',
-	'system_status_date',
-	'system_status_uptime',
 	'system_status_uptime_hms',
-	'system_status_cpuload',
-	'system_status_cputemp',
 	'system_cpuload_high',
 	'system_cputemp_threshold',
-	'firmware_version',
 	'firmware_revision',
 	'product_id',
-	'identity_name',
-	'identity_location',
-	'identity_description',
 	'connectivity_external_ip',
 	'connectivity_mdns',
 	'connectivity_dns',
@@ -185,7 +212,7 @@ describe('variables: exact id set for the seeded mock', () => {
 		}
 	})
 
-	it('no legacy variable id (the removed set) survived the rewrite', () => {
+	it('no variable id of the intermediate development versions came back', () => {
 		for (const id of LEGACY_IDS) {
 			assert.equal(instance.variableValues[id], undefined, `legacy variable ${id} still exists`)
 			assert.ok(
@@ -193,6 +220,40 @@ describe('variables: exact id set for the seeded mock', () => {
 				`legacy variable ${id} still defined`,
 			)
 		}
+	})
+
+	it('keeps the 2.2.x variable ids with the values 2.2.x gave them', () => {
+		const v = instance.variableValues
+		assert.equal(v.channel_1_resolution, '1920x1080')
+		assert.equal(v.channel_1_fps, 30)
+		assert.equal(v.channel_1_bitrate, 3000)
+		assert.equal(v.stream_1_1_name, v.channel_1_publisher_1_name)
+		assert.equal(v.stream_1_1_state, 'started')
+		assert.equal(v.stream_1_1_bitrate, 3.61)
+		assert.equal(v.recorder_1_active, '1')
+		assert.equal(v.system_status_date, '2025-02-14T08:41:09-05:00')
+		assert.equal(v.system_status_uptime, v.uptime_seconds)
+		assert.equal(v.system_status_cpuload, v.cpu_load)
+		assert.equal(v.system_status_cputemp, v.cpu_temp)
+		assert.equal(v.firmware_version, v.firmware)
+		assert.equal(v.identity_name, v.device_name)
+		assert.equal(v.identity_location, 'Home')
+		assert.equal(v.identity_description, 'Pearl Mini at Home')
+	})
+
+	it('reports the input signal, total bitrate, stream duration, warnings and storage numbers', () => {
+		const v = instance.variableValues
+		assert.equal(v.channel_1_signal, 'OK')
+		assert.equal(v.channel_1_total_bitrate, 3128)
+		assert.match(String(v.channel_1_publisher_1_duration), /^\d\d:\d\d:\d\d$/)
+		assert.equal(v.channel_1_publisher_1_reconnections, 0)
+		assert.equal(v.cpu_load_high, false)
+		assert.equal(v.cpu_temp_high, false)
+		assert.equal(typeof v.storage_main_total_gb, 'number')
+		assert.equal(v.storage_main_total_gb, Math.round((v.storage_main_used_gb + v.storage_main_free_gb) * 10) / 10)
+		// recorder 1 records channel 1 at 3128 kbit/s: the remaining time is computed from the free space
+		assert.match(String(v.storage_main_remaining_time), /^\d+:\d\d$/)
+		assert.equal(typeof v.storage_main_remaining_minutes, 'number')
 	})
 
 	it('key word values for the seeded state', () => {
@@ -296,6 +357,32 @@ describe('variables: word/format rules (via buildVariables, no device needed)', 
 		const self = selfWith({ state: { systemStatus: { uptime: 3 * 86400 + 4 * 3600 } } })
 		const { values } = buildVariables(self)
 		assert.equal(values.uptime, '3d 4h')
+	})
+
+	it('remaining recording time is calculated from the bitrate of the running recordings', () => {
+		const self = selfWith({
+			state: {
+				channels: { 1: { id: '1', name: 'A', status: { bitrate: 8000 } } },
+				recorders: { 1: { id: '1', name: 'A', multisource: false, status: { state: 'started' } } },
+				// 36 GB free at 8000 kbit/s = 1 MB/s -> 36000 s = 10 h
+				storages: { main: { id: 'main', status: { state: 'ready', total: 100e9, free: 36e9 } } },
+			},
+		})
+		const { values } = buildVariables(self)
+		assert.equal(values.storage_main_remaining_time, '10:00')
+		assert.equal(values.storage_main_remaining_minutes, 600)
+		assert.equal(values.storage_main_free_pct, 36)
+		assert.equal(values.storage_main_used_gb, 64)
+
+		self.state.recorders['1'].status.state = 'stopped'
+		assert.equal(buildVariables(self).values.storage_main_remaining_time, '', 'nothing recorded, no estimate')
+	})
+
+	it('CPU temperature warning uses the threshold of the device', () => {
+		const self = selfWith({ state: { systemStatus: { cputemp: 71, cputemp_threshold: 70, cpuload: 0 } } })
+		const { values } = buildVariables(self)
+		assert.equal(values.cpu_temp_high, true)
+		assert.equal(values.system_status_cpuload, 0, 'a load of 0 is a value, not empty')
 	})
 
 	it('bytes read "1.5 GB"', () => {
