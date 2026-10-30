@@ -45,11 +45,17 @@ production connection.
   setting **Preset categories to generate** chooses which categories appear in the preset list.
 - Connection settings **Use HTTPS** and **Accept self-signed certificate**, **Request timeout (ms)**,
   **Preview image refresh interval** and **Preview image width**, and **Poll CMS schedule**.
+- Content metadata: copyright, comment and description, as fields on Set Content Metadata and as variables
+  `channel_CID_metadata_copyright`/`_comment`/`_description`.
+- Get Content Metadata can store the metadata as JSON in a custom variable.
+- Set Content Metadata only sends non-empty fields unless **Also send empty fields** is checked.
+- Connection setting **Poll channel content metadata** to turn the metadata requests off.
 - A removed action that is still on a button is reported once per start in the connection log, with the
   number of buttons that carry it.
 
 ### Changed
 
+- Set Content Metadata no longer clears a field that is left empty; tick **Also send empty fields** for that.
 - Actions `getContentMetadata` and `setContentMetadata` and the variables `channel_CID_metadata_title`/
   `_author`/`_rec_prefix` are kept unchanged, so existing buttons and button text keep working. A set that
   the encoder rejects is now reported and no longer updates the variables.

@@ -445,7 +445,8 @@ module.exports = {
 
 		actions['getContentMetadata'] = {
 			name: 'Get Content Metadata',
-			description: "Read a channel's title, author and filename prefix into its metadata variables.",
+			description:
+				"Read a channel's title, author, copyright, comment, description and filename prefix into its metadata variables.",
 			options: [
 				{
 					type: 'dropdown',
@@ -454,17 +455,26 @@ module.exports = {
 					choices: this.choicesChannel(),
 					default: this.firstId(this.choicesChannel()),
 				},
+				{
+					type: 'custom-variable',
+					id: 'destination',
+					label: 'Destination Variable (optional, stores metadata as JSON)',
+				},
 			],
 			callback: wrap('Get Content Metadata', async (action) => {
 				const cid = parseChannel('Get Content Metadata', action.options.channel)
 				if (!cid) return
-				await this.fetchMetadata(cid)
+				const metadata = await this.fetchMetadata(cid)
+				if (metadata && action.options.destination) {
+					this.setCustomVariableValue(action.options.destination, JSON.stringify(metadata))
+				}
 			}),
 		}
 
 		actions['setContentMetadata'] = {
 			name: 'Set Content Metadata',
-			description: "Set a channel's title, author and filename prefix.",
+			description:
+				"Set a channel's title, author, copyright, comment, description and filename prefix. Empty fields are not sent unless 'Also send empty fields' is checked.",
 			options: [
 				{
 					type: 'dropdown',
@@ -475,15 +485,38 @@ module.exports = {
 				},
 				{ id: 'title', type: 'textinput', label: 'Title', default: '', useVariables: true },
 				{ id: 'author', type: 'textinput', label: 'Author', default: '', useVariables: true },
+				{ id: 'copyright', type: 'textinput', label: 'Copyright', default: '', useVariables: true },
+				{ id: 'comment', type: 'textinput', label: 'Comment', default: '', useVariables: true },
+				{ id: 'description', type: 'textinput', label: 'Description', default: '', useVariables: true },
 				{ id: 'prefix', type: 'textinput', label: 'Filename Prefix', default: '', useVariables: true },
+				{
+					id: 'sendEmpty',
+					type: 'checkbox',
+					label: 'Also send empty fields (clears them on the encoder)',
+					default: false,
+				},
 			],
 			callback: wrap('Set Content Metadata', async (action) => {
 				const cid = parseChannel('Set Content Metadata', action.options.channel)
 				if (!cid) return
-				const values = {
-					title: await parse(action.options.title),
-					author: await parse(action.options.author),
-					rec_prefix: await parse(action.options.prefix),
+				// option id -> device parameter name
+				const fields = {
+					title: 'title',
+					author: 'author',
+					copyright: 'copyright',
+					comment: 'comment',
+					description: 'description',
+					prefix: 'rec_prefix',
+				}
+				const values = {}
+				for (const [optionId, param] of Object.entries(fields)) {
+					if (action.options[optionId] === undefined) continue
+					const value = await parse(action.options[optionId])
+					if (value !== '' || action.options.sendEmpty) values[param] = value
+				}
+				if (Object.keys(values).length === 0) {
+					this.log('warn', 'Set Content Metadata: nothing to send')
+					return
 				}
 				await this.setMetadata(cid, values)
 				this.log('debug', `Metadata set on channel ${cid}`)

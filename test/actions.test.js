@@ -862,6 +862,48 @@ describe('content metadata (legacy admin CGI)', () => {
 		assert.equal(instance.variableValues.channel_2_metadata_rec_prefix, 'Multi')
 	})
 
+	it('also reads copyright, comment and description', () => {
+		assert.equal(instance.variableValues.channel_1_metadata_copyright, '(c) Epiphan')
+		assert.equal(instance.variableValues.channel_1_metadata_comment, 'Live')
+		assert.equal(instance.variableValues.channel_1_metadata_description, 'Morning broadcast')
+	})
+
+	it('Get Content Metadata stores the metadata as JSON in the destination variable', async () => {
+		await runAction(instance, 'getContentMetadata', { channel: '1', destination: 'md_json' })
+		const stored = instance.customVariables?.md_json ?? instance.calls.customVariables?.md_json
+		assert.ok(stored, 'custom variable not set')
+		assert.equal(JSON.parse(stored).copyright, '(c) Epiphan')
+	})
+
+	it('Set Content Metadata only sends non-empty fields unless sendEmpty is checked', async () => {
+		mock.requests.length = 0
+		await runAction(instance, 'setContentMetadata', {
+			channel: '1',
+			title: 'T',
+			author: '',
+			copyright: '',
+			comment: 'C',
+			description: '',
+			prefix: '',
+		})
+		assert.equal(mock.state.channels['1'].metadata.title, 'T')
+		assert.equal(mock.state.channels['1'].metadata.comment, 'C')
+		assert.equal(mock.state.channels['1'].metadata.author, 'Epiphan', 'empty author must not be sent')
+
+		await runAction(instance, 'setContentMetadata', {
+			channel: '1',
+			title: 'T',
+			author: '',
+			copyright: '',
+			comment: '',
+			description: '',
+			prefix: '',
+			sendEmpty: true,
+		})
+		assert.equal(mock.state.channels['1'].metadata.author, '')
+		assert.equal(mock.state.channels['1'].metadata.comment, '')
+	})
+
 	it('Set Content Metadata writes to the device and updates the variables', async () => {
 		mock.requests.length = 0
 		await runAction(instance, 'setContentMetadata', {
@@ -882,7 +924,7 @@ describe('content metadata (legacy admin CGI)', () => {
 	})
 
 	it('Get Content Metadata picks up a change made on the device', async () => {
-		await runAction(instance, 'setContentMetadata', { channel: '2', title: 'x', author: '', prefix: 'p' })
+		await runAction(instance, 'setContentMetadata', { channel: '2', title: 'x', prefix: 'p' })
 		mock.state.channels['2'].metadata.title = 'Changed on device'
 		await runAction(instance, 'getContentMetadata', { channel: '2' })
 		assert.equal(instance.variableValues.channel_2_metadata_title, 'Changed on device')

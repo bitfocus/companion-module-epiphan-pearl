@@ -450,6 +450,7 @@ module.exports = {
 		}
 
 		// ---- 8. content metadata: not part of the REST API, read once per channel (and again by the Get action)
+		if (this.config?.enable_metadata === false) return
 		for (const cid of Object.keys(state.channels)) {
 			if (gen !== this.configGeneration) return
 			if (!this.metadataRequested.has(cid)) await this.fetchMetadata(cid)

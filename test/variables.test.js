@@ -74,6 +74,9 @@ function expectedVariableIds(state) {
 		ids.add(`channel_${cid}_active_layout_id`)
 		ids.add(`channel_${cid}_metadata_title`)
 		ids.add(`channel_${cid}_metadata_author`)
+		ids.add(`channel_${cid}_metadata_copyright`)
+		ids.add(`channel_${cid}_metadata_comment`)
+		ids.add(`channel_${cid}_metadata_description`)
 		ids.add(`channel_${cid}_metadata_rec_prefix`)
 		ids.add(`channel_${cid}_publishers_state_word`)
 		for (const pid of Object.keys(channel.publishers || {})) {

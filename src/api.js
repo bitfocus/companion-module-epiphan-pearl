@@ -286,10 +286,11 @@ module.exports = {
 	},
 
 	/**
-	 * Read a channel's content metadata (title, author, filename prefix) through the legacy admin CGI,
-	 * store it in this.metadata and refresh the variables. Never throws.
+	 * Read a channel's content metadata (title, author, copyright, comment, description, filename prefix)
+	 * through the legacy admin CGI, store it in this.metadata and refresh the variables. Never throws.
 	 *
 	 * @param {string|number} channelId
+	 * @returns {Promise<object|undefined>} the stored metadata of the channel, undefined when unavailable
 	 */
 	async fetchMetadata(channelId) {
 		const cid = String(channelId)
@@ -300,7 +301,7 @@ module.exports = {
 		this.metadataRequested.add(cid)
 		const generation = this.configGeneration
 		try {
-			const text = await this.request('GET', `/admin/channel${cid}/get_params.cgi?title&author&rec_prefix`, {
+			const text = await this.request('GET', `/admin/channel${cid}/get_params.cgi?title&author&copyright&comment&description&rec_prefix`, {
 				base: 'raw',
 				text: true,
 				optional: true,
@@ -318,6 +319,7 @@ module.exports = {
 			}
 			this.metadata[cid] = { ...this.metadata[cid], ...parsed }
 			variables.updateVariables(this)
+			return this.metadata[cid]
 		} catch (e) {
 			this.log('error', `Failed to get metadata for channel ${cid}: ${e?.message || e}`)
 		}
@@ -328,7 +330,8 @@ module.exports = {
 	 * in which case the stored values (and variables) stay as they were.
 	 *
 	 * @param {string|number} channelId
-	 * @param {{title: string, author: string, rec_prefix: string}} values
+	 * @param {{title?: string, author?: string, copyright?: string, comment?: string, description?: string, rec_prefix?: string}} values
+	 *   only the keys present are sent
 	 */
 	async setMetadata(channelId, values) {
 		const cid = String(channelId)
@@ -336,7 +339,7 @@ module.exports = {
 		await this.request('GET', `/admin/channel${cid}/set_params.cgi`, {
 			base: 'raw',
 			text: true,
-			query: { title: values.title, author: values.author, rec_prefix: values.rec_prefix },
+			query: values,
 		})
 		this.metadata[cid] = { ...this.metadata[cid], ...values }
 		variables.updateVariables(this)

@@ -219,7 +219,14 @@ function seedState(firmware) {
 					{ id: '0', type: 'video', name: 'H.264', resolution: '1920x1080', framerate: 30, bitrate: 3000 },
 					{ id: '1', type: 'audio', name: 'AAC', channels: 2, bitrate: 128 },
 				],
-				metadata: { title: 'Morning Show', author: 'Epiphan', rec_prefix: 'HDMI-A' },
+				metadata: {
+					title: 'Morning Show',
+					author: 'Epiphan',
+					copyright: '(c) Epiphan',
+					comment: 'Live',
+					description: 'Morning broadcast',
+					rec_prefix: 'HDMI-A',
+				},
 			},
 			2: {
 				id: '2',
@@ -237,7 +244,7 @@ function seedState(firmware) {
 					{ id: '0', type: 'video', name: 'H.264', resolution: '1280x720', framerate: 30, bitrate: 2000 },
 					{ id: '1', type: 'audio', name: 'AAC', channels: 2, bitrate: 128 },
 				],
-				metadata: { title: '', author: '', rec_prefix: 'Multi' },
+				metadata: { title: '', author: '', copyright: '', comment: '', description: '', rec_prefix: 'Multi' },
 			},
 		},
 		recorders: {
@@ -1037,6 +1044,7 @@ async function startMockPearl({
 
 	// GET /admin/channel{cid}/get_params.cgi?title&author&rec_prefix and set_params.cgi?title=..&author=..&rec_prefix=..:
 	// the content metadata behind getContentMetadata/setContentMetadata (text/plain, legacy admin CGI).
+	const METADATA_KEYS = ['title', 'author', 'copyright', 'comment', 'description', 'rec_prefix']
 	function handleAdmin(req, res, url, query) {
 		const m = /^\/admin\/channel([^/]+)\/(get|set)_params\.cgi$/.exec(url.pathname)
 		if (!m) return false
@@ -1047,13 +1055,13 @@ async function startMockPearl({
 			return true
 		}
 		if (m[2] === 'set') {
-			for (const k of ['title', 'author', 'rec_prefix']) if (k in query) channel.metadata[k] = query[k]
+			for (const k of METADATA_KEYS) if (k in query) channel.metadata[k] = query[k]
 			res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Length': 0 })
 			res.end()
 			return true
 		}
 		const keys = Object.keys(query).filter((k) => k in channel.metadata)
-		const wanted = keys.length > 0 ? keys : ['title', 'author', 'rec_prefix']
+		const wanted = keys.length > 0 ? keys : METADATA_KEYS
 		const text = wanted.map((k) => `${k} = ${channel.metadata[k] ?? ''}`).join('\n') + '\n'
 		res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Length': Buffer.byteLength(text) })
 		res.end(text)

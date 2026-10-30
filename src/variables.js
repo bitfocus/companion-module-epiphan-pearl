@@ -308,6 +308,9 @@ function buildVariables(self) {
 		const md = self?.metadata?.[cid]
 		add(`channel_${cid}_metadata_title`, `${chLabel} Metadata Title`, md?.title)
 		add(`channel_${cid}_metadata_author`, `${chLabel} Metadata Author`, md?.author)
+		add(`channel_${cid}_metadata_copyright`, `${chLabel} Metadata Copyright`, md?.copyright)
+		add(`channel_${cid}_metadata_comment`, `${chLabel} Metadata Comment`, md?.comment)
+		add(`channel_${cid}_metadata_description`, `${chLabel} Metadata Description`, md?.description)
 		add(`channel_${cid}_metadata_rec_prefix`, `${chLabel} Metadata Filename Prefix`, md?.rec_prefix)
 
 		const publishers = channel.publishers || {}

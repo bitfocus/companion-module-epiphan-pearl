@@ -116,6 +116,13 @@ function getConfigFields() {
 		},
 		{
 			type: 'checkbox',
+			id: 'enable_metadata',
+			label: 'Poll channel content metadata (title, author, ...)',
+			width: 6,
+			default: true,
+		},
+		{
+			type: 'checkbox',
 			id: 'verbose',
 			label: 'Enable verbose logging',
 			width: 6,

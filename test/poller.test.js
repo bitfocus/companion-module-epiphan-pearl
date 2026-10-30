@@ -564,3 +564,16 @@ describe('preview image fetching: concurrency cap and failure visibility', () =>
 		)
 	})
 })
+
+describe('enable_metadata', () => {
+	it('enable_metadata false skips the metadata requests at poll time', async () => {
+		const mock = await startMockPearl()
+		const instance = await createInstance({ mock, config: { enable_metadata: false } })
+		try {
+			assert.ok(!mock.requests.some((r) => r.path.includes('get_params.cgi')))
+		} finally {
+			await instance.destroy()
+			await mock.close()
+		}
+	})
+})
