@@ -11,10 +11,10 @@
 	"license": "MIT",
 	"dependencies": {
 		"@companion-module/base": "^1.12.1",
-		"undici": "^8.10.2"
+		"undici": "^8.12.3"
 	},
 	"devDependencies": {
-		"@companion-module/tools": "^2.8.0",
+		"@companion-module/tools": "^2.9.1",
 		"eslint": "^9.36.0",
 		"prettier": "^3.6.2"
 	},
