@@ -462,6 +462,16 @@ function convertToParityV300(context, props) {
 	return result
 }
 
+// The option 'Use API v2.0' was removed, the API is selected automatically from the firmware
+function removeUseApiV2(context, props) {
+	const result = { updatedConfig: null, updatedActions: [], updatedFeedbacks: [] }
+	if (props.config && 'use_api_v2' in props.config) {
+		const { use_api_v2: _removed, ...config } = props.config
+		result.updatedConfig = config
+	}
+	return result
+}
+
 // The order is part of the contract: scripts are only ever appended, never reordered or removed.
 module.exports = [
 	// v2.2.0: default values for use_api_v2 / verbose
@@ -476,6 +486,8 @@ module.exports = [
 	setDefaultConfigV300Https,
 	// v3.0.0: Companion-parity control-set rewrite
 	convertToParityV300,
+	// v3.0.0: the option 'Use API v2.0' is gone, the API is selected automatically
+	removeUseApiV2,
 ]
 
 module.exports.CONFIG_DEFAULTS = CONFIG_DEFAULTS

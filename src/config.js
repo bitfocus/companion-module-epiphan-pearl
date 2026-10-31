@@ -142,11 +142,11 @@ function getConfigFields() {
 			default: false,
 		},
 		{
-			type: 'checkbox',
-			id: 'use_api_v2',
-			label: 'Use API v2.0 (if available)',
-			width: 6,
-			default: true,
+			type: 'static-text',
+			id: 'api_info',
+			width: 12,
+			label: 'API version',
+			value: 'The REST API version is selected automatically from the firmware of the encoder. The version in use is shown in the connection status and in the variable api_version.',
 		},
 		{
 			type: 'multidropdown',

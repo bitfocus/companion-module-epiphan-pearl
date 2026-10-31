@@ -73,7 +73,6 @@ function normaliseConfig(config) {
 	if (c.use_https && c.host_port === '80') c.host_port = '443'
 	c.poll_interval = clampNumber(c.poll_interval, POLL_INTERVAL_DEFAULT_MS, POLL_INTERVAL_MIN_MS, POLL_INTERVAL_MAX_MS)
 	c.timeout = clampNumber(c.timeout, 5000, 1000, 60000)
-	c.use_api_v2 = c.use_api_v2 !== false
 	c.preview_interval = clampNumber(c.preview_interval, 2, 0, 300)
 	c.preview_width = Math.round(clampNumber(c.preview_width, 144, 72, 720))
 	c.poll_events = c.poll_events !== false
@@ -161,6 +160,11 @@ class EpiphanEncoder extends InstanceBase {
 	}
 
 	/** true when the device speaks API v2.0 */
+	/** the API in use, for the connection status and the api_version variable */
+	get apiVersionLabel() {
+		return this.isV2 ? 'API v2.0' : 'legacy API'
+	}
+
 	get isV2() {
 		return this.apiBasePath === '/api/v2.0'
 	}
@@ -356,11 +360,6 @@ class EpiphanEncoder extends InstanceBase {
 		this.firmwareWarning = undefined
 		// stays false when the device could not be asked, the next poll then tries again
 		this.apiDetected = false
-		if (!this.config.use_api_v2) {
-			this.apiDetected = true
-			this.log('info', 'API v2.0 disabled in configuration, using legacy API')
-			return
-		}
 		try {
 			const version = await this.request('GET', '/api/v2.0/system/firmware/version', {
 				base: 'raw',

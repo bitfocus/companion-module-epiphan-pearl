@@ -60,6 +60,7 @@ production connection.
   (`storage_ID_total_gb`, `_used_gb`, `_free_gb`, `_free_pct`), the estimated remaining recording time
   (`storage_ID_remaining_time`, `_remaining_minutes`) and the warnings `cpu_load_high` and `cpu_temp_high`,
   using the thresholds of the encoder.
+- The API version is selected automatically. The option **Use API v2.0** was removed (the upgrade script drops it from existing connections), the version in use is shown in the connection status and in the new variable `api_version`.
 - With firmware older than 4.24.1 the connection status shows a warning that recommends a firmware update;
   everything that does not need API v2.0 keeps working.
 

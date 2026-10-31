@@ -32,6 +32,7 @@ function expectedVariableIds(state) {
 		'product_name',
 		'firmware',
 		'device_name',
+		'api_version',
 		'recorder_all_state_word',
 		'recorders_active_count',
 		'event_upcoming_id',

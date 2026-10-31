@@ -18,6 +18,7 @@ describe('upgrade scripts', () => {
 				'setDefaultConfigV260',
 				'setDefaultConfigV300Https',
 				'convertToParityV300',
+				'removeUseApiV2',
 			],
 		)
 		for (const fn of upgrades) assert.equal(typeof fn, 'function')
@@ -518,9 +519,8 @@ describe('config.js fields for D8/D9/D10 (poll_interval, use_api_v2, previews)',
 		assert.equal(pollField.default, 2000)
 		assert.equal(pollField.min, 500)
 		assert.equal(pollField.max, 300000)
-		// D9: use_api_v2 is last among the operational settings, right before preset_categories
 		assert.equal(ids.at(-1), 'preset_categories')
-		assert.equal(ids.at(-2), 'use_api_v2')
+		assert.equal(ids.includes('use_api_v2'), false, 'the API is selected automatically')
 	})
 
 	it('DEFAULT_CONFIG (test harness) carries poll_interval 300000, not the old pollfreq', () => {
@@ -542,5 +542,20 @@ describe('config.js fields for D8/D9/D10 (poll_interval, use_api_v2, previews)',
 			await instance.destroy()
 			await mock.close()
 		}
+	})
+})
+
+describe('removeUseApiV2', () => {
+	const script = upgrades[upgrades.length - 1]
+	it('is the last script and drops use_api_v2 from the stored config only', () => {
+		assert.equal(script.name, 'removeUseApiV2')
+		const stored = { host: 'x', use_api_v2: false, verbose: true }
+		assert.deepEqual(script(null, { config: stored, actions: [], feedbacks: [] }).updatedConfig, {
+			host: 'x',
+			verbose: true,
+		})
+		assert.deepEqual(stored, { host: 'x', use_api_v2: false, verbose: true }, 'input untouched')
+		assert.equal(script(null, { config: { host: 'x' }, actions: [], feedbacks: [] }).updatedConfig, null)
+		assert.equal(script(null, { config: null, actions: [], feedbacks: [] }).updatedConfig, null)
 	})
 })

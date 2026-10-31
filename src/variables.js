@@ -256,6 +256,7 @@ function buildVariables(self) {
 	add('product_name', 'Product Name', fw.product_name)
 	add('firmware', 'Firmware Version', fw.version)
 	add('device_name', 'Device Name', state.identity?.name)
+	add('api_version', 'REST API in use', self?.apiDetected ? (self.isV2 ? '2.0' : 'legacy') : '')
 
 	// ---------------------------------------------------------------- storages
 	const storages = state.storages || {}

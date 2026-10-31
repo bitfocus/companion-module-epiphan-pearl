@@ -141,10 +141,7 @@ module.exports = {
 		/** Returns true when the device speaks API v2.0, otherwise logs and returns false. */
 		const requireV2 = (label) => {
 			if (this.isV2) return true
-			this.log(
-				'warn',
-				`${label}: this action needs REST API v2.0 (firmware 4.24.1 or newer with "Use API v2.0" enabled)`,
-			)
+			this.log('warn', `${label}: this action needs REST API v2.0 (firmware 4.24.1 or newer)`)
 			return false
 		}
 

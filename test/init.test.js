@@ -353,13 +353,13 @@ describe('init edge cases', () => {
 		}
 	})
 
-	it('uses the legacy API when use_api_v2 is disabled', async () => {
+	it('ignores a leftover use_api_v2 setting and still selects the API automatically', async () => {
 		const mock = await startMockPearl()
 		const instance = await createInstance({ mock, config: { use_api_v2: false } })
 		try {
-			assert.equal(instance.apiBasePath, '/api')
-			assert.ok(!mock.requests.some((r) => r.path.startsWith('/api/v2.0/')))
-			assert.equal(Object.keys(instance.state.channels).length, 2)
+			assert.equal(instance.apiBasePath, '/api/v2.0')
+			assert.equal(instance.variableValues.api_version, '2.0')
+			assert.equal(instance.currentStatusMessage, 'API v2.0')
 		} finally {
 			await instance.destroy()
 			await mock.close()

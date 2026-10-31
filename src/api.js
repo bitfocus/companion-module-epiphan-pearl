@@ -85,7 +85,7 @@ module.exports = {
 	 */
 	applyOkStatus() {
 		if (this.firmwareWarning) this.applyStatus(InstanceStatus.UnknownWarning, this.firmwareWarning)
-		else this.applyStatus(InstanceStatus.Ok)
+		else this.applyStatus(InstanceStatus.Ok, this.apiDetected ? this.apiVersionLabel : '')
 	},
 
 	/**
