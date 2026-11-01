@@ -472,6 +472,52 @@ function removeUseApiV2(context, props) {
 	return result
 }
 
+/**
+ * Settings of the current config page and their valid range. A stored config can lack a value or hold one the
+ * page rejects (a red field disables Companion's save button), e.g. one that went through an older development
+ * build of this module whose upgrade scripts had already been counted as run.
+ */
+const REPAIR_NUMBERS = {
+	poll_interval: { fallback: 2000, min: 500, max: 300000 },
+	timeout: { fallback: 5000, min: 1000, max: 60000 },
+	preview_interval: { fallback: 2, min: 0, max: 300 },
+	preview_width: { fallback: 144, min: 72, max: 720 },
+}
+const REPAIR_FLAGS = {
+	use_https: false,
+	accept_self_signed: true,
+	poll_events: true,
+	enable_metadata: true,
+	verbose: false,
+}
+
+// v3.0.0: fill every setting that is missing or out of range with its default (idempotent)
+function repairConfigV300(context, props) {
+	const result = { updatedConfig: null, updatedActions: [], updatedFeedbacks: [] }
+	if (!props.config) return result
+	const config = { ...props.config }
+	let changed = false
+	const set = (key, value) => {
+		config[key] = value
+		changed = true
+	}
+	for (const [key, { fallback, min, max }] of Object.entries(REPAIR_NUMBERS)) {
+		const raw = config[key]
+		const n = raw === '' || raw === null || raw === undefined ? NaN : Number(raw)
+		if (!Number.isFinite(n) || n < min || n > max) set(key, fallback)
+		else if (typeof raw !== 'number') set(key, n)
+	}
+	for (const [key, fallback] of Object.entries(REPAIR_FLAGS)) {
+		if (typeof config[key] !== 'boolean') set(key, fallback)
+	}
+	if (config.host_port === undefined || config.host_port === null || config.host_port === '') set('host_port', '80')
+	if (typeof config.username !== 'string') set('username', 'admin')
+	if (typeof config.password !== 'string') set('password', '')
+	if (!Array.isArray(config.preset_categories)) set('preset_categories', PRESET_CATEGORY_IDS.slice())
+	if (changed) result.updatedConfig = config
+	return result
+}
+
 // The order is part of the contract: scripts are only ever appended, never reordered or removed.
 module.exports = [
 	// v2.2.0: default values for use_api_v2 / verbose
@@ -488,6 +534,8 @@ module.exports = [
 	convertToParityV300,
 	// v3.0.0: the option 'Use API v2.0' is gone, the API is selected automatically
 	removeUseApiV2,
+	// v3.0.0: repair missing / out-of-range settings
+	repairConfigV300,
 ]
 
 module.exports.CONFIG_DEFAULTS = CONFIG_DEFAULTS

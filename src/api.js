@@ -218,7 +218,10 @@ module.exports = {
 
 		if (response.status === 401 || response.status === 403) {
 			const message = `Authentication failed (${response.status}) for ${verb} ${url}`
-			this.applyStatus(InstanceStatus.AuthenticationFailure, 'Check username and password')
+			// only a 401 means the credentials are wrong; a 403 means this account may not use this one endpoint
+			// (an operator account on an admin page), which must not mark the whole connection as failed
+			if (response.status === 401)
+				this.applyStatus(InstanceStatus.AuthenticationFailure, 'Check username and password')
 			if (!opts.silent) this.log('error', message)
 			throw new EncoderApiError(message, { status: response.status, ...errInfo })
 		}

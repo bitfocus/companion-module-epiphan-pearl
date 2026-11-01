@@ -19,6 +19,7 @@ describe('upgrade scripts', () => {
 				'setDefaultConfigV300Https',
 				'convertToParityV300',
 				'removeUseApiV2',
+				'repairConfigV300',
 			],
 		)
 		for (const fn of upgrades) assert.equal(typeof fn, 'function')
@@ -546,8 +547,8 @@ describe('config.js fields for D8/D9/D10 (poll_interval, use_api_v2, previews)',
 })
 
 describe('removeUseApiV2', () => {
-	const script = upgrades[upgrades.length - 1]
-	it('is the last script and drops use_api_v2 from the stored config only', () => {
+	const script = upgrades.find((fn) => fn.name === 'removeUseApiV2')
+	it('drops use_api_v2 from the stored config only', () => {
 		assert.equal(script.name, 'removeUseApiV2')
 		const stored = { host: 'x', use_api_v2: false, verbose: true }
 		assert.deepEqual(script(null, { config: stored, actions: [], feedbacks: [] }).updatedConfig, {
@@ -557,5 +558,32 @@ describe('removeUseApiV2', () => {
 		assert.deepEqual(stored, { host: 'x', use_api_v2: false, verbose: true }, 'input untouched')
 		assert.equal(script(null, { config: { host: 'x' }, actions: [], feedbacks: [] }).updatedConfig, null)
 		assert.equal(script(null, { config: null, actions: [], feedbacks: [] }).updatedConfig, null)
+	})
+})
+
+describe('repairConfigV300', () => {
+	const script = upgrades[upgrades.length - 1]
+	const run = (config) => script(null, { config, actions: [], feedbacks: [] }).updatedConfig
+
+	it('is the last script', () => assert.equal(script.name, 'repairConfigV300'))
+
+	it('fills missing settings and replaces out-of-range or empty numbers with the defaults', () => {
+		const fixed = run({ host: 'x', timeout: '', preview_width: 5000, poll_interval: undefined })
+		assert.equal(fixed.timeout, 5000)
+		assert.equal(fixed.preview_width, 144)
+		assert.equal(fixed.poll_interval, 2000)
+		assert.equal(fixed.preview_interval, 2)
+		assert.equal(fixed.accept_self_signed, true)
+		assert.equal(fixed.host_port, '80')
+		assert.equal(fixed.host, 'x')
+		assert.ok(Array.isArray(fixed.preset_categories))
+	})
+
+	it('keeps valid values, converts numeric strings, and changes nothing on a complete config', () => {
+		const fixed = run({ timeout: '3000', preview_width: 200 })
+		assert.equal(fixed.timeout, 3000)
+		assert.equal(fixed.preview_width, 200)
+		assert.equal(run(fixed), null, 'idempotent')
+		assert.equal(run(null), null)
 	})
 })

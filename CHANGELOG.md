@@ -99,6 +99,9 @@ production connection.
 - The variables `channel_CID_resolution`, `_fps` and `_bitrate` show the current values of the encoder, also when
   the bitrate is set to automatic and on firmware older than 4.24.1.
 
+- Connections whose stored settings lack a value or hold one the settings page rejects (e.g. an empty request timeout or preview image width, which made the page's save button unavailable) are repaired by an upgrade script.
+- Only a 401 answer marks the connection as "authentication failed". A 403 (the account may not use one endpoint) is logged but no longer fails the whole connection.
+
 ### Removed
 
 - Preset categories `Channels`, `Publishers` and `Recorders` are now `Layouts`, `Streaming` and `Recording`.
