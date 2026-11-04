@@ -153,7 +153,7 @@ function parseJsonOption(text) {
 	try {
 		parsed = JSON.parse(trimmed)
 	} catch (e) {
-		throw new Error(`Option is not valid JSON: ${e.message}`)
+		throw new Error(`Option is not valid JSON: ${e.message}`, { cause: e })
 	}
 	if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
 		throw new Error('Option must be a JSON object (e.g. {"key": "value"})')

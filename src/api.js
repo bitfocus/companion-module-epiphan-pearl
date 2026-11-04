@@ -167,7 +167,10 @@ module.exports = {
 		const cleanPath = base === 'raw' ? String(path || '') : normalisePath(path)
 		const scheme = config.use_https === true ? 'https' : 'http'
 		const port = config.host_port || (config.use_https === true ? 443 : 80)
-		const url = `${scheme}://${config.host}:${port}${basePrefix(this, base)}${cleanPath}${toQueryString(opts.query)}`
+		// an IPv6 address needs brackets in a URL
+		const host =
+			String(config.host).includes(':') && !String(config.host).startsWith('[') ? `[${config.host}]` : config.host
+		const url = `${scheme}://${host}:${port}${basePrefix(this, base)}${cleanPath}${toQueryString(opts.query)}`
 		const timeout =
 			Number(opts.timeout) > 0
 				? Number(opts.timeout)

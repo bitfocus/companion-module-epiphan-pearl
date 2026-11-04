@@ -1,10 +1,5 @@
 // D-numbers (D1–D17) refer to Epiphan's internal Companion-parity decisions.
-const {
-	CreateConvertToBooleanFeedbackUpgradeScript,
-	InstanceBase,
-	InstanceStatus,
-	Regex,
-} = require('@companion-module/base')
+const { CreateConvertToBooleanFeedbackUpgradeScript, InstanceBase, InstanceStatus } = require('@companion-module/base')
 
 const { EncoderApiError, ...api } = require('./api')
 const poller = require('./poller')
@@ -29,8 +24,9 @@ const POLL_INTERVAL_DEFAULT_MS = 2000
 const POLL_INTERVAL_MIN_MS = 500
 const POLL_INTERVAL_MAX_MS = 300000
 
-const IP_RE = new RegExp(Regex.IP.slice(1, -1))
-const HOSTNAME_RE = new RegExp(Regex.HOSTNAME.slice(1, -1))
+/** an IPv4 address, an IPv6 address (optionally in brackets) or a hostname: no spaces, no slashes, no scheme */
+const HOST_RE =
+	/^(\[[0-9a-fA-F:.%a-zA-Z]+\]|[0-9a-fA-F:.%]*:[0-9a-fA-F:.%]*|[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?)*)$/
 
 /**
  * Split the value of the Bonjour field ('host:port', or empty for "Manual") into host and port
@@ -88,7 +84,7 @@ function normaliseConfig(config) {
  * @returns {string|null} problem description or null when fine
  */
 function validateConfig(config) {
-	if (!config.host || (!IP_RE.test(config.host) && !HOSTNAME_RE.test(config.host))) {
+	if (!config.host || !HOST_RE.test(config.host)) {
 		return `Invalid IP address or hostname given in configuration: '${config.host}'`
 	}
 	const port = Number(config.host_port)

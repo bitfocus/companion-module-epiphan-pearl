@@ -155,13 +155,12 @@ recorder is not recording (an inverted **Recorder state** feedback).
 #### Get / Set Layout Data
 
 Kept from earlier versions (ids and options unchanged, existing buttons keep working). Always uses the legacy
-API, so they also work on firmware without API v2.0.
+API, so they also work on firmware without API v2.0. **Get layout data** returns the layout settings as JSON as the action's result: choose where to keep it in the action's _Store result_ setting (a custom variable or a local variable). Buttons that used the old _Destination Variable_ are converted automatically.
 
-| Option                   | Values                                                                      | Default      |
-| ------------------------ | --------------------------------------------------------------------------- | ------------ |
-| **Layout to get / set**  | every layout of every channel                                               | first layout |
-| **Destination Variable** | Get only: the custom variable that receives the layout settings as JSON     | —            |
-| **Layout Data**          | Set only: the JSON text to write, e.g. one stored by Get; accepts variables | `{}`         |
+| Option                  | Values                                                                      | Default      |
+| ----------------------- | --------------------------------------------------------------------------- | ------------ |
+| **Layout to get / set** | every layout of every channel                                               | first layout |
+| **Layout Data**         | Set only: the JSON text to write, e.g. one stored by Get; accepts variables | `{}`         |
 
 #### Get / Set Content Metadata
 

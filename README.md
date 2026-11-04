@@ -11,7 +11,7 @@ gain and delay, trigger single touch, insert recording bookmarks, eject storage,
 CMS scheduled events, and show live preview thumbnails and device state (storage, CPU, AFU, schedule) on your
 buttons — all with matching ready-made presets and icons.
 
-The module targets `@companion-module/base` 1.12 (Companion 4.0 and newer) and runs on the `node22` runtime.
+The module targets `@companion-module/base` 2.2, which needs **Companion 5.1 or newer**, and runs on the `node26` runtime (develop with Node 26.5 or newer).
 
 ## Usage
 

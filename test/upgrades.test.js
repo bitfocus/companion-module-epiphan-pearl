@@ -20,6 +20,8 @@ describe('upgrade scripts', () => {
 				'convertToParityV300',
 				'removeUseApiV2',
 				'repairConfigV300',
+				'', // the base library's result-store conversion is an anonymous function
+				'portAsNumberV300',
 			],
 		)
 		for (const fn of upgrades) assert.equal(typeof fn, 'function')
@@ -562,10 +564,8 @@ describe('removeUseApiV2', () => {
 })
 
 describe('repairConfigV300', () => {
-	const script = upgrades[upgrades.length - 1]
+	const script = upgrades.find((fn) => fn.name === 'repairConfigV300')
 	const run = (config) => script(null, { config, actions: [], feedbacks: [] }).updatedConfig
-
-	it('is the last script', () => assert.equal(script.name, 'repairConfigV300'))
 
 	it('fills missing settings and replaces out-of-range or empty numbers with the defaults', () => {
 		const fixed = run({ host: 'x', timeout: '', preview_width: 5000, poll_interval: undefined })
@@ -584,6 +584,99 @@ describe('repairConfigV300', () => {
 		assert.equal(fixed.timeout, 3000)
 		assert.equal(fixed.preview_width, 200)
 		assert.equal(run(fixed), null, 'idempotent')
+		assert.equal(run(null), null)
+	})
+})
+
+describe('module-base 2.x option shape in convertToParityV300', () => {
+	const convert = upgrades.find((fn) => fn.name === 'convertToParityV300')
+	const wrapped = (value) => ({ isExpression: false, value })
+
+	it('converts actions whose options arrive as { value, isExpression } and writes the same shape back', () => {
+		const actions = [
+			{
+				id: 'a1',
+				controlId: 'c1',
+				actionId: 'channelChangeLayout',
+				options: { channelIdlayoutId: wrapped('1-2') },
+			},
+			{
+				id: 'a2',
+				controlId: 'c2',
+				actionId: 'recorderRecording',
+				options: { recorderId: wrapped('2'), startStopAction: wrapped(3) },
+			},
+			{ id: 'a3', controlId: 'c3', actionId: 'getLayoutData', options: { channelIdlayoutId: wrapped('1-2') } },
+		]
+		const result = convert(null, props(null, { actions }))
+		const byId = Object.fromEntries(result.updatedActions.map((a) => [a.id, a]))
+		assert.equal(byId.a1.actionId, 'layout')
+		assert.deepEqual(byId.a1.options, { channelId: wrapped('1'), layoutId: wrapped('1-2') })
+		assert.equal(byId.a2.actionId, 'recorder')
+		assert.deepEqual(byId.a2.options, { recorderId: wrapped('2'), op: wrapped('toggle') })
+		assert.equal(byId.a3, undefined, 'layout data is kept as it is')
+	})
+
+	it('keeps a stored expression as an expression', () => {
+		const expression = { isExpression: true, value: '$(local:x)' }
+		const actions = [
+			{
+				id: 'a1',
+				controlId: 'c1',
+				actionId: 'channelChangeLayout',
+				options: { channelIdlayoutId: wrapped('1-2') },
+			},
+			{
+				id: 'a2',
+				controlId: 'c2',
+				actionId: 'insertMarker',
+				options: { channel: wrapped('1'), markertext: expression },
+			},
+		]
+		const result = convert(null, props(null, { actions }))
+		const marker = result.updatedActions.find((a) => a.id === 'a2')
+		assert.deepEqual(marker.options.text, expression)
+	})
+})
+
+describe('Get layout data / Get Content Metadata results', () => {
+	it('moves the destination variable of both actions into the stored result of the action', () => {
+		const script = upgrades.at(-2)
+		const wrapped = (value) => ({ isExpression: false, value })
+		const actions = [
+			{
+				id: 'a1',
+				controlId: 'c1',
+				actionId: 'getLayoutData',
+				options: { channelIdlayoutId: wrapped('1-2'), destination: wrapped('layout_json') },
+			},
+			{
+				id: 'a2',
+				controlId: 'c2',
+				actionId: 'getContentMetadata',
+				options: { channel: wrapped('1'), destination: wrapped('md_json') },
+			},
+			{ id: 'a3', controlId: 'c3', actionId: 'layout', options: { channelId: wrapped('1') } },
+		]
+		const result = script({ currentConfig: {} }, { config: null, secrets: null, actions, feedbacks: [] })
+		const byId = Object.fromEntries(result.updatedActions.map((a) => [a.id, a]))
+		assert.deepEqual(byId.a1.storeResult, { type: 'custom-variable', variableName: wrapped('layout_json') })
+		assert.deepEqual(byId.a2.storeResult, { type: 'custom-variable', variableName: wrapped('md_json') })
+		assert.equal('destination' in byId.a1.options, false)
+		assert.equal(byId.a3, undefined)
+	})
+})
+
+describe('portAsNumberV300', () => {
+	const script = upgrades.find((fn) => fn.name === 'portAsNumberV300')
+	const run = (config) => script(null, { config, actions: [], feedbacks: [] }).updatedConfig
+
+	it('turns the text port into a number, falls back to 80 for nonsense, and leaves a number alone', () => {
+		assert.deepEqual(run({ host: 'x', host_port: '8080' }), { host: 'x', host_port: 8080 })
+		assert.deepEqual(run({ host_port: '' }), { host_port: 80 })
+		assert.deepEqual(run({ host_port: '70000' }), { host_port: 80 })
+		assert.deepEqual(run({}), { host_port: 80 })
+		assert.equal(run({ host_port: 443 }), null)
 		assert.equal(run(null), null)
 	})
 })

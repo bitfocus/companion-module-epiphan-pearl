@@ -1,11 +1,4 @@
-const { Regex } = require('@companion-module/base')
 const { PRESET_CATEGORY_IDS } = require('./presets')
-
-/**
- * Regex (as Companion regex string '/.../') accepting either an IPv4 address or a hostname
- */
-const stripSlashes = (re) => re.replace(/^\/\^?/, '').replace(/\$?\/$/, '')
-const REGEX_IP_OR_HOSTNAME = `/^(?:${stripSlashes(Regex.IP)}|${stripSlashes(Regex.HOSTNAME)})$/`
 
 /**
  * Creates the configuration fields for web config.
@@ -44,16 +37,18 @@ function getConfigFields() {
 			label: 'Host',
 			width: 6,
 			default: '192.168.255.250',
-			regex: REGEX_IP_OR_HOSTNAME,
+			// no regex: the address is checked by the module (validateConfig), so IPv6 and any hostname form can be entered
 			isVisibleExpression: '!$(options:bonjourHost)',
 		},
 		{
-			type: 'textinput',
+			type: 'number',
 			id: 'host_port',
 			label: 'Port',
 			width: 6,
-			default: '80',
-			regex: Regex.PORT,
+			default: 80,
+			min: 1,
+			max: 65535,
+			asInteger: true,
 			isVisibleExpression: '!$(options:bonjourHost)',
 		},
 		{

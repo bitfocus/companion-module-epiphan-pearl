@@ -1,4 +1,5 @@
 // D-numbers (D1–D17) refer to Epiphan's internal Companion-parity decisions.
+const { CreateUseActionResultStoreUpgradeScript } = require('@companion-module/base')
 const { PRESET_CATEGORY_IDS } = require('./presets')
 const { splitPair, clampNumber } = require('./utils')
 
@@ -518,6 +519,68 @@ function repairConfigV300(context, props) {
 	return result
 }
 
+/**
+ * module-base 2.x hands the options of stored actions and feedbacks to the upgrade scripts as
+ * `{ value, isExpression }` objects, 1.x as plain values. convertToParityV300 was written for plain values, so
+ * this runs it on plain copies and wraps what it writes back, whichever shape arrives. A stored expression
+ * (isExpression: true) travels through unchanged as an object.
+ */
+const isWrappedOption = (value) =>
+	value !== null &&
+	typeof value === 'object' &&
+	!Array.isArray(value) &&
+	typeof value.isExpression === 'boolean' &&
+	'value' in value
+const unwrapOptions = (options) =>
+	Object.fromEntries(
+		Object.entries(options || {}).map(([key, value]) => [
+			key,
+			isWrappedOption(value) && !value.isExpression ? value.value : value,
+		]),
+	)
+const wrapOptions = (options) =>
+	Object.fromEntries(
+		Object.entries(options || {}).map(([key, value]) => [
+			key,
+			value === undefined || isWrappedOption(value) ? value : { isExpression: false, value },
+		]),
+	)
+
+function acceptWrappedOptions(script) {
+	const upgrade = (context, props) => {
+		const items = [...(props.actions || []), ...(props.feedbacks || [])].filter(Boolean)
+		const values = items.flatMap((item) => Object.values(item.options || {}))
+		// plain values only (1.x data, or a host that does not wrap): nothing to translate. Wrapped values, or no
+		// options at all to tell by, mean the 2.x shape.
+		if (values.some((value) => !isWrappedOption(value))) return script(context, props)
+		const plain = (item) => ({ ...item, options: unwrapOptions(item.options) })
+		const result = script(context, {
+			...props,
+			actions: (props.actions || []).map(plain),
+			feedbacks: (props.feedbacks || []).map(plain),
+		})
+		const wrapBack = (item) => ({ ...item, options: wrapOptions(item.options) })
+		return {
+			...result,
+			updatedActions: result.updatedActions.map(wrapBack),
+			updatedFeedbacks: result.updatedFeedbacks.map(wrapBack),
+		}
+	}
+	Object.defineProperty(upgrade, 'name', { value: script.name })
+	return upgrade
+}
+
+// The port is a number field in module-base 2.x (the regex field types are deprecated); it was a text field
+function portAsNumberV300(context, props) {
+	const result = { updatedConfig: null, updatedActions: [], updatedFeedbacks: [] }
+	if (!props.config) return result
+	const port = Number(props.config.host_port)
+	const valid = Number.isInteger(port) && port >= 1 && port <= 65535
+	if (typeof props.config.host_port === 'number' && valid) return result
+	result.updatedConfig = { ...props.config, host_port: valid ? port : 80 }
+	return result
+}
+
 // The order is part of the contract: scripts are only ever appended, never reordered or removed.
 module.exports = [
 	// v2.2.0: default values for use_api_v2 / verbose
@@ -531,11 +594,16 @@ module.exports = [
 	// v3.0.0: default values (HTTPS off, self-signed accepted) for the connection security settings
 	setDefaultConfigV300Https,
 	// v3.0.0: Companion-parity control-set rewrite
-	convertToParityV300,
+	acceptWrappedOptions(convertToParityV300),
 	// v3.0.0: the option 'Use API v2.0' is gone, the API is selected automatically
 	removeUseApiV2,
 	// v3.0.0: repair missing / out-of-range settings
 	repairConfigV300,
+	// v3.0.0 (module-base 2.x): 'Get layout data' / 'Get Content Metadata' return their result instead of writing
+	// a custom variable; the variable chosen in 'destination' becomes the action's stored result
+	CreateUseActionResultStoreUpgradeScript({ getLayoutData: 'destination', getContentMetadata: 'destination' }),
+	// v3.0.0 (module-base 2.x): the port is a number field now, it was text
+	portAsNumberV300,
 ]
 
 module.exports.CONFIG_DEFAULTS = CONFIG_DEFAULTS

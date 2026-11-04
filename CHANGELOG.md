@@ -12,9 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The control set now matches the Epiphan Encoders Stream Deck plugin: the same actions, feedbacks, variables,
 preset categories, colours and state words, so an operator can move between the two without relearning.
-**This is a breaking release for hand-built buttons.** An upgrade script converts every 2.2.0 action and
+**This is a breaking release for hand-built buttons, and it needs Companion 5.1 or newer** (module-base 2.2, Node 26).
+Stay on 2.2.x with an older Companion. An upgrade script converts every 2.2.0 action and
 feedback that has a counterpart; the rest is listed under Removed. Read the upgrade notes before updating a
 production connection.
+
+### Important
+
+- Requires **Companion 5.1 or newer**: the module is built on `@companion-module/base` 2.2 and runs on the `node26` runtime.
+- Get layout data and Get Content Metadata no longer ask for a custom variable. Choose where to keep the result in the action's _Store result_ setting, like for other actions that return a value. Existing buttons are converted automatically.
+- The connection setting **Port** is a number field now (existing connections are converted).
 
 ### Added
 
@@ -47,7 +54,7 @@ production connection.
   **Preview image refresh interval** and **Preview image width**, and **Poll CMS schedule**.
 - Content metadata: copyright, comment and description, as fields on Set Content Metadata and as variables
   `channel_CID_metadata_copyright`/`_comment`/`_description`.
-- Get Content Metadata can store the metadata as JSON in a custom variable.
+- Get Content Metadata returns the metadata as JSON; keep it with the action's _Store result_ setting.
 - Set Content Metadata only sends non-empty fields unless **Also send empty fields** is checked.
 - Connection setting **Poll channel content metadata** to turn the metadata requests off.
 - A removed action that is still on a button is reported once per start in the connection log, with the
