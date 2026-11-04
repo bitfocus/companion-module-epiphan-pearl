@@ -19,6 +19,9 @@ const MIN_API_V2_VERSION = 42401
 const MIN_API_V2_FIRMWARE = '4.24.1'
 /** delay of the coalesced poll triggered after a control action */
 const POLL_SOON_DELAY = 750
+/** repeats of that poll while the state a command aims for is not reported yet, and the gap between them */
+const POLL_SOON_RETRIES = 4
+const POLL_SOON_RETRY_DELAY = 1000
 /** poll_interval bounds and fallback (D8); kept in sync with src/config.js and src/poller.js */
 const POLL_INTERVAL_DEFAULT_MS = 2000
 const POLL_INTERVAL_MIN_MS = 500
@@ -333,6 +336,7 @@ class EpiphanEncoder extends InstanceBase {
 		this.timer = undefined
 		this.previewTimer = undefined
 		this.pollSoonTimer = undefined
+		this.pollSoonSettled = undefined
 		this.stopMeterTimer()
 		// Stage 1 mixins (confirm.js, rotary.js): a pending confirm or a coalescing rotary tick must not
 		// outlive this instance
@@ -408,13 +412,41 @@ class EpiphanEncoder extends InstanceBase {
 	/**
 	 * Run one poll shortly after a control action so feedbacks update without waiting for the interval.
 	 * Multiple calls within the delay are coalesced into one poll.
+	 *
+	 * The encoder often still reports the old state right after a command. With `isSettled`, the poll is
+	 * repeated (up to POLL_SOON_RETRIES more times, a second apart) until that function says the state the
+	 * command was aiming for has been reached, so the button follows within a second or two.
+	 *
+	 * @param {() => boolean} [isSettled] true once the state after the command is reached
 	 */
-	schedulePollSoon() {
+	schedulePollSoon(isSettled) {
+		if (typeof isSettled === 'function') {
+			this.pollSoonSettled = isSettled
+			this.pollSoonRetries = 0
+		}
 		if (this.pollSoonTimer) return
-		this.pollSoonTimer = setTimeout(() => {
+		this.armPollSoon(POLL_SOON_DELAY)
+	}
+
+	/** INTERNAL: the timer behind schedulePollSoon */
+	armPollSoon(delay) {
+		this.pollSoonTimer = setTimeout(async () => {
 			this.pollSoonTimer = undefined
-			this.pollAll().catch(() => {})
-		}, POLL_SOON_DELAY)
+			await this.pollAll().catch(() => {})
+			const isSettled = this.pollSoonSettled
+			let settled = true
+			try {
+				settled = !isSettled || isSettled() === true
+			} catch {
+				// a predicate that cannot be evaluated counts as settled: never poll forever for it
+			}
+			if (settled || this.pollSoonRetries >= POLL_SOON_RETRIES || this.pollSoonTimer) {
+				if (settled || this.pollSoonRetries >= POLL_SOON_RETRIES) this.pollSoonSettled = undefined
+				return
+			}
+			this.pollSoonRetries++
+			this.armPollSoon(POLL_SOON_RETRY_DELAY)
+		}, delay)
 	}
 
 	/**

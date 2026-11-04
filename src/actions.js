@@ -102,6 +102,15 @@ const EXTEND_DEFAULT = 300
 
 const enc = (v) => encodeURIComponent(String(v))
 
+/** state(s) a recorder / publisher reports once a command has taken effect; none for a reset */
+const RECORDER_TARGET_STATES = {
+	start: ['starting', 'started'],
+	stop: ['stopped', 'disabled'],
+	pause: ['paused'],
+	resume: ['starting', 'started'],
+}
+const PUBLISHER_TARGET_STATES = { start: ['starting', 'started', 'listening'], stop: ['stopped', 'disabled'] }
+
 /**
  * Companion expression that is true while `$(options:field)` equals one of `values`. Expressions may only
  * refer to option fields that have disableAutoExpression set.
@@ -254,7 +263,14 @@ module.exports = {
 					await this.request('POST', path)
 				}
 				this.log('debug', `Recorder ${rid}: ${op}`)
-				this.schedulePollSoon()
+				const target = RECORDER_TARGET_STATES[op]
+				this.schedulePollSoon(
+					target &&
+						(() =>
+							Object.values(this.state.recorders)
+								.filter((recorder) => rid === 'all' || String(recorder.id) === String(rid))
+								.every((recorder) => target.includes(recorder.status?.state))),
+				)
 			}),
 		}
 
@@ -318,7 +334,14 @@ module.exports = {
 						: `/channels/${enc(cid)}/publishers/${enc(pid)}/control/${enc(op)}`
 				await this.request('POST', path)
 				this.log('debug', `Stream ${cid}-${pid}: ${op}`)
-				this.schedulePollSoon()
+				const target = PUBLISHER_TARGET_STATES[op]
+				this.schedulePollSoon(
+					target &&
+						(() =>
+							Object.values(this.state.channels[cid]?.publishers ?? {})
+								.filter((publisher) => pid === 'all' || String(publisher.id) === String(pid))
+								.every((publisher) => target.includes(publisher.status?.state))),
+				)
 			}),
 		}
 

@@ -978,3 +978,59 @@ describe('content metadata (legacy admin CGI)', () => {
 		assert.ok(instance.calls.log.some((l) => l.level === 'error'))
 	})
 })
+
+describe('follow-up polling after a command', () => {
+	let mock
+	let instance
+	before(async () => {
+		mock = await startMockPearl()
+		instance = await createInstance({ mock })
+	})
+	after(async () => {
+		await instance.destroy()
+		await mock.close()
+	})
+
+	it('repeats the poll until the recorder reports the state the command aimed for', async () => {
+		let polls = 0
+		const original = instance.pollAll.bind(instance)
+		instance.pollAll = () => {
+			polls++
+			return original()
+		}
+		// the encoder keeps reporting the old state for the first poll after the command
+		const rec = mock.state.recorders['2']
+		rec.status = { state: 'stopped' }
+		const applied = []
+		const realStart = instance.request.bind(instance)
+		instance.request = async (...args) => {
+			const result = await realStart(...args)
+			if (args[0] === 'POST' && String(args[1]).includes('/recorders/2/control/start')) {
+				applied.push(true)
+				rec.status = { state: 'stopped' } // not reflected yet
+				setTimeout(() => (rec.status = { state: 'started', duration: 0 }), 900)
+			}
+			return result
+		}
+		await runAction(instance, 'recorder', { recorderId: '2', op: 'start' })
+		assert.equal(applied.length, 1)
+		await new Promise((resolve) => setTimeout(resolve, 3200))
+		assert.ok(polls >= 2, `expected the poll to be repeated, got ${polls}`)
+		assert.equal(instance.state.recorders['2'].status.state, 'started')
+		instance.request = realStart
+		instance.pollAll = original
+	})
+
+	it('gives up after a few repeats when the state never changes', async () => {
+		let polls = 0
+		const original = instance.pollAll.bind(instance)
+		instance.pollAll = () => {
+			polls++
+			return original()
+		}
+		instance.schedulePollSoon(() => false)
+		await new Promise((resolve) => setTimeout(resolve, 6000))
+		assert.ok(polls >= 3 && polls <= 6, `expected a bounded number of polls, got ${polls}`)
+		instance.pollAll = original
+	})
+})

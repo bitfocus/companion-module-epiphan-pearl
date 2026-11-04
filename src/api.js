@@ -345,8 +345,8 @@ module.exports = {
 	},
 
 	/**
-	 * Write a channel's content metadata through the legacy admin CGI. Throws when the device rejects it,
-	 * in which case the stored values (and variables) stay as they were.
+	 * Write a channel's content metadata through the legacy admin CGI and read it back. Throws when the device
+	 * rejects it, in which case the stored values (and variables) stay as they were.
 	 *
 	 * @param {string|number} channelId
 	 * @param {{title?: string, author?: string, copyright?: string, comment?: string, description?: string, rec_prefix?: string}} values
@@ -360,8 +360,12 @@ module.exports = {
 			text: true,
 			query: values,
 		})
-		this.metadata[cid] = { ...this.metadata[cid], ...values }
-		variables.updateVariables(this)
+		// read the values back, so the variables show what the encoder actually stored; when that read fails
+		// the values that were sent are assumed to be stored
+		if (!(await this.fetchMetadata(cid))) {
+			this.metadata[cid] = { ...this.metadata[cid], ...values }
+			variables.updateVariables(this)
+		}
 	},
 
 	/**
