@@ -244,7 +244,9 @@ module.exports = {
 					apiStatus = parsed?.status
 					detail = parsed?.message || parsed?.error || ''
 				} catch {
-					detail = text.slice(0, 200)
+					// the encoder's web server answers with an HTML page when its API crashes: keep only the title
+					const title = /<title>\s*([^<]*?)\s*<\/title>/i.exec(text)?.[1]
+					detail = title && /<html/i.test(text) ? `web server error page "${title}"` : text.slice(0, 200)
 				}
 			} catch {
 				// ignore body read problems
