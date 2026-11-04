@@ -5,18 +5,26 @@
 	"main": "index.js",
 	"scripts": {
 		"format": "prettier -w .",
-		"test": "echo \"Error: no test specified\" && exit 1"
+		"test": "node --test test/*.test.js",
+		"build": "companion-module-build",
+		"lint": "eslint *.js test/*.js",
+		"format:check": "prettier --check actions.js package.json companion/manifest.json test"
 	},
 	"license": "MIT",
 	"dependencies": {
-		"@companion-module/base": "^1.12.1"
+		"@companion-module/base": "~1.15.0"
 	},
 	"devDependencies": {
-		"@companion-module/tools": "^2.8.0"
+		"@companion-module/tools": "^2.9.0",
+		"eslint": "^8.57.1",
+		"prettier": "^3.6.2"
 	},
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/bitfocus/companion-module-epiphan-pearl.git"
 	},
-	"prettier": "@companion-module/tools/.prettierrc.json"
+	"prettier": "@companion-module/tools/.prettierrc.json",
+	"engines": {
+		"node": "^26.5"
+	}
 }
