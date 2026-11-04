@@ -1,0 +1,385 @@
+/**
+ * Test harness: replaces '@companion-module/base' in require.cache with a recording stub.
+ *
+ * IMPORTANT: require this file (or call installStub()) BEFORE anything requires src/instance.js,
+ * otherwise the real InstanceBase is bound into the module's prototype chain.
+ *
+ *   const { createInstance, runAction, runFeedback } = require('./harness')
+ *   const { startMockPearl } = require('./mock-pearl')
+ *   const mock = await startMockPearl()
+ *   const instance = await createInstance({ mock, config: { verbose: true } })
+ *   await runAction(instance, 'recorder', { recorderId: 'all', op: 'start' })
+ *   instance.calls.log            // [{ level, message }]
+ *   instance.calls.status         // [{ status, message }]
+ *   instance.definitions.actions  // last setActionDefinitions() payload
+ *   instance.variableValues       // merged setVariableValues() payloads
+ *   instance.checkedFeedbacks     // [[...ids], ...] one entry per checkFeedbacks() call
+ *   await instance.destroy(); await mock.close()
+ */
+const Module = require('node:module')
+const path = require('node:path')
+
+// ---------------------------------------------------------------------------
+// Values copied from @companion-module/base (dist/module-api/enums.js, dist/util.js)
+// ---------------------------------------------------------------------------
+
+const InstanceStatus = Object.freeze({
+	Ok: 'ok',
+	Connecting: 'connecting',
+	Disconnected: 'disconnected',
+	ConnectionFailure: 'connection_failure',
+	BadConfig: 'bad_config',
+	UnknownError: 'unknown_error',
+	UnknownWarning: 'unknown_warning',
+	AuthenticationFailure: 'authentication_failure',
+})
+
+const Regex = Object.freeze({
+	IP: '/^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/',
+	HOSTNAME:
+		'/^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])\\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9-]*[A-Za-z0-9])$/',
+	BOOLEAN: '/^(true|false|0|1)$/i',
+	PORT: '/^([1-9]|[1-8][0-9]|9[0-9]|[1-8][0-9]{2}|9[0-8][0-9]|99[0-9]|[1-8][0-9]{3}|9[0-8][0-9]{2}|99[0-8][0-9]|999[0-9]|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-4])$/',
+	MAC_ADDRESS: '/^(?:[a-fA-F0-9]{2}:){5}([a-fA-F0-9]{2})$/',
+	PERCENT: '/^(100|[0-9]|[0-9][0-9])$/',
+	FLOAT: '/^([0-9]*\\.)?[0-9]+$/',
+	SIGNED_FLOAT: '/^[+-]?([0-9]*\\.)?[0-9]+$/',
+	FLOAT_OR_INT: '/^([0-9]+)(\\.[0-9]+)?$/',
+	NUMBER: '/^\\d+$/',
+	SIGNED_NUMBER: '/^[+-]?\\d+$/',
+	SOMETHING: '/^.+$/',
+	TIMECODE: '/^(0*[0-9]|1[0-9]|2[0-4]):(0*[0-9]|[1-5][0-9]|60):(0*[0-9]|[1-5][0-9]|60):(0*[0-9]|[12][0-9]|30)$/',
+})
+
+function combineRgb(r, g, b, a) {
+	let colorNumber = ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff)
+	if (a && a >= 0 && a < 1) {
+		colorNumber += 0x1000000 * Math.round(255 * (1 - a))
+	}
+	return colorNumber
+}
+
+function splitRgb(color) {
+	if (typeof color === 'number') {
+		return {
+			r: (color >> 16) & 0xff,
+			g: (color >> 8) & 0xff,
+			b: color & 0xff,
+			a: color > 0xffffff ? 1 - ((color >>> 24) & 0xff) / 255 : 1,
+		}
+	}
+	return { r: 0, g: 0, b: 0, a: 1 }
+}
+
+function literal(v) {
+	return v
+}
+
+function emptyUpgradeResult() {
+	return { updatedConfig: null, updatedActions: [], updatedFeedbacks: [] }
+}
+
+function EmptyUpgradeScript() {
+	return emptyUpgradeResult()
+}
+
+function CreateConvertToBooleanFeedbackUpgradeScript(upgradeMap) {
+	const fn = function convertToBooleanFeedbacks() {
+		return emptyUpgradeResult()
+	}
+	fn.upgradeMap = upgradeMap
+	return fn
+}
+
+function CreateUseActionResultStoreUpgradeScript(upgradeMap) {
+	const fn = function useActionResultStore() {
+		return emptyUpgradeResult()
+	}
+	fn.upgradeMap = upgradeMap
+	return fn
+}
+
+function CreateUseBuiltinInvertForFeedbacksUpgradeScript(upgradeMap) {
+	const fn = function useBuiltinInvert() {
+		return emptyUpgradeResult()
+	}
+	fn.upgradeMap = upgradeMap
+	return fn
+}
+
+// ---------------------------------------------------------------------------
+// Recording InstanceBase stub
+// ---------------------------------------------------------------------------
+
+class InstanceBase {
+	constructor(internal) {
+		this.id = internal?.id ?? 'test'
+		this.label = internal?.label ?? 'encoder'
+		this.upgradeScripts = internal?.upgradeScripts ?? []
+
+		this.calls = { log: [], status: [] }
+		this.definitions = { actions: {}, feedbacks: {}, presets: {}, variables: [] }
+		this.variableValues = {}
+		this.checkedFeedbacks = []
+		this.customVariables = {}
+		this.savedConfig = undefined
+		this.subscribeFeedbacksCalls = []
+		this.subscribeActionsCalls = []
+	}
+
+	log(level, message) {
+		this.calls.log.push({ level, message })
+	}
+
+	updateStatus(status, message) {
+		this.calls.status.push({ status, message })
+	}
+
+	setActionDefinitions(actions) {
+		this.definitions.actions = actions
+	}
+
+	setFeedbackDefinitions(feedbacks) {
+		this.definitions.feedbacks = feedbacks
+	}
+
+	setPresetDefinitions(structure, presets) {
+		this.definitions.presetStructure = structure
+		// the tests group by category: each preset is annotated with the name of the section that lists it
+		const sectionOf = new Map()
+		for (const section of structure) for (const id of section.definitions) sectionOf.set(id, section.name)
+		this.definitions.presets = Object.fromEntries(
+			Object.entries(presets).map(([id, preset]) => [id, { ...preset, category: sectionOf.get(id) }]),
+		)
+	}
+
+	// module-base 2.x passes an object keyed by the variable id; the tests keep reading a list
+	setVariableDefinitions(variables) {
+		this.definitions.variables = Object.entries(variables).map(([variableId, def]) => ({ variableId, ...def }))
+	}
+
+	setVariableValues(values) {
+		for (const [k, v] of Object.entries(values || {})) {
+			if (v === undefined) delete this.variableValues[k]
+			else this.variableValues[k] = v
+		}
+	}
+
+	getVariableValue(variableId) {
+		return this.variableValues[variableId]
+	}
+
+	checkFeedbacks(...feedbackTypes) {
+		this.checkedFeedbacks.push(feedbackTypes)
+	}
+
+	checkAllFeedbacks() {
+		this.checkedFeedbacks.push([])
+	}
+
+	checkFeedbacksById() {
+		// not used by the module; no-op
+	}
+
+	unsubscribeFeedbacks() {}
+
+	subscribeActions(...types) {
+		this.subscribeActionsCalls.push(types)
+	}
+
+	unsubscribeActions() {}
+
+	saveConfig(config) {
+		this.savedConfig = config
+	}
+
+	oscSend() {}
+}
+
+// ---------------------------------------------------------------------------
+// require.cache injection
+// ---------------------------------------------------------------------------
+
+const stub = {
+	InstanceBase,
+	InstanceStatus,
+	Regex,
+	combineRgb,
+	splitRgb,
+	literal,
+	CreateUseActionResultStoreUpgradeScript,
+	EmptyUpgradeScript,
+	CreateConvertToBooleanFeedbackUpgradeScript,
+	CreateUseBuiltinInvertForFeedbacksUpgradeScript,
+	__isPearlTestStub: true,
+}
+
+let installedAt = null
+
+/**
+ * Install the stub for '@companion-module/base' into require.cache. Idempotent.
+ * @returns {object} the stub module exports
+ */
+function installStub() {
+	if (installedAt && require.cache[installedAt]?.exports?.__isPearlTestStub) return stub
+
+	const baseId = require.resolve('@companion-module/base', { paths: [path.join(__dirname, '..')] })
+	const existing = require.cache[baseId]
+	if (existing && existing.exports && existing.exports.__isPearlTestStub) {
+		installedAt = baseId
+		return stub
+	}
+
+	const m = new Module(baseId, null)
+	m.filename = baseId
+	m.paths = Module._nodeModulePaths(path.dirname(baseId))
+	m.loaded = true
+	m.exports = stub
+	require.cache[baseId] = m
+	installedAt = baseId
+	return stub
+}
+
+// ---------------------------------------------------------------------------
+// Instance factory and helpers
+// ---------------------------------------------------------------------------
+
+const DEFAULT_CONFIG = Object.freeze({
+	host: '127.0.0.1',
+	username: 'admin',
+	password: 'x',
+	// long enough that the interval poller never fires on its own during a test (D8: poll_interval
+	// replaces pollfreq, ms instead of seconds; 300000 ms is the same 5 minutes the old pollfreq: 300
+	// gave every other test)
+	poll_interval: 300000,
+	timeout: 2000,
+	use_api_v2: true,
+	preview_interval: 0,
+	preview_width: 144,
+	poll_events: true,
+	verbose: false,
+})
+
+/**
+ * Build and initialise an EpiphanEncoder instance pointed at a mock server.
+ *
+ * @param {object} opts
+ * @param {object} opts.mock       result of startMockPearl()
+ * @param {object} [opts.config]   config overrides
+ * @returns {Promise<import('../src/instance').EpiphanEncoder>}
+ */
+async function createInstance({ config = {}, mock, label } = {}) {
+	installStub()
+	if (!mock || typeof mock.port !== 'number') {
+		throw new Error('createInstance({ mock }) requires the object returned by startMockPearl()')
+	}
+	// required lazily so the stub is in place before src/instance.js binds InstanceBase
+	const { EpiphanEncoder } = require(path.join(__dirname, '..', 'src', 'instance.js'))
+
+	const fullConfig = { ...DEFAULT_CONFIG, host_port: mock.port, ...config }
+	const instance = new EpiphanEncoder({ id: 'test', label, upgradeScripts: [], _isInstanceBaseProps: true })
+	instance.mock = mock
+	await instance.init(fullConfig)
+	// init returns before the device is contacted (Companion limits its duration); wait for the first poll
+	await instance.startupPromise
+	return instance
+}
+
+function actionContext() {
+	return { parseVariablesInString: async (text) => text }
+}
+
+/**
+ * Run an action callback by id, the way Companion would.
+ *
+ * @param {object} instance
+ * @param {string} actionId
+ * @param {object} [options]
+ * @param {object} [meta]
+ * @param {string} [meta.controlId='c1'] the button this press belongs to (D2 confirm gate keys on this)
+ * @param {string} [meta.id='a1'] the action instance id
+ */
+async function runAction(instance, actionId, options = {}, { controlId = 'c1', id = 'a1' } = {}) {
+	const def = instance.definitions.actions[actionId]
+	if (!def) throw new Error(`Unknown action '${actionId}' (is it defined for the current state?)`)
+	if (typeof def.callback !== 'function') throw new Error(`Action '${actionId}' has no callback`)
+	return await def.callback({ actionId, options, id, controlId }, actionContext())
+}
+
+/**
+ * Run one rotary step (`rotate_left` / `rotate_right`) of a preset built with `options.rotaryActions`,
+ * the way Companion's rotary handling would: it calls the action(s) in that step's array, same as a
+ * `down` press, just with the direction-specific options baked into the preset.
+ *
+ * @param {object} instance
+ * @param {string} actionId
+ * @param {object} [options]
+ * @param {object} [meta] see runAction
+ */
+async function runRotate(instance, actionId, options = {}, meta = {}) {
+	return runAction(instance, actionId, options, meta)
+}
+
+// one feedback instance per feedback type and option set, unless a test names the instance
+function feedbackEvent(def, feedbackId, options, controlId = 'c1', id = `${feedbackId}:${JSON.stringify(options)}`) {
+	return {
+		feedbackId,
+		options,
+		id,
+		controlId,
+		type: def.type,
+		image: { width: 72, height: 72 },
+	}
+}
+
+/**
+ * Run a feedback callback by id and return its result (boolean or advanced style object).
+ */
+async function runFeedback(instance, feedbackId, options = {}, { controlId = 'c1', id } = {}) {
+	const def = instance.definitions.feedbacks[feedbackId]
+	if (!def) throw new Error(`Unknown feedback '${feedbackId}' (is it defined for the current state?)`)
+	if (typeof def.callback !== 'function') throw new Error(`Feedback '${feedbackId}' has no callback`)
+	return await def.callback(feedbackEvent(def, feedbackId, options, controlId, id), actionContext())
+}
+
+/**
+ * Invoke a feedback definition's subscribe() hook (used by the preview feedbacks).
+ */
+async function subscribeFeedback(instance, feedbackId, options = {}, { id } = {}) {
+	const def = instance.definitions.feedbacks[feedbackId]
+	if (!def) throw new Error(`Unknown feedback '${feedbackId}'`)
+	// module-base 2.x has no subscribe callback: a feedback registers what it shows when it is evaluated
+	return await def.callback(feedbackEvent(def, feedbackId, options, 'c1', id), actionContext())
+}
+
+/**
+ * Invoke a feedback definition's unsubscribe() hook.
+ */
+async function unsubscribeFeedback(instance, feedbackId, options = {}, { id } = {}) {
+	const def = instance.definitions.feedbacks[feedbackId]
+	if (!def) throw new Error(`Unknown feedback '${feedbackId}'`)
+	if (typeof def.unsubscribe === 'function')
+		return await def.unsubscribe(feedbackEvent(def, feedbackId, options, 'c1', id))
+	return undefined
+}
+
+module.exports = {
+	installStub,
+	createInstance,
+	runAction,
+	runRotate,
+	runFeedback,
+	subscribeFeedback,
+	unsubscribeFeedback,
+	DEFAULT_CONFIG,
+	stub,
+	InstanceBase,
+	InstanceStatus,
+	Regex,
+	combineRgb,
+	splitRgb,
+	CreateUseActionResultStoreUpgradeScript,
+	EmptyUpgradeScript,
+	CreateConvertToBooleanFeedbackUpgradeScript,
+	CreateUseBuiltinInvertForFeedbacksUpgradeScript,
+}

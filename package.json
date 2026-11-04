@@ -1,22 +1,30 @@
 {
 	"name": "epiphan-pearl",
-	"version": "2.2.1",
+	"version": "3.0.0",
 	"homepage": "https://github.com/bitfocus/companion-module-epiphan-pearl#readme",
 	"main": "index.js",
 	"scripts": {
 		"format": "prettier -w .",
-		"test": "echo \"Error: no test specified\" && exit 1"
+		"lint": "eslint .",
+		"test": "node --test \"test/**/*.test.js\""
 	},
 	"license": "MIT",
 	"dependencies": {
-		"@companion-module/base": "^2.2.2"
+		"@companion-module/base": "2.2.2",
+		"undici": "^8.12.3"
 	},
 	"devDependencies": {
-		"@companion-module/tools": "^2.8.0"
+		"@companion-module/tools": "^3.2.0",
+		"eslint": "^9.36.0",
+		"prettier": "^3.6.2"
 	},
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/bitfocus/companion-module-epiphan-pearl.git"
 	},
-	"prettier": "@companion-module/tools/.prettierrc.json"
+	"prettier": "@companion-module/tools/.prettierrc.json",
+	"engines": {
+		"node": "^26.5"
+	},
+	"packageManager": "yarn@1.22.22"
 }

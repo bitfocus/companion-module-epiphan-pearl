@@ -1,0 +1,614 @@
+// D-numbers (D1–D17) refer to Epiphan's internal Companion-parity decisions.
+const { CreateUseActionResultStoreUpgradeScript } = require('@companion-module/base')
+const { PRESET_CATEGORY_IDS } = require('./presets')
+const { splitPair, clampNumber } = require('./utils')
+
+/**
+ * Default values for config fields that were added after the first release.
+ * Any field that is undefined in a stored config gets its default here.
+ *
+ * Companion runs every upgrade script exactly once per connection and remembers how far it got, so an
+ * existing script must never be extended: fields added in a later version get their own script that is
+ * APPENDED to the exported array (setDefaultConfig = v2.2.0, setDefaultConfigV230 = v2.3.0,
+ * setDefaultConfigV260 = v2.6.0, setDefaultConfigV300Https = v3.0.0).
+ */
+const CONFIG_DEFAULTS = {
+	use_api_v2: true,
+	verbose: false,
+	use_https: false,
+	accept_self_signed: true,
+	timeout: 5000,
+	preview_interval: 2,
+	preview_width: 144,
+	poll_events: true,
+	poll_archive: false,
+	poll_connectivity: false,
+	// every category was implicitly "on" before this setting existed, so an upgraded connection keeps
+	// generating exactly the presets it already had
+	preset_categories: PRESET_CATEGORY_IDS.slice(),
+}
+
+/** fields handled by setDefaultConfig (v2.2.0) */
+const CONFIG_DEFAULT_KEYS_V220 = ['use_api_v2', 'verbose']
+/** fields handled by setDefaultConfigV230 (v2.3.0) */
+const CONFIG_DEFAULT_KEYS_V230 = [
+	'timeout',
+	'preview_interval',
+	'preview_width',
+	'poll_events',
+	'poll_archive',
+	'poll_connectivity',
+]
+/** fields handled by setDefaultConfigV260 (v2.6.0) */
+const CONFIG_DEFAULT_KEYS_V260 = ['preset_categories']
+/** fields handled by setDefaultConfigV300Https (v3.0.0) */
+const CONFIG_DEFAULT_KEYS_V300_HTTPS = ['use_https', 'accept_self_signed']
+
+/**
+ * Build an upgrade script that fills the given config keys with their CONFIG_DEFAULTS value when undefined
+ *
+ * @param {string[]} keys
+ * @returns {(context: unknown, props: {config?: object}) => object}
+ */
+function fillConfigDefaults(keys) {
+	return (context, props) => {
+		const result = {
+			updatedConfig: null,
+			updatedActions: [],
+			updatedFeedbacks: [],
+		}
+
+		if (!props.config) return result
+
+		const changed = {}
+		for (const key of keys) {
+			if (props.config[key] === undefined) {
+				changed[key] = CONFIG_DEFAULTS[key]
+			}
+		}
+
+		if (Object.keys(changed).length > 0) {
+			result.updatedConfig = Object.assign({}, props.config, changed)
+		}
+
+		return result
+	}
+}
+
+const setDefaultConfig = fillConfigDefaults(CONFIG_DEFAULT_KEYS_V220)
+const setDefaultConfigV230 = fillConfigDefaults(CONFIG_DEFAULT_KEYS_V230)
+const setDefaultConfigV260 = fillConfigDefaults(CONFIG_DEFAULT_KEYS_V260)
+const setDefaultConfigV300Https = fillConfigDefaults(CONFIG_DEFAULT_KEYS_V300_HTTPS)
+Object.defineProperty(setDefaultConfig, 'name', { value: 'setDefaultConfig' })
+Object.defineProperty(setDefaultConfigV230, 'name', { value: 'setDefaultConfigV230' })
+Object.defineProperty(setDefaultConfigV260, 'name', { value: 'setDefaultConfigV260' })
+Object.defineProperty(setDefaultConfigV300Https, 'name', { value: 'setDefaultConfigV300Https' })
+
+// Rename old streaming feedback and action identifiers
+function renameStreaming(context, props) {
+	const result = {
+		updatedConfig: null,
+		updatedActions: [],
+		updatedFeedbacks: [],
+	}
+
+	for (const action of props.actions) {
+		if (action.actionId === 'channelStreaming') {
+			action.actionId = 'controlStreaming'
+			result.updatedActions.push(action)
+		}
+	}
+
+	for (const feedback of props.feedbacks) {
+		if (feedback.feedbackId === 'channelStreaming') {
+			feedback.feedbackId = 'streamingState'
+			result.updatedFeedbacks.push(feedback)
+		}
+	}
+
+	return result
+}
+
+// ------------------------------------------------------------------------------------------------
+// v3.0.0: Companion-parity control-set rewrite (D1-D16)
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * Legacy action/feedback ids removed by the 3.0.0 rewrite (no Stream Deck counterpart), collected here
+ * as they are found. Upgrade scripts run before any module instance exists (no `this.log`), so they
+ * cannot report anything themselves; `instance.js`'s `init()` reads this array once per module start,
+ * logs one 'warn' line per distinct id (with how many buttons carried it) and empties the array (D13).
+ * Each entry: { kind: 'action'|'feedback', id: legacy id, controlId: the button it was on }.
+ */
+const REMOVED_LEGACY = []
+
+/**
+ * INTERNAL: record one removed legacy action/feedback instance for init() to report (D13).
+ * @param {'action'|'feedback'} kind
+ * @param {string} id legacy action/feedback id
+ * @param {string} [controlId]
+ */
+function recordRemovedLegacy(kind, id, controlId) {
+	REMOVED_LEGACY.push({ kind, id, controlId: controlId ?? '' })
+}
+
+/** legacy `recorderRecording` / `recorderControlAll` numeric-or-string op -> the new `recorder.op` */
+const RECORDER_OP_MAP = { 0: 'stop', 1: 'start', 2: 'reset', 3: 'toggle', 99: 'toggle' }
+/** legacy `controlStreaming` numeric op -> the new `stream.op` */
+const STREAM_OP_MAP = { 0: 'stop', 1: 'start', 3: 'toggle', 99: 'toggle' }
+/** legacy `storageState` value -> the new `storage_level.level` */
+const STORAGE_STATE_MAP = { ready: 'ok', nodev: 'nomedia', dev: 'notready', devro: 'ro', formatting: 'formatting' }
+/** legacy `afuState` value -> the new `system.condition` */
+const AFU_STATE_MAP = {
+	idle: 'afu_idle',
+	paused: 'afu_paused',
+	uploading: 'afu_uploading',
+	error: 'afu_error',
+	disabled: 'afu_off',
+}
+/** legacy `eventStatus.which` -> the new `event_state` options */
+const EVENT_WHICH_MAP = {
+	upcoming: { eventRef: 'upcoming', state: 'scheduled' },
+	running: { eventRef: 'ongoing', state: 'running' },
+	paused: { eventRef: 'ongoing', state: 'paused' },
+	ongoing: { eventRef: 'ongoing', state: 'ongoing' },
+}
+
+/**
+ * Resolve the event id/alias an `eventControl` / `eventExtend` action targeted, into the new `eventRef`
+ * (`eventRef = event === 'custom' ? eventId : event`).
+ * @param {object} opt legacy action options
+ * @returns {string}
+ */
+function legacyEventRef(opt) {
+	return opt?.event === 'custom' ? String(opt?.eventId ?? '') : String(opt?.event ?? 'ongoing')
+}
+
+/**
+ * Options of the new `event` action for a legacy eventControl / eventExtend: the ongoing aliases only
+ * pause, resume (both now the one Pause / Resume toggle), stop or extend; the upcoming alias only starts; a
+ * specific event keeps start, stop and extend and folds pause / resume into the toggle.
+ * @param {string} eventRef
+ * @param {unknown} action legacy action word
+ * @param {number} extendSeconds
+ */
+function legacyEventOptions(eventRef, action, extendSeconds) {
+	const word = String(action ?? 'toggle')
+	const folded = word === 'pause' || word === 'resume' || word === 'status' ? 'toggle' : word
+	const ongoingOp = folded === 'stop' || folded === 'extend' ? folded : 'toggle'
+	const eventOp = ['start', 'stop', 'extend', 'toggle'].includes(folded) ? folded : 'toggle'
+	return { eventRef, op: ongoingOp, op_event: eventOp, extendSeconds }
+}
+
+/**
+ * Companion parity control-set rewrite: converts every legacy action/feedback id to its new
+ * counterpart and the connection config to the new field set. Actions
+ * and feedbacks with no Stream Deck counterpart are left exactly as stored (an upgrade script has no way
+ * to delete a placed instance) and only recorded via recordRemovedLegacy so init() can warn once (D13).
+ *
+ * @param {unknown} context unused
+ * @param {{config: object|null, actions: object[], feedbacks: object[]}} props
+ * @returns {{updatedConfig: object|null, updatedActions: object[], updatedFeedbacks: object[]}}
+ */
+function convertToParityV300(context, props) {
+	const result = { updatedConfig: null, updatedActions: [], updatedFeedbacks: [] }
+
+	for (const action of props.actions || []) {
+		if (!action) continue
+		const opt = action.options || {}
+		switch (action.actionId) {
+			case 'channelChangeLayout': {
+				const pair = splitPair(opt.channelIdlayoutId)
+				action.actionId = 'layout'
+				action.options = {
+					channelId: pair ? pair[0] : '',
+					layoutId: typeof opt.channelIdlayoutId === 'string' ? opt.channelIdlayoutId : '',
+				}
+				result.updatedActions.push(action)
+				break
+			}
+			case 'controlStreaming': {
+				const value = opt.channelIdpublisherId
+				const pair = splitPair(value)
+				action.actionId = 'stream'
+				action.options = {
+					channelId: pair ? pair[0] : '',
+					publisherId: typeof value === 'string' ? value : '',
+					op: STREAM_OP_MAP[opt.startStopAction] ?? 'toggle',
+				}
+				result.updatedActions.push(action)
+				break
+			}
+			case 'recorderRecording': {
+				action.actionId = 'recorder'
+				action.options = {
+					recorderId: opt.recorderId ?? '',
+					op: RECORDER_OP_MAP[opt.startStopAction] ?? 'toggle',
+				}
+				result.updatedActions.push(action)
+				break
+			}
+			case 'insertMarker': {
+				action.actionId = 'bookmark'
+				action.options = { channelId: opt.channel ?? '', text: opt.markertext || 'Marker', appendTime: false }
+				result.updatedActions.push(action)
+				break
+			}
+			case 'systemReboot': {
+				action.actionId = 'power'
+				action.options = { op: 'reboot', confirm: false }
+				result.updatedActions.push(action)
+				break
+			}
+			case 'systemShutdown': {
+				action.actionId = 'power'
+				action.options = { op: 'shutdown', confirm: false }
+				result.updatedActions.push(action)
+				break
+			}
+			case 'recorderControlAll': {
+				// options.action is already the string 'start'/'stop' (CHOICES_START_STOP), not the
+				// numeric startStopAction of recorderRecording, so it is copied through rather than
+				// looked up in RECORDER_OP_MAP
+				action.actionId = 'recorder'
+				action.options = {
+					recorderId: 'all',
+					op: opt.action === 'start' || opt.action === 'stop' ? opt.action : 'toggle',
+				}
+				result.updatedActions.push(action)
+				break
+			}
+			case 'setOutputSource': {
+				action.actionId = 'output'
+				action.options = {
+					outputId: opt.output ?? '',
+					source: opt.source === 'custom' ? (opt.customSource ?? '') : (opt.source ?? ''),
+				}
+				result.updatedActions.push(action)
+				break
+			}
+			case 'inputAudioGain': {
+				action.actionId = 'audio'
+				action.options = { inputId: opt.input ?? '', control: 'gain', direction: 'up', step: 1 }
+				result.updatedActions.push(action)
+				break
+			}
+			case 'inputAudioDelay': {
+				action.actionId = 'audio'
+				action.options = { inputId: opt.input ?? '', control: 'delay', direction: 'up', step: 1 }
+				result.updatedActions.push(action)
+				break
+			}
+			case 'singleTouchToggle': {
+				action.actionId = 'singletouch'
+				action.options = { stcId: opt.stc ?? '' }
+				result.updatedActions.push(action)
+				break
+			}
+			case 'applyConfigPreset': {
+				action.actionId = 'preset'
+				action.options = {
+					presetName: opt.preset ?? '',
+					sections: Array.isArray(opt.sections) ? opt.sections : [],
+					confirm: false,
+				}
+				result.updatedActions.push(action)
+				break
+			}
+			case 'eventControl': {
+				action.actionId = 'event'
+				action.options = legacyEventOptions(legacyEventRef(opt), opt.action, 300)
+				result.updatedActions.push(action)
+				break
+			}
+			case 'eventExtend': {
+				action.actionId = 'event'
+				action.options = legacyEventOptions(legacyEventRef(opt), 'extend', opt.seconds ?? 300)
+				result.updatedActions.push(action)
+				break
+			}
+			case 'storageEject':
+			case 'setChannelName':
+			case 'setPublisherName':
+			case 'setPublisherEnabled':
+			case 'setPublisherSingleTouch':
+			case 'setRtmpDestination':
+			case 'setSrtDestination':
+			case 'patchPublisherSettings':
+			case 'addPublisher':
+			case 'inputAudioMute':
+			case 'inputPhantomPower':
+			case 'patchInputSettings':
+			case 'createNetworkInput':
+			case 'createAdhocEvent':
+			case 'adhocSessionLogout':
+			case 'refreshConnectivity':
+			case 'runSpeedTest':
+			case 'refreshPoll':
+				recordRemovedLegacy('action', action.actionId, action.controlId)
+				break
+			default:
+				// already-converted (a fresh 3.0.0 action) or unrecognised: leave untouched
+				break
+		}
+	}
+
+	for (const feedback of props.feedbacks || []) {
+		if (!feedback) continue
+		const opt = feedback.options || {}
+		switch (feedback.feedbackId) {
+			case 'channelLayout':
+				feedback.feedbackId = 'layout_active'
+				feedback.options = { layoutId: opt.channelIdlayoutId ?? '' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'channelLayoutPreview':
+				feedback.feedbackId = 'layout_preview'
+				feedback.options = { layoutId: opt.channelIdlayoutId ?? '' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'streamingState':
+				feedback.feedbackId = 'stream_state'
+				feedback.options = { publisherId: opt.channelIdpublisherId ?? '', state: 'started' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'recorderRecording':
+				feedback.feedbackId = 'recorder_state'
+				feedback.options = { recorderId: opt.recorderId ?? '', state: 'started' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'publisherState':
+				feedback.feedbackId = 'stream_state'
+				feedback.options = { publisherId: opt.channelIdpublisherId ?? '', state: opt.state ?? 'started' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'recorderState':
+				feedback.feedbackId = 'recorder_state'
+				feedback.options = { recorderId: opt.recorderId ?? '', state: opt.state ?? 'started' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'anyRecording':
+				feedback.feedbackId = 'recorder_state'
+				feedback.options = { recorderId: 'all', state: 'started' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'singleTouchPressed':
+				feedback.feedbackId = 'singletouch_active'
+				feedback.options = { stcId: opt.stcId ?? '', state: 'on' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'singleTouchOk':
+				feedback.feedbackId = 'singletouch_active'
+				feedback.options = { stcId: opt.stcId ?? '', state: 'error' }
+				feedback.isInverted = !feedback.isInverted
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'storageState':
+				feedback.feedbackId = 'storage_level'
+				feedback.options = { storageId: opt.storageId ?? '', level: STORAGE_STATE_MAP[opt.state] ?? 'ok' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'storageFreeBelow':
+				feedback.feedbackId = 'storage_level'
+				feedback.options = { storageId: opt.storageId ?? '', level: 'low' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'afuState':
+				feedback.feedbackId = 'system'
+				feedback.options = { condition: AFU_STATE_MAP[opt.state] ?? 'afu_off' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'cpuLoadHigh':
+				feedback.feedbackId = 'system'
+				feedback.options = { condition: 'cpu_high' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'cpuTempHigh':
+				feedback.feedbackId = 'system'
+				feedback.options = { condition: 'cpu_hot' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'eventStatus': {
+				const mapped = EVENT_WHICH_MAP[opt.which] ?? EVENT_WHICH_MAP.ongoing
+				feedback.feedbackId = 'event_state'
+				feedback.options = { eventRef: mapped.eventRef, state: mapped.state }
+				result.updatedFeedbacks.push(feedback)
+				break
+			}
+			case 'channelPreview':
+				feedback.feedbackId = 'preview'
+				feedback.options = { source: 'channel', sourceId: opt.channel ?? '' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'inputPreview':
+				feedback.feedbackId = 'preview'
+				feedback.options = { source: 'input', sourceId: opt.input ?? '' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'outputPreview':
+				feedback.feedbackId = 'preview'
+				feedback.options = { source: 'output', sourceId: opt.output ?? '' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'outputSourceOptimistic':
+				feedback.feedbackId = 'output_set'
+				feedback.options = { outputId: opt.output ?? '', source: opt.source ?? '' }
+				result.updatedFeedbacks.push(feedback)
+				break
+			case 'anyStreaming':
+			case 'configPresetApplied':
+				recordRemovedLegacy('feedback', feedback.feedbackId, feedback.controlId)
+				break
+			default:
+				// already-converted (a fresh 3.0.0 feedback) or unrecognised: leave untouched
+				break
+		}
+	}
+
+	if (props.config) {
+		const config = { ...props.config }
+		// D8: poll_interval (ms) replaces pollfreq (s)
+		const pollfreqSeconds = clampNumber(config.pollfreq, 10, 1, 300)
+		config.poll_interval = clampNumber(pollfreqSeconds * 1000, 2000, 500, 300000)
+		delete config.pollfreq
+		delete config.poll_archive
+		delete config.poll_connectivity
+		// D15: the stored category names ('Channels', 'Publishers', ...) match none of the 13 new
+		// category names, so filling only when undefined (like the other upgrade scripts do) would
+		// leave every category off for an upgraded connection; every one is turned on instead
+		config.preset_categories = PRESET_CATEGORY_IDS.slice()
+		result.updatedConfig = config
+	}
+
+	return result
+}
+
+// The option 'Use API v2.0' was removed, the API is selected automatically from the firmware
+function removeUseApiV2(context, props) {
+	const result = { updatedConfig: null, updatedActions: [], updatedFeedbacks: [] }
+	if (props.config && 'use_api_v2' in props.config) {
+		const { use_api_v2: _removed, ...config } = props.config
+		result.updatedConfig = config
+	}
+	return result
+}
+
+/**
+ * Settings of the current config page and their valid range. A stored config can lack a value or hold one the
+ * page rejects (a red field disables Companion's save button), e.g. one that went through an older development
+ * build of this module whose upgrade scripts had already been counted as run.
+ */
+const REPAIR_NUMBERS = {
+	poll_interval: { fallback: 2000, min: 500, max: 300000 },
+	timeout: { fallback: 5000, min: 1000, max: 60000 },
+	preview_interval: { fallback: 2, min: 0, max: 300 },
+	preview_width: { fallback: 144, min: 72, max: 720 },
+}
+const REPAIR_FLAGS = {
+	use_https: false,
+	accept_self_signed: true,
+	poll_events: true,
+	enable_metadata: true,
+	verbose: false,
+}
+
+// v3.0.0: fill every setting that is missing or out of range with its default (idempotent)
+function repairConfigV300(context, props) {
+	const result = { updatedConfig: null, updatedActions: [], updatedFeedbacks: [] }
+	if (!props.config) return result
+	const config = { ...props.config }
+	let changed = false
+	const set = (key, value) => {
+		config[key] = value
+		changed = true
+	}
+	for (const [key, { fallback, min, max }] of Object.entries(REPAIR_NUMBERS)) {
+		const raw = config[key]
+		const n = raw === '' || raw === null || raw === undefined ? NaN : Number(raw)
+		if (!Number.isFinite(n) || n < min || n > max) set(key, fallback)
+		else if (typeof raw !== 'number') set(key, n)
+	}
+	for (const [key, fallback] of Object.entries(REPAIR_FLAGS)) {
+		if (typeof config[key] !== 'boolean') set(key, fallback)
+	}
+	if (config.host_port === undefined || config.host_port === null || config.host_port === '') set('host_port', '80')
+	if (typeof config.username !== 'string') set('username', 'admin')
+	if (typeof config.password !== 'string') set('password', '')
+	if (!Array.isArray(config.preset_categories)) set('preset_categories', PRESET_CATEGORY_IDS.slice())
+	if (changed) result.updatedConfig = config
+	return result
+}
+
+/**
+ * module-base 2.x hands the options of stored actions and feedbacks to the upgrade scripts as
+ * `{ value, isExpression }` objects, 1.x as plain values. convertToParityV300 was written for plain values, so
+ * this runs it on plain copies and wraps what it writes back, whichever shape arrives. A stored expression
+ * (isExpression: true) travels through unchanged as an object.
+ */
+const isWrappedOption = (value) =>
+	value !== null &&
+	typeof value === 'object' &&
+	!Array.isArray(value) &&
+	typeof value.isExpression === 'boolean' &&
+	'value' in value
+const unwrapOptions = (options) =>
+	Object.fromEntries(
+		Object.entries(options || {}).map(([key, value]) => [
+			key,
+			isWrappedOption(value) && !value.isExpression ? value.value : value,
+		]),
+	)
+const wrapOptions = (options) =>
+	Object.fromEntries(
+		Object.entries(options || {}).map(([key, value]) => [
+			key,
+			value === undefined || isWrappedOption(value) ? value : { isExpression: false, value },
+		]),
+	)
+
+function acceptWrappedOptions(script) {
+	const upgrade = (context, props) => {
+		const items = [...(props.actions || []), ...(props.feedbacks || [])].filter(Boolean)
+		const values = items.flatMap((item) => Object.values(item.options || {}))
+		// plain values only (1.x data, or a host that does not wrap): nothing to translate. Wrapped values, or no
+		// options at all to tell by, mean the 2.x shape.
+		if (values.some((value) => !isWrappedOption(value))) return script(context, props)
+		const plain = (item) => ({ ...item, options: unwrapOptions(item.options) })
+		const result = script(context, {
+			...props,
+			actions: (props.actions || []).map(plain),
+			feedbacks: (props.feedbacks || []).map(plain),
+		})
+		const wrapBack = (item) => ({ ...item, options: wrapOptions(item.options) })
+		return {
+			...result,
+			updatedActions: result.updatedActions.map(wrapBack),
+			updatedFeedbacks: result.updatedFeedbacks.map(wrapBack),
+		}
+	}
+	Object.defineProperty(upgrade, 'name', { value: script.name })
+	return upgrade
+}
+
+// The port is a number field in module-base 2.x (the regex field types are deprecated); it was a text field
+function portAsNumberV300(context, props) {
+	const result = { updatedConfig: null, updatedActions: [], updatedFeedbacks: [] }
+	if (!props.config) return result
+	const port = Number(props.config.host_port)
+	const valid = Number.isInteger(port) && port >= 1 && port <= 65535
+	if (typeof props.config.host_port === 'number' && valid) return result
+	result.updatedConfig = { ...props.config, host_port: valid ? port : 80 }
+	return result
+}
+
+// The order is part of the contract: scripts are only ever appended, never reordered or removed.
+module.exports = [
+	// v2.2.0: default values for use_api_v2 / verbose
+	setDefaultConfig,
+	// v2.2.0: channelStreaming -> controlStreaming / streamingState
+	renameStreaming,
+	// v2.3.0: default values for the polling / preview options
+	setDefaultConfigV230,
+	// v2.6.0: default value (every category) for the new preset_categories setting
+	setDefaultConfigV260,
+	// v3.0.0: default values (HTTPS off, self-signed accepted) for the connection security settings
+	setDefaultConfigV300Https,
+	// v3.0.0: Companion-parity control-set rewrite
+	acceptWrappedOptions(convertToParityV300),
+	// v3.0.0: the option 'Use API v2.0' is gone, the API is selected automatically
+	removeUseApiV2,
+	// v3.0.0: repair missing / out-of-range settings
+	repairConfigV300,
+	// v3.0.0 (module-base 2.x): 'Get layout data' / 'Get Content Metadata' return their result instead of writing
+	// a custom variable; the variable chosen in 'destination' becomes the action's stored result
+	CreateUseActionResultStoreUpgradeScript({ getLayoutData: 'destination', getContentMetadata: 'destination' }),
+	// v3.0.0 (module-base 2.x): the port is a number field now, it was text
+	portAsNumberV300,
+]
+
+module.exports.CONFIG_DEFAULTS = CONFIG_DEFAULTS
+module.exports.CONFIG_DEFAULT_KEYS_V220 = CONFIG_DEFAULT_KEYS_V220
+module.exports.CONFIG_DEFAULT_KEYS_V230 = CONFIG_DEFAULT_KEYS_V230
+module.exports.CONFIG_DEFAULT_KEYS_V260 = CONFIG_DEFAULT_KEYS_V260
+module.exports.CONFIG_DEFAULT_KEYS_V300_HTTPS = CONFIG_DEFAULT_KEYS_V300_HTTPS
+module.exports.REMOVED_LEGACY = REMOVED_LEGACY

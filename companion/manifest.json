@@ -1,8 +1,10 @@
 {
+	"$schema": "../node_modules/@companion-module/base/assets/manifest.schema.json",
+	"type": "connection",
 	"id": "epiphan-pearl",
 	"name": "epiphan-pearl",
 	"shortname": "pearl",
-	"description": "Epiphan Pearl module for Companion",
+	"description": "Epiphan Encoders for Companion: Pearl-2, Pearl Mini, Pearl Nano and Pearl Nexus (REST API v2.0)",
 	"version": "0.0.0",
 	"license": "MIT",
 	"repository": "git+https://github.com/bitfocus/companion-module-epiphan-pearl.git",
@@ -19,16 +21,26 @@
 		{
 			"name": "David Fox",
 			"email": "david@got-fox.com"
+		},
+		{
+			"name": "Ryan Haynes (Epiphan Systems)",
+			"email": "rhaynes@epiphan.com"
 		}
 	],
 	"legacyIds": [],
 	"runtime": {
-		"type": "node18",
+		"type": "node26",
 		"api": "nodejs-ipc",
 		"apiVersion": "0.0.0",
 		"entrypoint": "../index.js"
 	},
 	"manufacturer": "Epiphan",
-	"products": ["Pearl"],
-	"keywords": ["Stream", "Encode", "Recording"]
+	"products": ["Pearl", "Pearl-2", "Pearl Mini", "Pearl Nano", "Pearl Nexus"],
+	"keywords": ["Stream", "Encoder", "Encode", "Recording", "Epiphan", "Pearl", "SRT", "RTMP", "NDI"],
+	"bonjourQueries": {
+		"bonjourHost": {
+			"type": "epiphan",
+			"protocol": "tcp"
+		}
+	}
 }
