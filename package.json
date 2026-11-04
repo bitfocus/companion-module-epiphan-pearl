@@ -5,10 +5,7 @@
 	"main": "index.js",
 	"scripts": {
 		"format": "prettier -w .",
-		"test": "node --test test/*.test.js",
-		"build": "companion-module-build",
-		"lint": "eslint *.js test/*.js",
-		"format:check": "prettier --check actions.js package.json companion/manifest.json test"
+		"test": "node --test test/*.test.js"
 	},
 	"license": "MIT",
 	"dependencies": {
@@ -16,7 +13,6 @@
 	},
 	"devDependencies": {
 		"@companion-module/tools": "^2.9.0",
-		"eslint": "^8.57.1",
 		"prettier": "^3.6.2"
 	},
 	"repository": {
