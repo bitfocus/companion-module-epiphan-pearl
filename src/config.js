@@ -33,6 +33,8 @@ function getConfigFields() {
 			id: 'bonjourHost',
 			label: 'Encoder',
 			width: 12,
+			// the manual address fields refer to this field in isVisibleExpression
+			disableAutoExpression: true,
 			tooltip:
 				'Encoders in the same network as Companion are found automatically. Select "Manual" to enter the address yourself, e.g. for an encoder in another network.',
 		},
@@ -43,7 +45,7 @@ function getConfigFields() {
 			width: 6,
 			default: '192.168.255.250',
 			regex: REGEX_IP_OR_HOSTNAME,
-			isVisible: (options) => !options.bonjourHost,
+			isVisibleExpression: '!$(options:bonjourHost)',
 		},
 		{
 			type: 'textinput',
@@ -52,7 +54,7 @@ function getConfigFields() {
 			width: 6,
 			default: '80',
 			regex: Regex.PORT,
-			isVisible: (options) => !options.bonjourHost,
+			isVisibleExpression: '!$(options:bonjourHost)',
 		},
 		{
 			type: 'textinput',
@@ -74,6 +76,8 @@ function getConfigFields() {
 			label: 'Use HTTPS',
 			width: 6,
 			default: false,
+			// accept_self_signed refers to this field in isVisibleExpression
+			disableAutoExpression: true,
 			tooltip: 'If HTTPS is enabled on the encoder, enable it here too.',
 		},
 		{
@@ -82,7 +86,7 @@ function getConfigFields() {
 			label: 'Accept self-signed certificate',
 			width: 6,
 			default: true,
-			isVisible: (options) => options.use_https === true,
+			isVisibleExpression: '$(options:use_https)',
 		},
 		{
 			type: 'number',

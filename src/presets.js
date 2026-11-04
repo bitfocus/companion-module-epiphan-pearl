@@ -141,7 +141,7 @@ const TEXT_SIZE_SUMMARY = 22
  *   hold-to-move motion actions — D3 is EC20-only — so every Pearl preset's `up` step is empty)
  * @param {Array<{feedbackId: string, options: object, style?: object, isInverted?: boolean}>} [def.feedbacks=[]]
  * @param {{rotateLeft: object[], rotateRight: object[]}} [def.rotary] D4 rotary preset: adds
- *   `options.rotaryActions` and the `rotate_left`/`rotate_right` step arrays alongside `down`
+ *   the `rotate_left`/`rotate_right` step arrays alongside `down`
  * @returns {object} preset definition
  */
 function button({
@@ -175,7 +175,8 @@ function button({
 		step.rotate_right = rotary.rotateRight
 	}
 	const preset = {
-		type: 'button',
+		type: 'simple',
+		// internal: getPresets() moves this into the preset structure, the 2.x preset definition has no category
 		category,
 		name,
 		style,
@@ -183,7 +184,6 @@ function button({
 		// a command preset also carries the failure flash, last so it wins over the state colours
 		feedbacks: actions.length > 0 || rotary ? [...feedbacks, failedFeedback()] : feedbacks,
 	}
-	if (rotary) preset.options = { rotaryActions: true }
 	return preset
 }
 
@@ -202,10 +202,11 @@ module.exports = {
 	 * INTERNAL: Get the available presets.
 	 *
 	 * @access protected
-	 * @returns {Object} the available presets keyed by preset id
+	 * @returns {{structure: object[], presets: object}} the preset sections and the presets keyed by preset id
 	 */
 	getPresets() {
 		const presets = {}
+		const idsByCategory = new Map(PRESET_CATEGORY_IDS.map((category) => [category, []]))
 		// Companion resolves $(label:variable) by the connection's label, which the user may change and which
 		// Companion suffixes for a second device (label_2). The base library hands the module its current label
 		// at start-up and again through configUpdated() on a rename, and both paths rebuild the presets, so the
@@ -221,7 +222,9 @@ module.exports = {
 			let unique = id
 			for (let n = 2; presets[unique] !== undefined; n++) unique = `${id}_${n}`
 			if (unique !== id) this.log('debug', `duplicate preset id ${id}, using ${unique}`)
-			presets[unique] = preset
+			const { category, ...definition } = preset
+			presets[unique] = definition
+			idsByCategory.get(category).push(unique)
 		}
 
 		// ---------------------------------------------------------------------
@@ -713,7 +716,15 @@ module.exports = {
 			)
 		}
 
-		return presets
+		// module-base 2.x: the preset sections are a separate structure, one section per category with presets
+		const structure = PRESET_CATEGORY_IDS.filter((category) => idsByCategory.get(category).length > 0).map(
+			(category) => ({
+				id: safeId(category).toLowerCase(),
+				name: category,
+				definitions: idsByCategory.get(category),
+			}),
+		)
+		return { structure, presets }
 	},
 }
 

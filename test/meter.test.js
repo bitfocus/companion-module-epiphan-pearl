@@ -252,12 +252,12 @@ describe('audio level poll (500 ms, ref-counted by the audio feedback)', () => {
 
 	it('two subscriptions of the same input are ref-counted, not doubled', async () => {
 		await subscribeFeedback(instance, 'audio', { inputId: 'analog-a' })
-		await subscribeFeedback(instance, 'audio', { inputId: 'analog-a' })
+		await subscribeFeedback(instance, 'audio', { inputId: 'analog-a' }, { id: 'second' })
 		assert.equal(instance.meterSubscriptions.get('analog-a'), 2)
 		await unsubscribeFeedback(instance, 'audio', { inputId: 'analog-a' })
 		assert.equal(instance.meterSubscriptions.get('analog-a'), 1)
 		assert.ok(instance.meterTimer, 'still one meter placed')
-		await unsubscribeFeedback(instance, 'audio', { inputId: 'analog-a' })
+		await unsubscribeFeedback(instance, 'audio', { inputId: 'analog-a' }, { id: 'second' })
 		assert.equal(instance.meterTimer, undefined)
 	})
 

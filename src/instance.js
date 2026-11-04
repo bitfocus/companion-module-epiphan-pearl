@@ -291,22 +291,14 @@ class EpiphanEncoder extends InstanceBase {
 	}
 
 	/**
-	 * INTERNAL: ask Companion to re-send subscribe() for every placed preview feedback.
-	 * Companion only calls subscribe once when a feedback is first sent, so after a config change the
-	 * subscriptions are rebuilt from scratch. When the host does not deliver any (e.g. a stub that has
-	 * no feedback instances) the previous subscriptions are kept.
+	 * INTERNAL: after (re)connecting, fetch the images of the placed preview feedbacks right away.
+	 * module-base 2.x has no subscribe callback; the feedbacks register themselves when they are evaluated
+	 * (see trackFeedback in feedbacks.js), those registrations survive a configuration change, so nothing has
+	 * to be re-sent. Only the first images, which may not have been fetched while previews were disabled,
+	 * are requested here.
 	 */
 	resubscribePreviews() {
-		if (typeof this.subscribeFeedbacks !== 'function') return
-		const previous = this.previewSubscriptions
-		this.previewSubscriptions = new Map()
-		try {
-			this.subscribeFeedbacks('preview', 'layout_preview')
-		} catch (error) {
-			this.log('debug', `re-subscribing preview feedbacks failed: ${error?.message || error}`)
-		}
-		if (this.previewSubscriptions.size === 0 && previous instanceof Map && previous.size > 0) {
-			this.previewSubscriptions = previous
+		if (this.previewSubscriptions instanceof Map && this.previewSubscriptions.size > 0) {
 			this.pollPreviews().catch(() => {})
 		}
 	}
@@ -393,7 +385,13 @@ class EpiphanEncoder extends InstanceBase {
 		const steps = [
 			['actions', () => this.setActionDefinitions(this.getActions())],
 			['feedbacks', () => this.setFeedbackDefinitions(this.getFeedbacks())],
-			['presets', () => this.setPresetDefinitions(this.getPresets())],
+			[
+				'presets',
+				() => {
+					const { structure, presets } = this.getPresets()
+					this.setPresetDefinitions(structure, presets)
+				},
+			],
 		]
 		for (const [what, run] of steps) {
 			try {

@@ -470,12 +470,16 @@ describe('preview feedback with preview_interval > 0', () => {
 	})
 
 	it('unsubscribe counts down and drops the cached image at zero', async () => {
-		await subscribeFeedback(instance, 'preview', { source: 'channel', sourceId: '1' })
+		// a second feedback instance showing the same channel
+		await subscribeFeedback(instance, 'preview', { source: 'channel', sourceId: '1' }, { id: 'second' })
+		assert.equal(instance.previewSubscriptions.get('channel:1'), 2)
+		// evaluating a feedback again does not count it twice
+		await subscribeFeedback(instance, 'preview', { source: 'channel', sourceId: '1' }, { id: 'second' })
 		assert.equal(instance.previewSubscriptions.get('channel:1'), 2)
 		await unsubscribeFeedback(instance, 'preview', { source: 'channel', sourceId: '1' })
 		assert.equal(instance.previewSubscriptions.get('channel:1'), 1)
 		assert.ok(instance.previews['channel:1'])
-		await unsubscribeFeedback(instance, 'preview', { source: 'channel', sourceId: '1' })
+		await unsubscribeFeedback(instance, 'preview', { source: 'channel', sourceId: '1' }, { id: 'second' })
 		assert.equal(instance.previewSubscriptions.has('channel:1'), false)
 		assert.equal(instance.previews['channel:1'], undefined)
 		assert.deepEqual(await runFeedback(instance, 'preview', { source: 'channel', sourceId: '1' }), {})

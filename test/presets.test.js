@@ -130,7 +130,7 @@ describe('presets', () => {
 	it('every preset id is sanitised, uses type/name (not label), and category is a D15 id', () => {
 		for (const [id, preset] of Object.entries(presets)) {
 			assert.match(id, PRESET_ID_RE, `preset id ${id}`)
-			assert.equal(preset.type, 'button')
+			assert.equal(preset.type, 'simple')
 			assert.ok(preset.name && !('label' in preset), `preset ${id} uses name`)
 			assert.ok(PRESET_CATEGORY_IDS.includes(preset.category), `preset ${id} has an unknown category`)
 		}

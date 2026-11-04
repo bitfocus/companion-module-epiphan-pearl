@@ -75,10 +75,6 @@ function literal(v) {
 	return v
 }
 
-function runEntrypoint() {
-	// no-op in tests
-}
-
 function emptyUpgradeResult() {
 	return { updatedConfig: null, updatedActions: [], updatedFeedbacks: [] }
 }
@@ -89,6 +85,14 @@ function EmptyUpgradeScript() {
 
 function CreateConvertToBooleanFeedbackUpgradeScript(upgradeMap) {
 	const fn = function convertToBooleanFeedbacks() {
+		return emptyUpgradeResult()
+	}
+	fn.upgradeMap = upgradeMap
+	return fn
+}
+
+function CreateUseActionResultStoreUpgradeScript(upgradeMap) {
+	const fn = function useActionResultStore() {
 		return emptyUpgradeResult()
 	}
 	fn.upgradeMap = upgradeMap
@@ -139,12 +143,19 @@ class InstanceBase {
 		this.definitions.feedbacks = feedbacks
 	}
 
-	setPresetDefinitions(presets) {
-		this.definitions.presets = presets
+	setPresetDefinitions(structure, presets) {
+		this.definitions.presetStructure = structure
+		// the tests group by category: each preset is annotated with the name of the section that lists it
+		const sectionOf = new Map()
+		for (const section of structure) for (const id of section.definitions) sectionOf.set(id, section.name)
+		this.definitions.presets = Object.fromEntries(
+			Object.entries(presets).map(([id, preset]) => [id, { ...preset, category: sectionOf.get(id) }]),
+		)
 	}
 
+	// module-base 2.x passes an object keyed by the variable id; the tests keep reading a list
 	setVariableDefinitions(variables) {
-		this.definitions.variables = variables
+		this.definitions.variables = Object.entries(variables).map(([variableId, def]) => ({ variableId, ...def }))
 	}
 
 	setVariableValues(values) {
@@ -158,20 +169,16 @@ class InstanceBase {
 		return this.variableValues[variableId]
 	}
 
-	setCustomVariableValue(variableName, value) {
-		this.customVariables[variableName] = value
-	}
-
 	checkFeedbacks(...feedbackTypes) {
 		this.checkedFeedbacks.push(feedbackTypes)
 	}
 
-	checkFeedbacksById() {
-		// not used by the module; no-op
+	checkAllFeedbacks() {
+		this.checkedFeedbacks.push([])
 	}
 
-	subscribeFeedbacks(...types) {
-		this.subscribeFeedbacksCalls.push(types)
+	checkFeedbacksById() {
+		// not used by the module; no-op
 	}
 
 	unsubscribeFeedbacks() {}
@@ -184,10 +191,6 @@ class InstanceBase {
 
 	saveConfig(config) {
 		this.savedConfig = config
-	}
-
-	async parseVariablesInString(text) {
-		return text
 	}
 
 	oscSend() {}
@@ -204,7 +207,7 @@ const stub = {
 	combineRgb,
 	splitRgb,
 	literal,
-	runEntrypoint,
+	CreateUseActionResultStoreUpgradeScript,
 	EmptyUpgradeScript,
 	CreateConvertToBooleanFeedbackUpgradeScript,
 	CreateUseBuiltinInvertForFeedbacksUpgradeScript,
@@ -317,11 +320,12 @@ async function runRotate(instance, actionId, options = {}, meta = {}) {
 	return runAction(instance, actionId, options, meta)
 }
 
-function feedbackEvent(def, feedbackId, options, controlId = 'c1') {
+// one feedback instance per feedback type and option set, unless a test names the instance
+function feedbackEvent(def, feedbackId, options, controlId = 'c1', id = `${feedbackId}:${JSON.stringify(options)}`) {
 	return {
 		feedbackId,
 		options,
-		id: 'f1',
+		id,
 		controlId,
 		type: def.type,
 		image: { width: 72, height: 72 },
@@ -331,30 +335,31 @@ function feedbackEvent(def, feedbackId, options, controlId = 'c1') {
 /**
  * Run a feedback callback by id and return its result (boolean or advanced style object).
  */
-async function runFeedback(instance, feedbackId, options = {}, { controlId = 'c1' } = {}) {
+async function runFeedback(instance, feedbackId, options = {}, { controlId = 'c1', id } = {}) {
 	const def = instance.definitions.feedbacks[feedbackId]
 	if (!def) throw new Error(`Unknown feedback '${feedbackId}' (is it defined for the current state?)`)
 	if (typeof def.callback !== 'function') throw new Error(`Feedback '${feedbackId}' has no callback`)
-	return await def.callback(feedbackEvent(def, feedbackId, options, controlId), actionContext())
+	return await def.callback(feedbackEvent(def, feedbackId, options, controlId, id), actionContext())
 }
 
 /**
  * Invoke a feedback definition's subscribe() hook (used by the preview feedbacks).
  */
-async function subscribeFeedback(instance, feedbackId, options = {}) {
+async function subscribeFeedback(instance, feedbackId, options = {}, { id } = {}) {
 	const def = instance.definitions.feedbacks[feedbackId]
 	if (!def) throw new Error(`Unknown feedback '${feedbackId}'`)
-	if (typeof def.subscribe === 'function') return await def.subscribe(feedbackEvent(def, feedbackId, options))
-	return undefined
+	// module-base 2.x has no subscribe callback: a feedback registers what it shows when it is evaluated
+	return await def.callback(feedbackEvent(def, feedbackId, options, 'c1', id), actionContext())
 }
 
 /**
  * Invoke a feedback definition's unsubscribe() hook.
  */
-async function unsubscribeFeedback(instance, feedbackId, options = {}) {
+async function unsubscribeFeedback(instance, feedbackId, options = {}, { id } = {}) {
 	const def = instance.definitions.feedbacks[feedbackId]
 	if (!def) throw new Error(`Unknown feedback '${feedbackId}'`)
-	if (typeof def.unsubscribe === 'function') return await def.unsubscribe(feedbackEvent(def, feedbackId, options))
+	if (typeof def.unsubscribe === 'function')
+		return await def.unsubscribe(feedbackEvent(def, feedbackId, options, 'c1', id))
 	return undefined
 }
 
@@ -373,7 +378,7 @@ module.exports = {
 	Regex,
 	combineRgb,
 	splitRgb,
-	runEntrypoint,
+	CreateUseActionResultStoreUpgradeScript,
 	EmptyUpgradeScript,
 	CreateConvertToBooleanFeedbackUpgradeScript,
 	CreateUseBuiltinInvertForFeedbacksUpgradeScript,

@@ -158,7 +158,7 @@ describe('init against a v2.0 device', () => {
 		assert.ok(Object.keys(presets).length >= 30, `expected >=30 presets, got ${Object.keys(presets).length}`)
 		for (const [id, preset] of Object.entries(presets)) {
 			assert.match(id, VARIABLE_ID_RE, `preset id ${id}`)
-			assert.equal(preset.type, 'button')
+			assert.equal(preset.type, 'simple')
 			assert.ok(preset.name && !('label' in preset), `preset ${id} uses name`)
 			for (const step of preset.steps) {
 				for (const list of [step.down, step.up, step.rotate_left, step.rotate_right]) {
@@ -327,9 +327,7 @@ describe('encoder discovery (Bonjour)', () => {
 		assert.deepEqual(manifest.bonjourQueries[field.id], { type: 'epiphan', protocol: 'tcp' })
 		for (const id of ['host', 'host_port']) {
 			const f = fields.find((x) => x.id === id)
-			assert.equal(f.isVisible({ bonjourHost: '192.168.1.20:80' }), false)
-			assert.equal(f.isVisible({ bonjourHost: null }), true)
-			assert.equal(f.isVisible({}), true)
+			assert.equal(f.isVisibleExpression, '!$(options:bonjourHost)')
 		}
 	})
 })
@@ -478,8 +476,6 @@ describe('configUpdated', () => {
 
 			assert.ok(instance.previewTimer, 'preview timer started')
 			assert.equal(instance.previewSubscriptions.get('channel:1'), 1, 'subscription preserved')
-			// Companion is asked to re-send subscribe() for the placed preview feedbacks (the new ids)
-			assert.deepEqual(instance.subscribeFeedbacksCalls.at(-1), ['preview', 'layout_preview'])
 			await instance.pollPreviews()
 			assert.ok(mock.requests.some((r) => r.path === '/api/v2.0/channels/1/preview'))
 			const result = await runFeedback(instance, 'preview', { source: 'channel', sourceId: '1' })

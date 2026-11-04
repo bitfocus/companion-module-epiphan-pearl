@@ -10,11 +10,11 @@
 	},
 	"license": "MIT",
 	"dependencies": {
-		"@companion-module/base": "1.12.1",
+		"@companion-module/base": "2.2.2",
 		"undici": "^8.12.3"
 	},
 	"devDependencies": {
-		"@companion-module/tools": "^2.9.1",
+		"@companion-module/tools": "^3.2.0",
 		"eslint": "^9.36.0",
 		"prettier": "^3.6.2"
 	},
@@ -24,6 +24,6 @@
 	},
 	"prettier": "@companion-module/tools/.prettierrc.json",
 	"engines": {
-		"node": ">=22.8"
+		"node": "^26.5"
 	}
 }

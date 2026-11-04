@@ -608,7 +608,8 @@ function updateVariables(self) {
 			.join(',')
 		if (idList !== self.lastVariableIds) {
 			self.lastVariableIds = idList
-			self.setVariableDefinitions(definitions)
+			// module-base 2.x: definitions are an object keyed by the variable id
+			self.setVariableDefinitions(Object.fromEntries(definitions.map((d) => [d.variableId, { name: d.name }])))
 		}
 		self.setVariableValues(values)
 	} catch (e) {

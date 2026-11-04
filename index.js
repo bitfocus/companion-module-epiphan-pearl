@@ -1,4 +1,5 @@
-const { runEntrypoint } = require('@companion-module/base')
 const { EpiphanEncoder, upgradeScripts } = require('./src/instance')
 
-runEntrypoint(EpiphanEncoder, upgradeScripts)
+// module-base 2.x: the module class is the export, the upgrade scripts hang off it (runEntrypoint() was removed)
+module.exports = EpiphanEncoder
+module.exports.UpgradeScripts = upgradeScripts

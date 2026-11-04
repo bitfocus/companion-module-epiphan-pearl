@@ -178,6 +178,36 @@ function unsubscribeMeter(self, key) {
 }
 
 /**
+ * module-base 2.x has no subscribe callback: a feedback announces itself by being evaluated. Each evaluation of a
+ * preview / audio feedback therefore registers the source it currently shows. The registration is remembered per
+ * feedback instance, so evaluating it again changes nothing and a changed option moves it to the new source.
+ *
+ * @param {object} self instance
+ * @param {{id: string}} feedback
+ * @param {'preview'|'meter'} kind
+ * @param {string|null} key source the feedback shows now
+ */
+function trackFeedback(self, feedback, kind, key) {
+	if (!(self.feedbackSources instanceof Map)) self.feedbackSources = new Map()
+	const record = `${kind}:${feedback.id}`
+	const known = self.feedbackSources.get(record)
+	const wanted = key || null
+	if (known === wanted) return
+	if (known) (kind === 'meter' ? unsubscribeMeter : unsubscribePreview)(self, known)
+	if (wanted) {
+		self.feedbackSources.set(record, wanted)
+		;(kind === 'meter' ? subscribeMeter : subscribePreview)(self, wanted)
+	} else {
+		self.feedbackSources.delete(record)
+	}
+}
+
+/** the feedback was removed from its button: drop what it registered */
+function releaseFeedback(self, feedback, kind) {
+	trackFeedback(self, feedback, kind, null)
+}
+
+/**
  * Aggregate status of a list of {status:{state}} entities: the first status of `order` found among
  * them, or `fallback` when none matches (including an empty list).
  *
@@ -400,10 +430,17 @@ module.exports = {
 					default: this.firstId(this.choicesLayouts()),
 				},
 			],
+			affectedProperties: ['png64'],
 			callback: (feedback) => {
 				try {
-					if (!previewsEnabled(this)) return {}
 					const pair = splitPair(String(feedback.options.layoutId ?? ''))
+					trackFeedback(
+						this,
+						feedback,
+						'preview',
+						pair ? previewKey('layout', feedback.options.layoutId) : null,
+					)
+					if (!previewsEnabled(this)) return {}
 					if (!pair) return {}
 					const png64 = this.previews?.[previewKey('layout', feedback.options.layoutId)]?.png64
 					return typeof png64 === 'string' && png64.length > 0 ? { png64 } : {}
@@ -412,14 +449,7 @@ module.exports = {
 					return {}
 				}
 			},
-			subscribe: (feedback) => {
-				const pair = splitPair(String(feedback.options.layoutId ?? ''))
-				if (pair) subscribePreview(this, previewKey('layout', feedback.options.layoutId))
-			},
-			unsubscribe: (feedback) => {
-				const pair = splitPair(String(feedback.options.layoutId ?? ''))
-				if (pair) unsubscribePreview(this, previewKey('layout', feedback.options.layoutId))
-			},
+			unsubscribe: (feedback) => releaseFeedback(this, feedback, 'preview'),
 		}
 
 		// ------------------------------------------------------------------
@@ -490,10 +520,12 @@ module.exports = {
 					default: this.firstId(this.choicesPreviewSources()),
 				},
 			],
+			affectedProperties: ['png64'],
 			callback: (feedback) => {
 				try {
-					if (!previewsEnabled(this)) return {}
 					const key = previewKey(String(feedback.options.source ?? 'channel'), feedback.options.sourceId)
+					trackFeedback(this, feedback, 'preview', key)
+					if (!previewsEnabled(this)) return {}
 					const png64 = key ? this.previews?.[key]?.png64 : undefined
 					return typeof png64 === 'string' && png64.length > 0 ? { png64 } : {}
 				} catch (error) {
@@ -501,18 +533,7 @@ module.exports = {
 					return {}
 				}
 			},
-			subscribe: (feedback) => {
-				subscribePreview(
-					this,
-					previewKey(String(feedback.options.source ?? 'channel'), feedback.options.sourceId),
-				)
-			},
-			unsubscribe: (feedback) => {
-				unsubscribePreview(
-					this,
-					previewKey(String(feedback.options.source ?? 'channel'), feedback.options.sourceId),
-				)
-			},
+			unsubscribe: (feedback) => releaseFeedback(this, feedback, 'preview'),
 		}
 
 		// ------------------------------------------------------------------
@@ -751,8 +772,10 @@ module.exports = {
 					default: this.firstId(this.choicesInputsWithAudio()),
 				},
 			],
+			affectedProperties: ['imageBuffer'],
 			callback: (feedback) => {
 				try {
+					trackFeedback(this, feedback, 'meter', String(feedback.options.inputId ?? ''))
 					const levels = meterOf(this.state.inputs?.[String(feedback.options.inputId ?? '')])
 					// no levels yet (nothing subscribed, no signal, or a device without the endpoint):
 					// return nothing at all so the button keeps its text and its own style
@@ -769,8 +792,7 @@ module.exports = {
 					return {}
 				}
 			},
-			subscribe: (feedback) => subscribeMeter(this, String(feedback.options.inputId ?? '')),
-			unsubscribe: (feedback) => unsubscribeMeter(this, String(feedback.options.inputId ?? '')),
+			unsubscribe: (feedback) => releaseFeedback(this, feedback, 'meter'),
 		}
 
 		// ------------------------------------------------------------------

@@ -101,6 +101,17 @@ const EXTEND_MAX = 21600
 const EXTEND_DEFAULT = 300
 
 const enc = (v) => encodeURIComponent(String(v))
+
+/**
+ * Companion expression that is true while `$(options:field)` equals one of `values`. Expressions may only
+ * refer to option fields that have disableAutoExpression set.
+ *
+ * @param {string} field
+ * @param {string[]} values
+ * @returns {string}
+ */
+const optionIs = (field, values) =>
+	values.length === 0 ? '1 == 0' : values.map((v) => `$(options:${field}) == '${v}'`).join(' || ')
 const errMsg = (e) => (e && e.message ? e.message : String(e))
 
 module.exports = {
@@ -127,14 +138,15 @@ module.exports = {
 		 * the failure on the button it came from (src/failure.js, the `action_failed` feedback), so a
 		 * rejected command is visible on the key and not only in the log.
 		 */
-		const wrap = (label, fn) => async (action, context) => {
+		const wrap = (label, fn, failureValue) => async (action, context) => {
 			try {
-				await fn(action, context)
+				return await fn(action, context)
 			} catch (error) {
 				const message = errMsg(error)
 				if (this.state) this.state.lastError = message
 				this.log('error', `${label} failed: ${message}`)
 				this.flagActionFailure(action?.controlId)
+				return failureValue
 			}
 		}
 
@@ -145,7 +157,8 @@ module.exports = {
 			return false
 		}
 
-		const parse = async (value) => this.parseVariablesInString(String(value ?? ''))
+		// module-base 2.x: Companion already replaced the variables in text options (useVariables)
+		const parse = async (value) => String(value ?? '')
 
 		/** Re-publish the variable values; a failure here must not mark the action as failed. */
 		const refreshVariables = () => {
@@ -468,7 +481,9 @@ module.exports = {
 
 		actions['getLayoutData'] = {
 			name: 'Get layout data',
-			description: "Read a layout's settings as JSON and store them in a custom variable.",
+			description:
+				"Read a layout's settings as JSON. Choose where to store the result in the action's 'Store result' setting.",
+			hasResult: true,
 			options: [
 				{
 					type: 'dropdown',
@@ -477,32 +492,29 @@ module.exports = {
 					choices: this.choicesLayouts(),
 					default: this.firstId(this.choicesLayouts()),
 				},
-				{
-					id: 'destination',
-					type: 'custom-variable',
-					label: 'Destination Variable',
-				},
 			],
-			callback: wrap('Get layout data', async (action) => {
-				const target = parseLayout('Get layout data', action.options.channelIdlayoutId)
-				if (!target) return
-				// API v2.0 has no layout settings, so this always uses the v1 API
-				const data = await this.request(
-					'GET',
-					`/channels/${enc(target.cid)}/layouts/${enc(target.lid)}/settings`,
-					{
-						base: 'v1',
-					},
-				)
-				const layoutData = JSON.stringify(data)
-				this.log(
-					'debug',
-					`Layout data retrieved for channel ${target.channel.name}, layout ${target.layout.name}:\n${layoutData}`,
-				)
-				if (action.options.destination) {
-					this.setCustomVariableValue(action.options.destination, layoutData)
-				}
-			}),
+			callback: wrap(
+				'Get layout data',
+				async (action) => {
+					const target = parseLayout('Get layout data', action.options.channelIdlayoutId)
+					if (!target) return ''
+					// API v2.0 has no layout settings, so this always uses the v1 API
+					const data = await this.request(
+						'GET',
+						`/channels/${enc(target.cid)}/layouts/${enc(target.lid)}/settings`,
+						{
+							base: 'v1',
+						},
+					)
+					const layoutData = JSON.stringify(data)
+					this.log(
+						'debug',
+						`Layout data retrieved for channel ${target.channel.name}, layout ${target.layout.name}:\n${layoutData}`,
+					)
+					return layoutData
+				},
+				'',
+			),
 		}
 
 		actions['setLayoutData'] = {
@@ -548,7 +560,7 @@ module.exports = {
 		actions['getContentMetadata'] = {
 			name: 'Get Content Metadata',
 			description:
-				"Read a channel's title, author, copyright, comment, description and filename prefix into its metadata variables.",
+				"Read a channel's title, author, copyright, comment, description and filename prefix into its metadata variables. The result (all fields as JSON) can be stored with the action's 'Store result' setting.",
 			options: [
 				{
 					type: 'dropdown',
@@ -557,20 +569,18 @@ module.exports = {
 					choices: this.choicesChannel(),
 					default: this.firstId(this.choicesChannel()),
 				},
-				{
-					type: 'custom-variable',
-					id: 'destination',
-					label: 'Destination Variable (optional, stores metadata as JSON)',
-				},
 			],
-			callback: wrap('Get Content Metadata', async (action) => {
-				const cid = parseChannel('Get Content Metadata', action.options.channel)
-				if (!cid) return
-				const metadata = await this.fetchMetadata(cid)
-				if (metadata && action.options.destination) {
-					this.setCustomVariableValue(action.options.destination, JSON.stringify(metadata))
-				}
-			}),
+			hasResult: true,
+			callback: wrap(
+				'Get Content Metadata',
+				async (action) => {
+					const cid = parseChannel('Get Content Metadata', action.options.channel)
+					if (!cid) return ''
+					const metadata = await this.fetchMetadata(cid)
+					return metadata ? JSON.stringify(metadata) : ''
+				},
+				'',
+			),
 		}
 
 		actions['setContentMetadata'] = {
@@ -750,6 +760,8 @@ module.exports = {
 				{
 					type: 'dropdown',
 					id: 'eventRef',
+					// other fields refer to this one in isVisibleExpression
+					disableAutoExpression: true,
 					label: 'Event',
 					choices: this.choicesEventRefs(),
 					default: 'ongoing',
@@ -760,33 +772,31 @@ module.exports = {
 				{
 					type: 'dropdown',
 					id: 'op',
+					// the extend field refers to this one in isVisibleExpression
+					disableAutoExpression: true,
 					label: 'Action',
 					choices: CHOICES_EVENT_OPS,
 					default: 'toggle',
 					tooltip:
 						'Pause / Resume pauses a running event and resumes a paused one. An ongoing event is already started; the upcoming event is started from an "Upcoming" button.',
-					isVisible: (options) => {
-						const ref = String(options.eventRef)
-						return ref === 'ongoing' || ref === 'running' || ref === 'paused'
-					},
+					isVisibleExpression: optionIs('eventRef', ONGOING_EVENT_REFS),
 				},
 				{
 					type: 'static-text',
 					id: 'op_upcoming',
 					label: 'Action',
 					value: 'Start, the only command that applies to the upcoming event.',
-					isVisible: (options) => String(options.eventRef) === 'upcoming',
+					isVisibleExpression: optionIs('eventRef', ['upcoming']),
 				},
 				{
 					type: 'dropdown',
 					id: 'op_event',
+					// other fields refer to this one in isVisibleExpression
+					disableAutoExpression: true,
 					label: 'Action',
 					choices: CHOICES_EVENT_OPS_SPECIFIC,
 					default: 'start',
-					isVisible: (options) => {
-						const ref = String(options.eventRef)
-						return ref !== 'ongoing' && ref !== 'running' && ref !== 'paused' && ref !== 'upcoming'
-					},
+					isVisibleExpression: `!(${optionIs('eventRef', [...ONGOING_EVENT_REFS, 'upcoming'])})`,
 				},
 				{
 					type: 'number',
@@ -797,12 +807,7 @@ module.exports = {
 					max: EXTEND_MAX,
 					step: 30,
 					tooltip: 'Seconds added to the finish time of the event.',
-					isVisible: (options) => {
-						const ref = String(options.eventRef)
-						const ongoing = ref === 'ongoing' || ref === 'running' || ref === 'paused'
-						const op = ref === 'upcoming' ? 'start' : ongoing ? options.op : options.op_event
-						return op === 'extend'
-					},
+					isVisibleExpression: `((${optionIs('eventRef', ONGOING_EVENT_REFS)}) && ${optionIs('op', ['extend'])}) || (!(${optionIs('eventRef', [...ONGOING_EVENT_REFS, 'upcoming'])}) && ${optionIs('op_event', ['extend'])})`,
 				},
 			],
 			callback: wrap('Event', async (action) => {
@@ -916,6 +921,8 @@ module.exports = {
 				{
 					type: 'dropdown',
 					id: 'inputId',
+					// other fields refer to this one in isVisibleExpression
+					disableAutoExpression: true,
 					label: 'Input',
 					choices: this.choicesInputsWithAudio(),
 					default: this.firstId(this.choicesInputsWithAudio()),
@@ -928,18 +935,14 @@ module.exports = {
 					default: 'gain',
 					// gain exists on the analog inputs only; for every other input the choice is hidden and the
 					// action adjusts the delay (the list of analog ids travels with the definition)
-					isVisible: (options, data) =>
-						Array.isArray(data?.analog) && data.analog.includes(String(options.inputId)),
-					isVisibleData: { analog: this.analogInputIds() },
+					isVisibleExpression: optionIs('inputId', this.analogInputIds()),
 				},
 				{
 					type: 'static-text',
 					id: 'control_note',
 					label: 'Adjusts',
 					value: 'Delay. Gain can only be adjusted on analog inputs (XLR, TRS, 3.5 mm, RCA).',
-					isVisible: (options, data) =>
-						!(Array.isArray(data?.analog) && data.analog.includes(String(options.inputId))),
-					isVisibleData: { analog: this.analogInputIds() },
+					isVisibleExpression: `!(${optionIs('inputId', this.analogInputIds())})`,
 				},
 				{
 					type: 'dropdown',

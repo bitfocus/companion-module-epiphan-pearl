@@ -856,12 +856,13 @@ describe('layout data (legacy API, kept from 2.2.0)', () => {
 		await mock.close()
 	})
 
-	it('Get layout data stores the layout settings as JSON in the destination variable', async () => {
+	it("Get layout data returns the layout settings as JSON (stored by Companion's Store result)", async () => {
 		mock.requests.length = 0
-		await runAction(instance, 'getLayoutData', { channelIdlayoutId: '1-2', destination: 'layout_json' })
+		const result = await runAction(instance, 'getLayoutData', { channelIdlayoutId: '1-2' })
 		const req = mock.requests.find((r) => r.method === 'GET' && r.path === '/api/channels/1/layouts/2/settings')
 		assert.ok(req, 'the legacy API is used, also on a device with API v2.0')
-		assert.equal(JSON.parse(instance.customVariables.layout_json).id, '2')
+		assert.equal(instance.definitions.actions.getLayoutData.hasResult, true)
+		assert.equal(JSON.parse(result).id, '2')
 	})
 
 	it('Set layout data sends the JSON, variables allowed', async () => {
@@ -873,9 +874,9 @@ describe('layout data (legacy API, kept from 2.2.0)', () => {
 		mock.requests.length = 0
 		await runAction(instance, 'setLayoutData', { channelIdlayoutId: '1-2', source: 'not json' })
 		await runAction(instance, 'setLayoutData', { channelIdlayoutId: '9-9', source: '{}' })
-		await runAction(instance, 'getLayoutData', { channelIdlayoutId: '', destination: 'x' })
+		const result = await runAction(instance, 'getLayoutData', { channelIdlayoutId: '' })
 		assert.equal(mock.requests.filter((r) => r.path.endsWith('/settings')).length, 0)
-		assert.equal(instance.customVariables.x, undefined)
+		assert.equal(result, '')
 	})
 })
 
@@ -907,11 +908,10 @@ describe('content metadata (legacy admin CGI)', () => {
 		assert.equal(instance.variableValues.channel_1_metadata_description, 'Morning broadcast')
 	})
 
-	it('Get Content Metadata stores the metadata as JSON in the destination variable', async () => {
-		await runAction(instance, 'getContentMetadata', { channel: '1', destination: 'md_json' })
-		const stored = instance.customVariables?.md_json ?? instance.calls.customVariables?.md_json
-		assert.ok(stored, 'custom variable not set')
-		assert.equal(JSON.parse(stored).copyright, '(c) Epiphan')
+	it("Get Content Metadata returns the metadata as JSON (stored by Companion's Store result)", async () => {
+		assert.equal(instance.definitions.actions.getContentMetadata.hasResult, true)
+		const result = await runAction(instance, 'getContentMetadata', { channel: '1' })
+		assert.equal(JSON.parse(result).copyright, '(c) Epiphan')
 	})
 
 	it('Set Content Metadata only sends non-empty fields unless sendEmpty is checked', async () => {

@@ -436,7 +436,7 @@ module.exports = {
 
 		if (structureChanged) {
 			this.updateSystem()
-			this.checkFeedbacks()
+			this.checkAllFeedbacks()
 			if (!firstPoll) this.log('info', 'Device configuration has changed, choices and presets updated.')
 		} else {
 			// output_set expires after a fixed 5 s window rather than on a state change, so it has no
@@ -449,9 +449,8 @@ module.exports = {
 				return Number.isFinite(setAt) && Date.now() - setAt < 5000 + this.pollIntervalMs()
 			})
 			if (outputSetFalling) feedbacksToCheck.add('output_set')
-			// checkFeedbacks() with no ids at all means "recheck everything" in Companion, so it must
-			// only ever be called here with at least one id, never bare (that meaning is reserved for
-			// the structureChanged branch above)
+			// checkFeedbacks() needs at least one id; rechecking everything is checkAllFeedbacks(), which is
+			// reserved for the structureChanged branch above
 			if (feedbacksToCheck.size > 0) this.checkFeedbacks(...feedbacksToCheck)
 		}
 
