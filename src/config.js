@@ -7,7 +7,14 @@ const { PRESET_CATEGORY_IDS } = require('./presets')
  * @since 1.0.0
  * @returns {Array} the config fields
  */
-function getConfigFields() {
+function getConfigFields(api = {}) {
+	// the settings page is built when it is opened, so it can say what the module found out about this encoder
+	let apiText
+	if (api.version === '2.0') apiText = `REST API v2.0 in use${api.firmware ? ` (firmware ${api.firmware})` : ''}.`
+	else if (api.version === 'legacy')
+		apiText = `Legacy REST API in use${api.firmware ? ` (firmware ${api.firmware})` : ''}: update the encoder to firmware 4.24.1 or newer to use API v2.0.`
+	else apiText = 'Not detected yet: the encoder has not answered. It is asked again with every poll.'
+
 	return [
 		{
 			type: 'static-text',
@@ -145,7 +152,7 @@ function getConfigFields() {
 			id: 'api_info',
 			width: 12,
 			label: 'API version',
-			value: 'The REST API version is selected automatically from the firmware of the encoder. The version in use is shown in the connection status and in the variable api_version.',
+			value: `${apiText} The REST API version is selected automatically from the firmware of the encoder; it is also shown in the connection status and in the variable api_version.`,
 		},
 		{
 			type: 'multidropdown',

@@ -539,3 +539,33 @@ describe('configUpdated', () => {
 		}
 	})
 })
+
+describe('API version in the settings page', () => {
+	const infoOf = (instance) => instance.getConfigFields().find((f) => f.id === 'api_info').value
+
+	it('names the API in use and the firmware of the encoder once it is known', async () => {
+		const mock = await startMockPearl({ firmware: '4.24.1' })
+		const instance = await createInstance({ mock })
+		try {
+			assert.match(infoOf(instance), /^REST API v2\.0 in use \(firmware 4\.24\.1\)\./)
+		} finally {
+			await instance.destroy()
+			await mock.close()
+		}
+	})
+
+	it('says so for the legacy API, and while the encoder has not answered', async () => {
+		const mock = await startMockPearl({ firmware: '4.20.0', legacyOnly: true })
+		const legacy = await createInstance({ mock })
+		try {
+			assert.match(infoOf(legacy), /^Legacy REST API in use/)
+			assert.match(infoOf(legacy), /4\.24\.1 or newer/)
+		} finally {
+			await legacy.destroy()
+			await mock.close()
+		}
+		installStub()
+		const { getConfigFields } = require('../src/config')
+		assert.match(getConfigFields().find((f) => f.id === 'api_info').value, /^Not detected yet/)
+	})
+})

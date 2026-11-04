@@ -171,7 +171,10 @@ class EpiphanEncoder extends InstanceBase {
 	 * @returns {Array} the config fields
 	 */
 	getConfigFields() {
-		return getConfigFields()
+		return getConfigFields({
+			version: this.apiDetected ? (this.isV2 ? '2.0' : 'legacy') : undefined,
+			firmware: this.detectedFirmware,
+		})
 	}
 
 	/**
@@ -346,6 +349,7 @@ class EpiphanEncoder extends InstanceBase {
 	async determineApiBase() {
 		this.apiBasePath = '/api'
 		this.firmwareWarning = undefined
+		this.detectedFirmware = undefined
 		// stays false when the device could not be asked, the next poll then tries again
 		this.apiDetected = false
 		try {
@@ -355,6 +359,9 @@ class EpiphanEncoder extends InstanceBase {
 				silent: true,
 			})
 			this.apiDetected = true
+			if (typeof version === 'string' || typeof version?.version === 'string') {
+				this.detectedFirmware = typeof version === 'string' ? version : version.version
+			}
 			const verNum = firmwareVersionNumber(typeof version === 'string' ? version : version?.version)
 			if (verNum !== null && verNum >= MIN_API_V2_VERSION) {
 				this.apiBasePath = '/api/v2.0'
