@@ -485,12 +485,16 @@ class EpiphanEncoder extends InstanceBase {
 
 Object.assign(EpiphanEncoder.prototype, api, poller, choices, actions, feedbacks, presets, meter, blink)
 
+// This script runs before every script in upgrades.js, so it must use the feedback ids of the versions
+// that still had advanced feedbacks (up to 2.1): the streaming feedback was 'channelStreaming' then.
+// renameStreaming only renames it to 'streamingState' afterwards; with 'streamingState' here the old
+// fg/bg colours were never converted to a style and those buttons lost their colours.
 const upgradeToBooleanFeedbacks = CreateConvertToBooleanFeedbackUpgradeScript({
 	channelLayout: {
 		fg: 'color',
 		bg: 'bgcolor',
 	},
-	streamingState: {
+	channelStreaming: {
 		fg: 'color',
 		bg: 'bgcolor',
 	},
