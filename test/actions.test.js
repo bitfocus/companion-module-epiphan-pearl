@@ -1036,6 +1036,37 @@ describe('follow-up polling after a command', () => {
 		instance.pollAll = original
 	})
 
+	it('repeats the poll after a layout change until the device reports the new layout', async () => {
+		let polls = 0
+		const original = instance.pollAll.bind(instance)
+		instance.pollAll = () => {
+			polls++
+			return original()
+		}
+		const layouts = mock.state.channels['1'].layouts
+		const setActive = (id) => layouts.forEach((l) => (l.active = l.id === id))
+		setActive('1')
+		await original()
+		const realRequest = instance.request.bind(instance)
+		instance.request = async (...args) => {
+			const result = await realRequest(...args)
+			if (args[0] === 'PUT' && String(args[1]).includes('/channels/1/layouts/active')) {
+				// the encoder keeps reporting the old layout for the first poll after the command
+				setActive('1')
+				setTimeout(() => setActive('2'), 900)
+			}
+			return result
+		}
+		await runAction(instance, 'layout', { channelId: '1', layoutId: '1-2' })
+		await new Promise((resolve) => setTimeout(resolve, 3200))
+		assert.ok(polls >= 2, `expected the poll to be repeated, got ${polls}`)
+		assert.equal(instance.state.channels['1'].active_layout.id, '2')
+		const name = layouts.find((l) => l.id === '2').name
+		assert.equal(instance.variableValues.channel_1_active_layout, name, 'the variable follows too')
+		instance.request = realRequest
+		instance.pollAll = original
+	})
+
 	it('gives up after a few repeats when the state never changes', async () => {
 		let polls = 0
 		const original = instance.pollAll.bind(instance)

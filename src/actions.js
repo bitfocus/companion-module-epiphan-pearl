@@ -394,7 +394,9 @@ module.exports = {
 					this.isV2 ? { query: { id: lid } } : { body: { id: Number.isFinite(numeric) ? numeric : lid } },
 				)
 				this.log('debug', `Layout ${lid} activated on channel ${cid}`)
-				this.schedulePollSoon()
+				// like recorder and stream commands: poll again until the device reports the new layout, so
+				// the layout feedback and the active-layout variable follow even when the switch takes longer
+				this.schedulePollSoon(() => String(this.state.channels[cid]?.active_layout?.id) === String(lid))
 			}),
 		}
 
