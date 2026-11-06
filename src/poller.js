@@ -484,11 +484,13 @@ module.exports = {
 			this.log('error', `Updating variables failed: ${error?.message || error}`)
 		}
 
-		// ---- 8. content metadata: not part of the REST API, read once per channel (and again by the Get action)
+		// ---- 8. content metadata: not part of the REST API, read once per channel and again with the slow
+		// system information (every STRUCTURE_REFRESH_EVERY polls), so a title or author changed in the
+		// encoder's web UI shows up in the variables without a Get action or a reconfiguration
 		if (this.config?.enable_metadata === false) return
 		for (const cid of Object.keys(state.channels)) {
 			if (gen !== this.configGeneration) return
-			if (!this.metadataRequested.has(cid)) await this.fetchMetadata(cid)
+			if (!this.metadataRequested.has(cid) || refreshSystemInfo) await this.fetchMetadata(cid)
 		}
 	},
 

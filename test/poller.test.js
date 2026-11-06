@@ -665,3 +665,25 @@ describe('API detection while the device is unreachable', () => {
 		}
 	})
 })
+
+describe('content metadata refresh', () => {
+	it('picks up a title changed on the device with the slow system refresh, without a Get action', async () => {
+		const mock = await startMockPearl()
+		const instance = await createInstance({ mock })
+		try {
+			const before = instance.variableValues.channel_1_metadata_title
+			mock.state.channels['1'].metadata.title = 'Changed in the web UI'
+			// a normal poll keeps the value it has
+			instance.pollCounter = 1
+			await instance.pollAll()
+			assert.equal(instance.variableValues.channel_1_metadata_title, before)
+			// the poll that also refreshes the system information reads it again
+			instance.pollCounter = 30
+			await instance.pollAll()
+			assert.equal(instance.variableValues.channel_1_metadata_title, 'Changed in the web UI')
+		} finally {
+			await instance.destroy()
+			await mock.close()
+		}
+	})
+})
