@@ -680,3 +680,66 @@ describe('portAsNumberV300', () => {
 		assert.equal(run(null), null)
 	})
 })
+
+describe("legacy '---' (99) of recorderRecording / controlStreaming", () => {
+	const convert = upgrades.find((fn) => fn.name === 'convertToParityV300')
+	const wrapped = (value) => ({ isExpression: false, value })
+
+	it('leaves the action unconverted, so a press still does nothing instead of toggling', () => {
+		upgrades.REMOVED_LEGACY.length = 0
+		const actions = [
+			{
+				id: 'r',
+				controlId: 'c1',
+				actionId: 'recorderRecording',
+				options: { recorderId: '1', startStopAction: 99 },
+			},
+			{
+				id: 's',
+				controlId: 'c2',
+				actionId: 'controlStreaming',
+				options: { channelIdpublisherId: '1-0', startStopAction: 99 },
+			},
+			// still converted: a real command next to it
+			{
+				id: 'r3',
+				controlId: 'c3',
+				actionId: 'recorderRecording',
+				options: { recorderId: '1', startStopAction: 3 },
+			},
+		]
+		const result = convert(null, props(null, { actions }))
+		const updated = Object.fromEntries(result.updatedActions.map((a) => [a.id, a]))
+		assert.equal(updated.r, undefined)
+		assert.equal(updated.s, undefined)
+		assert.equal(actions[0].actionId, 'recorderRecording', 'the stored action is not touched')
+		assert.equal(updated.r3.actionId, 'recorder')
+		assert.equal(updated.r3.options.op, 'toggle')
+		// reported once per button, so the log tells the user to remove it
+		assert.deepEqual(
+			upgrades.REMOVED_LEGACY.map((e) => e.controlId),
+			['c1', 'c2'],
+		)
+	})
+
+	it('does the same with options in the module-base 2.x shape', () => {
+		upgrades.REMOVED_LEGACY.length = 0
+		const actions = [
+			{
+				id: 'rw',
+				controlId: 'c1',
+				actionId: 'recorderRecording',
+				options: { recorderId: wrapped('1'), startStopAction: wrapped(99) },
+			},
+			{
+				id: 'sw',
+				controlId: 'c2',
+				actionId: 'controlStreaming',
+				options: { channelIdpublisherId: wrapped('1-0'), startStopAction: wrapped(99) },
+			},
+		]
+		const result = convert(null, props(null, { actions }))
+		assert.deepEqual(result.updatedActions, [])
+		assert.equal(upgrades.REMOVED_LEGACY.length, 2)
+	})
+})
