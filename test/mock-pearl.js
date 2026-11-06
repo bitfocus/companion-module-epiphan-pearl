@@ -785,9 +785,14 @@ async function startMockPearl({
 		ch.name = name
 		return { result: name }
 	})
-	route('POST', '/channels/:cid/bookmarks', ({ params, query, body }) => {
+	// Measured on a Pearl-2 with firmware 4.24.6: as soon as a v2.0 request carries a JSON body (even `{}`),
+	// the device ignores the query parameters and answers 400 "Missing layout id" / "Missing bookmark name".
+	// Without a body the query parameter works; v1 takes the value from the JSON body. Whether v2.0 reads the
+	// value from a body is unverified, so this mock takes it only from the body once one is sent.
+	const queryOrBody = (v2, query, body, key) => (v2 && body !== null ? body?.[key] : (query[key] ?? body?.[key]))
+	route('POST', '/channels/:cid/bookmarks', ({ params, query, body, v2 }) => {
 		const ch = getChannel(params.cid)
-		const text = query.text ?? body?.text
+		const text = queryOrBody(v2, query, body, 'text')
 		if (typeof text !== 'string' || text.length === 0) throw badRequest('Missing bookmark text')
 		const rec = state.recorders[ch.id]
 		if (!rec || rec.status?.state !== 'started') throw conflict('The channel is not being recorded')
@@ -795,9 +800,9 @@ async function startMockPearl({
 		ch.bookmarks.push({ text, at: nowSec() })
 		return { ok: true }
 	})
-	route('PUT', '/channels/:cid/layouts/active', ({ params, query, body }) => {
+	route('PUT', '/channels/:cid/layouts/active', ({ params, query, body, v2 }) => {
 		const ch = getChannel(params.cid)
-		const lid = query.id ?? body?.id
+		const lid = queryOrBody(v2, query, body, 'id')
 		if (lid === undefined || lid === null || lid === '') throw badRequest('Missing layout id')
 		const layout = getLayout(ch, lid)
 		for (const l of ch.layouts) l.active = l === layout

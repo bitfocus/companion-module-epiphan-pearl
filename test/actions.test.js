@@ -325,11 +325,23 @@ describe('actions against a v2.0 device', () => {
 	// ------------------------------------------------------------------
 
 	describe('layout', () => {
-		it('sends the layout id as both query and body', async () => {
+		it('the mock rejects a v2.0 query parameter next to a JSON body, like the Pearl-2 with 4.24.6 does', async () => {
+			await assert.rejects(
+				instance.request('PUT', '/channels/1/layouts/active', { query: { id: '2' }, body: {}, silent: true }),
+				(error) => error.status === 400 && /Missing layout id/.test(error.message),
+			)
+			await assert.rejects(
+				instance.request('POST', '/channels/1/bookmarks', { query: { text: 'x' }, body: {}, silent: true }),
+				(error) => error.status === 400,
+			)
+			mock.requests.length = 0
+		})
+
+		it('sends the layout id as query parameter without a body on v2.0 (measured on a Pearl-2, 4.24.6)', async () => {
 			await runAction(instance, 'layout', { channelId: '1', layoutId: '1-2' })
 			const req = one(mock, 'PUT', `${V2}/channels/1/layouts/active`)
 			assert.equal(req.query.id, '2')
-			assert.deepEqual(req.body, { id: 2 })
+			assert.equal(req.body, null, 'with a JSON body the device ignores the query parameter')
 			assert.equal(mock.state.channels['1'].layouts.find((l) => l.id === '2').active, true)
 		})
 
@@ -375,7 +387,7 @@ describe('actions against a v2.0 device', () => {
 			await runAction(instance, 'bookmark', { channelId: '1', text: 'Marker', appendTime: true })
 			const req = one(mock, 'POST', `${V2}/channels/1/bookmarks`)
 			assert.match(req.query.text, /^Marker \d\d:\d\d:\d\d$/)
-			assert.equal(req.body.text, req.query.text)
+			assert.equal(req.body, null, 'with a JSON body the device ignores the query parameter')
 		})
 
 		it('an empty text falls back to "Marker" and appendTime off sends the text verbatim', async () => {
@@ -808,6 +820,8 @@ describe('actions against a legacy-only device', () => {
 		await runAction(instance, 'layout', { channelId: '1', layoutId: '1-2' })
 		const layoutReq = mock.requests.find((r) => r.method === 'PUT')
 		assert.equal(layoutReq.path, '/api/channels/1/layouts/active')
+		// v1 takes the id in the JSON body (measured on a Pearl-2, 4.24.6)
+		assert.deepEqual(layoutReq.body, { id: 2 })
 
 		mock.requests.length = 0
 		await runAction(instance, 'stream', { channelId: '1', publisherId: '1-0', op: 'start' })
@@ -816,6 +830,7 @@ describe('actions against a legacy-only device', () => {
 		mock.requests.length = 0
 		await runAction(instance, 'bookmark', { channelId: '1', text: 'm', appendTime: false })
 		assert.equal(mock.requests[0].path, '/api/channels/1/bookmarks')
+		assert.deepEqual(mock.requests[0].body, { text: 'm' })
 
 		mock.requests.length = 0
 		await runAction(instance, 'recorder', { recorderId: '2', op: 'toggle' })
