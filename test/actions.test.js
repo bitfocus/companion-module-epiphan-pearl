@@ -211,6 +211,29 @@ describe('actions against a v2.0 device', () => {
 			one(mock, 'POST', `/api/recorders/1/control/reset`) // the fallback that succeeds
 		})
 
+		it('reset also falls back when the v2.0 path answers 400, 405 or 501 instead of 404', async () => {
+			for (const status of [400, 405, 501]) {
+				mock.requests.length = 0
+				mock.failNext('POST', `${V2}/recorders/1/control/reset`, status, {
+					status: 'error',
+					message: 'unknown',
+				})
+				await runAction(instance, 'recorder', { recorderId: '1', op: 'reset' })
+				one(mock, 'POST', `/api/recorders/1/control/reset`)
+			}
+		})
+
+		it('reset does not fall back when the device refuses it (409)', async () => {
+			mock.requests.length = 0
+			mock.failNext('POST', `${V2}/recorders/1/control/reset`, 409, { status: 'error', message: 'busy' })
+			await runAction(instance, 'recorder', { recorderId: '1', op: 'reset' })
+			assert.equal(
+				mock.requests.filter((r) => r.path === '/api/recorders/1/control/reset').length,
+				0,
+				'no legacy retry',
+			)
+		})
+
 		it('toggle: a stopped recorder starts, a started/paused one stops (D14 both directions)', async () => {
 			instance.state.recorders['2'].status = { state: 'stopped' }
 			await runAction(instance, 'recorder', { recorderId: '2', op: 'toggle' })
@@ -325,11 +348,23 @@ describe('actions against a v2.0 device', () => {
 	// ------------------------------------------------------------------
 
 	describe('layout', () => {
-		it('sends the layout id as both query and body', async () => {
+		it('the mock rejects a v2.0 query parameter next to a JSON body, like the Pearl-2 with 4.24.6 does', async () => {
+			await assert.rejects(
+				instance.request('PUT', '/channels/1/layouts/active', { query: { id: '2' }, body: {}, silent: true }),
+				(error) => error.status === 400 && /Missing layout id/.test(error.message),
+			)
+			await assert.rejects(
+				instance.request('POST', '/channels/1/bookmarks', { query: { text: 'x' }, body: {}, silent: true }),
+				(error) => error.status === 400,
+			)
+			mock.requests.length = 0
+		})
+
+		it('sends the layout id as query parameter without a body on v2.0 (measured on a Pearl-2, 4.24.6)', async () => {
 			await runAction(instance, 'layout', { channelId: '1', layoutId: '1-2' })
 			const req = one(mock, 'PUT', `${V2}/channels/1/layouts/active`)
 			assert.equal(req.query.id, '2')
-			assert.deepEqual(req.body, { id: 2 })
+			assert.equal(req.body, null, 'with a JSON body the device ignores the query parameter')
 			assert.equal(mock.state.channels['1'].layouts.find((l) => l.id === '2').active, true)
 		})
 
@@ -375,7 +410,7 @@ describe('actions against a v2.0 device', () => {
 			await runAction(instance, 'bookmark', { channelId: '1', text: 'Marker', appendTime: true })
 			const req = one(mock, 'POST', `${V2}/channels/1/bookmarks`)
 			assert.match(req.query.text, /^Marker \d\d:\d\d:\d\d$/)
-			assert.equal(req.body.text, req.query.text)
+			assert.equal(req.body, null, 'with a JSON body the device ignores the query parameter')
 		})
 
 		it('an empty text falls back to "Marker" and appendTime off sends the text verbatim', async () => {
@@ -808,6 +843,8 @@ describe('actions against a legacy-only device', () => {
 		await runAction(instance, 'layout', { channelId: '1', layoutId: '1-2' })
 		const layoutReq = mock.requests.find((r) => r.method === 'PUT')
 		assert.equal(layoutReq.path, '/api/channels/1/layouts/active')
+		// v1 takes the id in the JSON body (measured on a Pearl-2, 4.24.6)
+		assert.deepEqual(layoutReq.body, { id: 2 })
 
 		mock.requests.length = 0
 		await runAction(instance, 'stream', { channelId: '1', publisherId: '1-0', op: 'start' })
@@ -816,6 +853,7 @@ describe('actions against a legacy-only device', () => {
 		mock.requests.length = 0
 		await runAction(instance, 'bookmark', { channelId: '1', text: 'm', appendTime: false })
 		assert.equal(mock.requests[0].path, '/api/channels/1/bookmarks')
+		assert.deepEqual(mock.requests[0].body, { text: 'm' })
 
 		mock.requests.length = 0
 		await runAction(instance, 'recorder', { recorderId: '2', op: 'toggle' })
@@ -953,6 +991,9 @@ describe('content metadata (legacy admin CGI)', () => {
 		})
 		const req = mock.requests.find((r) => r.path === '/admin/channel1/set_params.cgi')
 		assert.ok(req, 'no set_params request')
+		// spaces as %20, the encoding verified on a Pearl-2 with 4.24.6; '+' is only a space for form decoders
+		assert.match(req.rawQuery, /title=Evening%20Show%20%26%20Q%3DA/)
+		assert.doesNotMatch(req.rawQuery, /\+/)
 		assert.equal(instance.variableValues.channel_1_metadata_title, 'Evening Show & Q=A')
 		assert.equal(instance.variableValues.channel_1_metadata_author, 'Jo')
 		assert.equal(instance.variableValues.channel_1_metadata_rec_prefix, 'EVE')
@@ -1018,6 +1059,37 @@ describe('follow-up polling after a command', () => {
 		assert.ok(polls >= 2, `expected the poll to be repeated, got ${polls}`)
 		assert.equal(instance.state.recorders['2'].status.state, 'started')
 		instance.request = realStart
+		instance.pollAll = original
+	})
+
+	it('repeats the poll after a layout change until the device reports the new layout', async () => {
+		let polls = 0
+		const original = instance.pollAll.bind(instance)
+		instance.pollAll = () => {
+			polls++
+			return original()
+		}
+		const layouts = mock.state.channels['1'].layouts
+		const setActive = (id) => layouts.forEach((l) => (l.active = l.id === id))
+		setActive('1')
+		await original()
+		const realRequest = instance.request.bind(instance)
+		instance.request = async (...args) => {
+			const result = await realRequest(...args)
+			if (args[0] === 'PUT' && String(args[1]).includes('/channels/1/layouts/active')) {
+				// the encoder keeps reporting the old layout for the first poll after the command
+				setActive('1')
+				setTimeout(() => setActive('2'), 900)
+			}
+			return result
+		}
+		await runAction(instance, 'layout', { channelId: '1', layoutId: '1-2' })
+		await new Promise((resolve) => setTimeout(resolve, 3200))
+		assert.ok(polls >= 2, `expected the poll to be repeated, got ${polls}`)
+		assert.equal(instance.state.channels['1'].active_layout.id, '2')
+		const name = layouts.find((l) => l.id === '2').name
+		assert.equal(instance.variableValues.channel_1_active_layout, name, 'the variable follows too')
+		instance.request = realRequest
 		instance.pollAll = original
 	})
 

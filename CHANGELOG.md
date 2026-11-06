@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- Buttons that used **---** (do nothing) in the recording or streaming action of 2.2.x started or stopped the recording or stream after updating. They do nothing again, as before, and the log names them so they can be removed.
+- Streaming feedbacks of connections from versions before 2.2 lost their colours when updating.
+- The connection showed as OK while the encoder answered with errors, and a slow preview image marked the connection as failed for a moment. The connection status now follows the regular status query.
+- Changing the layout and inserting a marker use the request form verified on a real Pearl-2 with firmware 4.24.6. The previous form could be rejected by the encoder.
+- After changing the layout, the layout feedback and the active-layout variable follow as soon as the encoder has switched, also when the switch takes longer.
+- Spaces in title, author and filename prefix of the content metadata, and in marker texts, are transferred in the form verified on the encoder.
+- Resetting a recorder works also when the encoder answers the newer command with an error other than "not found".
+- Content metadata changed in the encoder's web interface shows up in the variables within about a minute.
+- While the encoder is switched off, the log no longer repeats the same warning every few seconds.
+
 ## [3.0.0] (2026-10-09)
 
 The control set now matches the Epiphan Encoders Stream Deck plugin: the same actions, feedbacks, variables,

@@ -133,9 +133,17 @@ function recordRemovedLegacy(kind, id, controlId) {
 }
 
 /** legacy `recorderRecording` / `recorderControlAll` numeric-or-string op -> the new `recorder.op` */
-const RECORDER_OP_MAP = { 0: 'stop', 1: 'start', 2: 'reset', 3: 'toggle', 99: 'toggle' }
+const RECORDER_OP_MAP = { 0: 'stop', 1: 'start', 2: 'reset', 3: 'toggle' }
 /** legacy `controlStreaming` numeric op -> the new `stream.op` */
-const STREAM_OP_MAP = { 0: 'stop', 1: 'start', 3: 'toggle', 99: 'toggle' }
+const STREAM_OP_MAP = { 0: 'stop', 1: 'start', 3: 'toggle' }
+/**
+ * The legacy '---' choice of recorderRecording / controlStreaming: the action did nothing when pressed
+ * (2.2.x returned early), e.g. on a button that only shows the state through its feedback. The new actions
+ * have no "do nothing" op, so such an action is left unconverted: an unknown action id does nothing either.
+ * Mapping it to 'toggle' would start or stop a recording or stream on a press that never did anything.
+ */
+const LEGACY_NO_OP = 99
+const isLegacyNoOp = (value) => Number(value) === LEGACY_NO_OP
 /** legacy `storageState` value -> the new `storage_level.level` */
 const STORAGE_STATE_MAP = { ready: 'ok', nodev: 'nomedia', dev: 'notready', devro: 'ro', formatting: 'formatting' }
 /** legacy `afuState` value -> the new `system.condition` */
@@ -208,6 +216,10 @@ function convertToParityV300(context, props) {
 				break
 			}
 			case 'controlStreaming': {
+				if (isLegacyNoOp(opt.startStopAction)) {
+					recordRemovedLegacy('action', action.actionId, action.controlId)
+					break
+				}
 				const value = opt.channelIdpublisherId
 				const pair = splitPair(value)
 				action.actionId = 'stream'
@@ -220,6 +232,10 @@ function convertToParityV300(context, props) {
 				break
 			}
 			case 'recorderRecording': {
+				if (isLegacyNoOp(opt.startStopAction)) {
+					recordRemovedLegacy('action', action.actionId, action.controlId)
+					break
+				}
 				action.actionId = 'recorder'
 				action.options = {
 					recorderId: opt.recorderId ?? '',

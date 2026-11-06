@@ -39,7 +39,8 @@ describe('upgrade scripts', () => {
 		assert.equal(upgradeScripts[0].name, 'convertToBooleanFeedbacks')
 		assert.deepEqual(Object.keys(upgradeScripts[0].upgradeMap), [
 			'channelLayout',
-			'streamingState',
+			// the id of the versions with advanced feedbacks, renamed to streamingState only afterwards
+			'channelStreaming',
 			'recorderRecording',
 		])
 		assert.deepEqual(
@@ -678,5 +679,114 @@ describe('portAsNumberV300', () => {
 		assert.deepEqual(run({}), { host_port: 80 })
 		assert.equal(run({ host_port: 443 }), null)
 		assert.equal(run(null), null)
+	})
+})
+
+describe("legacy '---' (99) of recorderRecording / controlStreaming", () => {
+	const convert = upgrades.find((fn) => fn.name === 'convertToParityV300')
+	const wrapped = (value) => ({ isExpression: false, value })
+
+	it('leaves the action unconverted, so a press still does nothing instead of toggling', () => {
+		upgrades.REMOVED_LEGACY.length = 0
+		const actions = [
+			{
+				id: 'r',
+				controlId: 'c1',
+				actionId: 'recorderRecording',
+				options: { recorderId: '1', startStopAction: 99 },
+			},
+			{
+				id: 's',
+				controlId: 'c2',
+				actionId: 'controlStreaming',
+				options: { channelIdpublisherId: '1-0', startStopAction: 99 },
+			},
+			// still converted: a real command next to it
+			{
+				id: 'r3',
+				controlId: 'c3',
+				actionId: 'recorderRecording',
+				options: { recorderId: '1', startStopAction: 3 },
+			},
+		]
+		const result = convert(null, props(null, { actions }))
+		const updated = Object.fromEntries(result.updatedActions.map((a) => [a.id, a]))
+		assert.equal(updated.r, undefined)
+		assert.equal(updated.s, undefined)
+		assert.equal(actions[0].actionId, 'recorderRecording', 'the stored action is not touched')
+		assert.equal(updated.r3.actionId, 'recorder')
+		assert.equal(updated.r3.options.op, 'toggle')
+		// reported once per button, so the log tells the user to remove it
+		assert.deepEqual(
+			upgrades.REMOVED_LEGACY.map((e) => e.controlId),
+			['c1', 'c2'],
+		)
+	})
+
+	it('does the same with options in the module-base 2.x shape', () => {
+		upgrades.REMOVED_LEGACY.length = 0
+		const actions = [
+			{
+				id: 'rw',
+				controlId: 'c1',
+				actionId: 'recorderRecording',
+				options: { recorderId: wrapped('1'), startStopAction: wrapped(99) },
+			},
+			{
+				id: 'sw',
+				controlId: 'c2',
+				actionId: 'controlStreaming',
+				options: { channelIdpublisherId: wrapped('1-0'), startStopAction: wrapped(99) },
+			},
+		]
+		const result = convert(null, props(null, { actions }))
+		assert.deepEqual(result.updatedActions, [])
+		assert.equal(upgrades.REMOVED_LEGACY.length, 2)
+	})
+})
+
+describe('upgrade of a 2.0 streaming feedback with colours (whole chain, real base library)', () => {
+	it('keeps the colours: the boolean conversion must use the old id channelStreaming', async () => {
+		installStub()
+		const { upgradeScripts } = require('../src/instance')
+		// the stub replaces @companion-module/base in the require cache; importing its file by URL with a
+		// query loads the real library next to it, to run the real boolean-feedback conversion
+		const path = require('node:path')
+		const { pathToFileURL } = require('node:url')
+		const baseFile = require.resolve('@companion-module/base', { paths: [path.join(__dirname, '..')] })
+		const real = await import(pathToFileURL(baseFile).href + '?real-base')
+		const scripts = [
+			real.CreateConvertToBooleanFeedbackUpgradeScript(upgradeScripts[0].upgradeMap),
+			...upgradeScripts.slice(1),
+		]
+
+		// stored by 2.0 (advanced feedback with fg/bg), handed over in the module-base 2.x option shape
+		const wrapped = (value) => ({ isExpression: false, value })
+		const props = {
+			config: { host: '10.0.0.5', host_port: '80', username: 'admin', password: '' },
+			secrets: null,
+			actions: [],
+			feedbacks: [
+				{
+					id: 'f1',
+					controlId: 'c1',
+					feedbackId: 'channelStreaming',
+					options: { channelIdpublisherId: wrapped('1-0'), fg: wrapped(0xffffff), bg: wrapped(0x00ff00) },
+				},
+			],
+		}
+		// run the chain like Companion: every script sees the result of the scripts before it
+		for (const script of scripts) {
+			const result = script({ currentConfig: props.config }, props)
+			for (const updated of result.updatedFeedbacks || []) {
+				props.feedbacks = props.feedbacks.map((f) => (f.id === updated.id ? updated : f))
+			}
+			if (result.updatedConfig) props.config = result.updatedConfig
+		}
+
+		const [fb] = props.feedbacks
+		assert.equal(fb.feedbackId, 'stream_state')
+		assert.equal(fb.style?.bgcolor?.value ?? fb.style?.bgcolor, 0x00ff00, 'background colour kept')
+		assert.equal(fb.style?.color?.value ?? fb.style?.color, 0xffffff, 'text colour kept')
 	})
 })
