@@ -258,6 +258,7 @@ class EpiphanEncoder extends InstanceBase {
 		// a new configuration may be a different device entirely; it should not inherit the old one's backoff
 		this.pollFailureCount = 0
 		this.apiDetected = false
+		this.apiCheckWarned = false
 
 		// publish definitions for the (still empty) state right away; the first poll refreshes them
 		this.updateSystem()
@@ -366,6 +367,7 @@ class EpiphanEncoder extends InstanceBase {
 				silent: true,
 			})
 			this.apiDetected = true
+			this.apiCheckWarned = false
 			if (typeof version === 'string' || typeof version?.version === 'string') {
 				this.detectedFirmware = typeof version === 'string' ? version : version.version
 			}
@@ -381,7 +383,15 @@ class EpiphanEncoder extends InstanceBase {
 				this.log('info', `Firmware ${version} is older than ${MIN_API_V2_FIRMWARE}, using legacy API`)
 			}
 		} catch (error) {
-			this.log('warn', `API v2.0 check failed (${error?.message || error}), using legacy API for now`)
+			// the poller asks again on every poll while the device is unreachable: warn once per outage, not
+			// several times a minute for as long as the device is off
+			const message = `API v2.0 check failed (${error?.message || error}), using legacy API for now`
+			if (!this.apiCheckWarned) {
+				this.log('warn', message)
+				this.apiCheckWarned = true
+			} else if (this.config?.verbose) {
+				this.log('debug', message)
+			}
 		}
 		// the version probe already reported 'Ok'; with outdated firmware that becomes a warning
 		if (this.currentStatus === InstanceStatus.Ok) this.applyOkStatus()

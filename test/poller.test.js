@@ -631,3 +631,37 @@ describe('connection status follows the core poll', () => {
 		}
 	})
 })
+
+describe('API detection while the device is unreachable', () => {
+	it('warns once per outage, not on every poll', async () => {
+		const mock = await startMockPearl()
+		const port = mock.port
+		const instance = await createInstance({ mock, config: { timeout: 500 } })
+		try {
+			await mock.close()
+			// as after a start with the device switched off: the version is asked for again on every poll
+			instance.apiDetected = false
+			instance.calls.log.length = 0
+			for (let i = 0; i < 4; i++) await instance.pollAll()
+			const warnings = () =>
+				instance.calls.log.filter((l) => l.level === 'warn' && /API v2\.0 check failed/.test(l.message))
+			assert.equal(warnings().length, 1)
+
+			// once the device answered, the next outage is reported again
+			const again = await startMockPearl({ port })
+			try {
+				await instance.pollAll()
+				assert.equal(instance.apiDetected, true)
+			} finally {
+				await again.close()
+			}
+			instance.apiDetected = false
+			instance.calls.log.length = 0
+			await instance.pollAll()
+			await instance.pollAll()
+			assert.equal(warnings().length, 1)
+		} finally {
+			await instance.destroy()
+		}
+	})
+})
