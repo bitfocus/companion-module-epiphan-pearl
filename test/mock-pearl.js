@@ -1131,7 +1131,15 @@ async function startMockPearl({
 					body = null
 				}
 			}
-			const record = { method: req.method, path: url.pathname, query, body, headers: { ...req.headers } }
+			// rawQuery keeps the query exactly as sent, e.g. to tell %20 from '+'
+			const record = {
+				method: req.method,
+				path: url.pathname,
+				query,
+				rawQuery: url.search,
+				body,
+				headers: { ...req.headers },
+			}
 			if (rawBody.length > 0 && body === null) record.rawBody = rawBody
 			requests.push(record)
 

@@ -968,6 +968,9 @@ describe('content metadata (legacy admin CGI)', () => {
 		})
 		const req = mock.requests.find((r) => r.path === '/admin/channel1/set_params.cgi')
 		assert.ok(req, 'no set_params request')
+		// spaces as %20, the encoding verified on a Pearl-2 with 4.24.6; '+' is only a space for form decoders
+		assert.match(req.rawQuery, /title=Evening%20Show%20%26%20Q%3DA/)
+		assert.doesNotMatch(req.rawQuery, /\+/)
 		assert.equal(instance.variableValues.channel_1_metadata_title, 'Evening Show & Q=A')
 		assert.equal(instance.variableValues.channel_1_metadata_author, 'Jo')
 		assert.equal(instance.variableValues.channel_1_metadata_rec_prefix, 'EVE')
