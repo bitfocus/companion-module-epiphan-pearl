@@ -577,3 +577,57 @@ describe('enable_metadata', () => {
 		}
 	})
 })
+
+describe('connection status follows the core poll', () => {
+	it('reports ConnectionFailure when the device answers the core poll with an HTTP error', async () => {
+		const mock = await startMockPearl()
+		const instance = await createInstance({ mock })
+		try {
+			assert.equal(instance.currentStatus, InstanceStatus.Ok)
+			mock.failNext('GET', /\/channels$/, 500, '<html><title>500 Internal Server Error</title></html>')
+			await instance.pollAll()
+			assert.equal(instance.currentStatus, InstanceStatus.ConnectionFailure)
+			assert.match(instance.currentStatusMessage, /HTTP 500/)
+
+			// a side request that works must not show the connection as ok while the core poll fails
+			await instance.request('GET', '/system/status', { optional: true, silent: true })
+			assert.equal(instance.currentStatus, InstanceStatus.ConnectionFailure)
+
+			// the next successful core poll does
+			await instance.pollAll()
+			assert.equal(instance.currentStatus, InstanceStatus.Ok)
+		} finally {
+			await instance.destroy()
+			await mock.close()
+		}
+	})
+
+	it('keeps AuthenticationFailure when the core poll fails with 401', async () => {
+		const mock = await startMockPearl()
+		const instance = await createInstance({ mock })
+		try {
+			mock.failNext('GET', /\/channels$/, 401, { status: 'error', message: 'unauthorized' })
+			await instance.pollAll()
+			assert.equal(instance.currentStatus, InstanceStatus.AuthenticationFailure)
+		} finally {
+			await instance.destroy()
+			await mock.close()
+		}
+	})
+
+	it('a network error of an optional side request does not change the status', async () => {
+		const mock = await startMockPearl()
+		const instance = await createInstance({ mock, config: { timeout: 1000 } })
+		try {
+			assert.equal(instance.currentStatus, InstanceStatus.Ok)
+			await mock.close()
+			await assert.rejects(instance.request('GET', '/system/status', { optional: true, silent: true }))
+			assert.equal(instance.currentStatus, InstanceStatus.Ok)
+			// a required request still reports the outage
+			await assert.rejects(instance.request('GET', '/system/status', { silent: true }))
+			assert.equal(instance.currentStatus, InstanceStatus.ConnectionFailure)
+		} finally {
+			await instance.destroy()
+		}
+	})
+})

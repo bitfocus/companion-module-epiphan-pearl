@@ -84,6 +84,8 @@ module.exports = {
 	 * supports the legacy API (see determineApiBase).
 	 */
 	applyOkStatus() {
+		// while the core poll fails, only the core poll may report the connection as ok again (see pollAll)
+		if (this.pollFailing) return
 		if (this.firmwareWarning) this.applyStatus(InstanceStatus.UnknownWarning, this.firmwareWarning)
 		else this.applyStatus(InstanceStatus.Ok, this.apiDetected ? this.apiVersionLabel : '')
 	},
@@ -209,10 +211,15 @@ module.exports = {
 			const message = isTimeout
 				? `Request timed out after ${timeout} ms: ${verb} ${url}`
 				: `Connection failed: ${verb} ${url} - ${reason}`
-			this.applyStatus(
-				InstanceStatus.ConnectionFailure,
-				isTimeout ? 'Request timed out' : cause?.code || error?.message || 'Connection failed',
-			)
+			// optional side requests (meter, previews, AFU, schedule) do not decide the connection status: a slow
+			// preview image would otherwise flip the whole connection to failed and back on every poll. A real
+			// outage is reported by the core poll, which is never optional.
+			if (!opts.optional) {
+				this.applyStatus(
+					InstanceStatus.ConnectionFailure,
+					isTimeout ? 'Request timed out' : cause?.code || error?.message || 'Connection failed',
+				)
+			}
 			if (!opts.silent) this.log('error', message)
 			throw new EncoderApiError(message, { status: 0, ...errInfo })
 		}

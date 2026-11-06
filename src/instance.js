@@ -128,6 +128,8 @@ class EpiphanEncoder extends InstanceBase {
 		this.pollCounter = 0
 		/** consecutive failed polls; drives the poller's failure backoff (D8, poller.nextPollDelayMs) */
 		this.pollFailureCount = 0
+		/** true while the core poll fails; then only the core poll may set the status back to ok */
+		this.pollFailing = false
 		/** '/api' or '/api/v2.0', decided by determineApiBase() */
 		this.apiBasePath = '/api'
 		/** last status passed to updateStatus (tracked by api.applyStatus) */
@@ -252,6 +254,7 @@ class EpiphanEncoder extends InstanceBase {
 		this.previewFailedKeys.clear()
 		this.pollCounter = 0
 		this.pollErrorLogged = false
+		this.pollFailing = false
 		// a new configuration may be a different device entirely; it should not inherit the old one's backoff
 		this.pollFailureCount = 0
 		this.apiDetected = false
