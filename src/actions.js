@@ -252,11 +252,13 @@ module.exports = {
 					rid === 'all' ? `/recorders/control/${enc(op)}` : `/recorders/${enc(rid)}/control/${enc(op)}`
 
 				if (op === 'reset' && this.isV2) {
-					// reset only exists in the legacy API on older firmware
+					// reset is not part of the v2.0 API (the legacy API has it, also on 4.24.6). Which status the
+					// device answers to the v2.0 path is unverified: fall back for every "unknown command" answer,
+					// not only 404. Any other error (e.g. 409) means the device understood and refused it.
 					try {
 						await this.request('POST', path, { silent: true })
 					} catch (error) {
-						if (error?.status !== 404) throw error
+						if (![400, 404, 405, 501].includes(error?.status)) throw error
 						await this.request('POST', path, { base: 'v1' })
 					}
 				} else {

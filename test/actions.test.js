@@ -211,6 +211,29 @@ describe('actions against a v2.0 device', () => {
 			one(mock, 'POST', `/api/recorders/1/control/reset`) // the fallback that succeeds
 		})
 
+		it('reset also falls back when the v2.0 path answers 400, 405 or 501 instead of 404', async () => {
+			for (const status of [400, 405, 501]) {
+				mock.requests.length = 0
+				mock.failNext('POST', `${V2}/recorders/1/control/reset`, status, {
+					status: 'error',
+					message: 'unknown',
+				})
+				await runAction(instance, 'recorder', { recorderId: '1', op: 'reset' })
+				one(mock, 'POST', `/api/recorders/1/control/reset`)
+			}
+		})
+
+		it('reset does not fall back when the device refuses it (409)', async () => {
+			mock.requests.length = 0
+			mock.failNext('POST', `${V2}/recorders/1/control/reset`, 409, { status: 'error', message: 'busy' })
+			await runAction(instance, 'recorder', { recorderId: '1', op: 'reset' })
+			assert.equal(
+				mock.requests.filter((r) => r.path === '/api/recorders/1/control/reset').length,
+				0,
+				'no legacy retry',
+			)
+		})
+
 		it('toggle: a stopped recorder starts, a started/paused one stops (D14 both directions)', async () => {
 			instance.state.recorders['2'].status = { state: 'stopped' }
 			await runAction(instance, 'recorder', { recorderId: '2', op: 'toggle' })
