@@ -456,10 +456,14 @@ class EpiphanEncoder extends InstanceBase {
 	 */
 	initInterval() {
 		if (this.timer) clearTimeout(this.timer)
+		const generation = this.configGeneration
 		const runOnce = () => {
+			this.timer = undefined
+			if (generation !== this.configGeneration) return
 			this.pollAll()
 				.catch(() => {})
 				.finally(() => {
+					if (generation !== this.configGeneration || this.timer) return
 					this.timer = setTimeout(runOnce, this.nextPollDelayMs())
 				})
 		}

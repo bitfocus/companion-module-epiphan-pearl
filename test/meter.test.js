@@ -268,7 +268,7 @@ describe('audio level poll (500 ms, ref-counted by the audio feedback)', () => {
 		await waitFor(() => instance.state.inputs['analog-a'].levels !== undefined)
 
 		const result = await runFeedback(instance, 'audio', { inputId: 'analog-a' })
-		assert.equal(result.imageBuffer.length, 72 * 72 * 4)
+		assert.equal(Buffer.from(result.imageBuffer, 'base64').length, 72 * 72 * 4)
 		assert.deepEqual(result.imageBufferEncoding, { pixelFormat: 'RGBA' })
 		assert.deepEqual(result.imageBufferPosition, { x: 0, y: 0, width: 72, height: 72 })
 		assert.equal(result.text, undefined, "the button's own text is kept")
