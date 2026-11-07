@@ -16,7 +16,8 @@ const {
 	eventApplies,
 	bookmarkText,
 } = require('./utils')
-const { readGain, gainPatch, readDelay, delayPatch } = require('./audio')
+const { readGain, gainNudgePatch, readDelay, delayPatch } = require('./audio')
+const { actionSignal } = require('./abort')
 
 const CHOICES_RECORDER_OPS = [
 	{ id: 'toggle', label: 'Start / Stop' },
@@ -149,7 +150,7 @@ module.exports = {
 		 */
 		const wrap = (label, fn, failureValue) => async (action, context) => {
 			try {
-				return await fn(action, context)
+				return await actionSignal.run(context?.signal, () => fn(action, context))
 			} catch (error) {
 				const message = errMsg(error)
 				if (this.state) this.state.lastError = message
@@ -1062,12 +1063,11 @@ module.exports = {
 			const settings = await this.settingsCall('GET', sid)
 			let body
 			if (control === 'gain') {
-				const current = readGain(settings)
-				if (current === undefined) {
+				if (readGain(settings) === undefined) {
 					this.log('warn', `${label}: input ${sid} has no gain setting`)
 					return
 				}
-				body = gainPatch(settings, current + delta)
+				body = gainNudgePatch(settings, delta)
 			} else {
 				const current = readDelay(settings)
 				if (current === undefined) {

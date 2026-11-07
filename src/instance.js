@@ -1,5 +1,5 @@
 // D-numbers (D1–D17) refer to Epiphan's internal Companion-parity decisions.
-const { CreateConvertToBooleanFeedbackUpgradeScript, InstanceBase, InstanceStatus } = require('@companion-module/base')
+const { InstanceBase, InstanceStatus } = require('@companion-module/base')
 
 const { EncoderApiError, ...api } = require('./api')
 const poller = require('./poller')
@@ -29,7 +29,7 @@ const POLL_INTERVAL_MAX_MS = 300000
 
 /** an IPv4 address, an IPv6 address (optionally in brackets) or a hostname: no spaces, no slashes, no scheme */
 const HOST_RE =
-	/^(\[[0-9a-fA-F:.%a-zA-Z]+\]|[0-9a-fA-F:.%]*:[0-9a-fA-F:.%]*|[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?)*)$/
+	/^(\[[0-9a-fA-F:.%a-zA-Z]+\]|[0-9a-fA-F:.%]*:[0-9a-fA-F:.%]*:[0-9a-fA-F:.%]*|[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?)*)$/
 
 /**
  * Split the value of the Bonjour field ('host:port', or empty for "Manual") into host and port
@@ -87,6 +87,9 @@ function normaliseConfig(config) {
  * @returns {string|null} problem description or null when fine
  */
 function validateConfig(config) {
+	if (/^[^:[\]]+:\d+$/.test(config.host || '')) {
+		return `The host '${config.host}' includes a port: enter only the address here and the port in the Port field`
+	}
 	if (!config.host || !HOST_RE.test(config.host)) {
 		return `Invalid IP address or hostname given in configuration: '${config.host}'`
 	}
@@ -185,10 +188,10 @@ class EpiphanEncoder extends InstanceBase {
 	 *
 	 * @param {object} config the configuration object
 	 */
-	async init(config) {
+	async init(config, isFirstInit, secrets) {
 		this.applyStatus(InstanceStatus.Connecting)
 		this.reportRemovedLegacy()
-		await this.configUpdated(config)
+		await this.configUpdated(config, secrets)
 	}
 
 	/**
@@ -226,16 +229,19 @@ class EpiphanEncoder extends InstanceBase {
 	 *
 	 * @param {object} config - the new configuration
 	 */
-	async configUpdated(config) {
+	async configUpdated(config, secrets) {
 		this.stopTimers()
 		// a poll that is still running belongs to the old configuration; the generation guard in
 		// pollAllInner makes it discard its result, so there is no need to wait for it here
 		this.configGeneration++
 		this.config = normaliseConfig(config)
+		// the password is a secret-text field: it arrives in the secrets, not in the config
+		if (typeof secrets?.password === 'string') this.config.password = secrets.password
 		this.clockOffsetMs = 0
 		this.resetDispatcher()
 
 		const problem = validateConfig(this.config)
+		this.configValid = !problem
 		if (problem) {
 			this.log('error', problem)
 			this.applyStatus(InstanceStatus.BadConfig, problem)
@@ -489,21 +495,6 @@ class EpiphanEncoder extends InstanceBase {
 
 Object.assign(EpiphanEncoder.prototype, api, poller, choices, actions, feedbacks, presets, meter, blink)
 
-const upgradeToBooleanFeedbacks = CreateConvertToBooleanFeedbackUpgradeScript({
-	channelLayout: {
-		fg: 'color',
-		bg: 'bgcolor',
-	},
-	streamingState: {
-		fg: 'color',
-		bg: 'bgcolor',
-	},
-	recorderRecording: {
-		fg: 'color',
-		bg: 'bgcolor',
-	},
-})
-
-const upgradeScripts = [upgradeToBooleanFeedbacks, ...upgrades]
+const upgradeScripts = [upgrades.convertToBooleanFeedbacks, ...upgrades]
 
 module.exports = { EpiphanEncoder, upgradeScripts, EncoderApiError, normaliseConfig, parseBonjourHost }

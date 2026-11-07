@@ -59,6 +59,27 @@ function gainPatch(settings, newGain) {
 }
 
 /**
+ * PATCH body that changes the gain of an input by `delta`. A stereo pair moves `local_audio.gain`; an
+ * unpaired input moves each channel from its own current value (they may differ).
+ * @param {object} settings
+ * @param {number} delta
+ * @returns {object|undefined} undefined when the input has no gain setting or delta is not a number
+ */
+function gainNudgePatch(settings, delta) {
+	const step = Number(delta)
+	const current = readGain(settings)
+	if (current === undefined || !Number.isFinite(step)) return undefined
+	if (!isUnpaired(settings)) return gainPatch(settings, current + step)
+	const channels = settings.local_audio.channels
+	const patch = {}
+	for (const key of ['channelA', 'channelB']) {
+		const own = num(channels?.[key]?.gain) ?? current
+		patch[key] = { gain: clampInt(own + step, GAIN_MIN, GAIN_MAX) }
+	}
+	return { local_audio: { channels: patch } }
+}
+
+/**
  * Current audio delay of an input and the settings path it lives at.
  * @param {object} settings
  * @returns {{ path: 'audio'|'hdmi'|'sdi', value: number }|undefined} undefined when the input has no delay setting
@@ -119,6 +140,7 @@ function levelSummary(input) {
 module.exports = {
 	readGain,
 	gainPatch,
+	gainNudgePatch,
 	readDelay,
 	delayPatch,
 	levelSummary,

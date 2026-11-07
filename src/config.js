@@ -66,7 +66,7 @@ function getConfigFields(api = {}) {
 			default: 'admin',
 		},
 		{
-			type: 'textinput',
+			type: 'secret-text',
 			id: 'password',
 			label: 'Password',
 			width: 6,

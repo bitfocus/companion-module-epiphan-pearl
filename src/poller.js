@@ -1,4 +1,5 @@
 // D-numbers (D1–D17) refer to Epiphan's internal Companion-parity decisions.
+const { InstanceStatus } = require('@companion-module/base')
 const variables = require('./variables')
 const { stableJson, emptyState, normaliseInputId, clampNumber } = require('./utils')
 
@@ -62,6 +63,17 @@ function domainSlices(state) {
 	}
 }
 
+/**
+ * Run `restore` when `promise` rejects (so a failed request keeps the previous poll's data), then pass the
+ * rejection on.
+ */
+function carryOver(restore, promise) {
+	return promise.catch((error) => {
+		restore()
+		throw error
+	})
+}
+
 module.exports = {
 	/**
 	 * Structure key: JSON of ids and names of everything that feeds dropdown choices and presets.
@@ -85,6 +97,7 @@ module.exports = {
 			storages: Object.values(s.storages || {}).map((st) => st.id),
 			singleTouch: Object.values(s.singleTouch || {}).map((st) => st.id),
 			presets: (s.presets || []).map((p) => p.name),
+			events: (s.events?.list || []).map((e) => [e?.id, e?.title]),
 		})
 	},
 
@@ -184,6 +197,10 @@ module.exports = {
 			}
 			// D8: back off the next poll instead of retrying at the full (possibly very short) interval
 			this.pollFailureCount = (this.pollFailureCount || 0) + 1
+			// an HTTP error answer sets no status in request(); do not leave the previous OK standing
+			if (gen === this.configGeneration && this.currentStatus !== InstanceStatus.AuthenticationFailure) {
+				this.applyStatus(InstanceStatus.ConnectionFailure, message)
+			}
 			return
 		}
 		if (this.pollErrorLogged) {
@@ -213,9 +230,14 @@ module.exports = {
 		)
 		for (const cid of cids) {
 			round2.push(
-				req('GET', `/channels/${cid}/layouts`, { base: 'v1' }).then((layouts) =>
-					this.applyLayouts(state, cid, layouts),
-				),
+				req('GET', `/channels/${cid}/layouts`, { base: 'v1' })
+					.then((layouts) => this.applyLayouts(state, cid, layouts))
+					.catch((error) => {
+						// one failed request must not blank the layouts (and rebuild every definition): keep the last ones
+						const previous = prev.channels?.[cid]?.layouts
+						if (previous && state.channels[cid]) state.channels[cid].layouts = previous
+						throw error
+					}),
 			)
 			if (!isV2) {
 				round2.push(
@@ -243,7 +265,12 @@ module.exports = {
 				}),
 			)
 			round2.push(
-				req('GET', '/inputs').then(async (inputs) => {
+				carryOver(
+					() => {
+						state.inputs = prev.inputs || {}
+					},
+					req('GET', '/inputs'),
+				).then(async (inputs) => {
 					const list = Array.isArray(inputs) ? inputs : []
 					for (const input of list) {
 						if (!input || input.id === undefined) continue
@@ -279,7 +306,12 @@ module.exports = {
 				}),
 			)
 			round2.push(
-				req('GET', '/outputs').then((outputs) => {
+				carryOver(
+					() => {
+						state.outputs = prev.outputs || {}
+					},
+					req('GET', '/outputs'),
+				).then((outputs) => {
 					for (const output of Array.isArray(outputs) ? outputs : []) {
 						if (!output || output.id === undefined) continue
 						state.outputs[output.id] = {
@@ -293,7 +325,12 @@ module.exports = {
 				}),
 			)
 			round2.push(
-				req('GET', '/system/storages').then(async (storages) => {
+				carryOver(
+					() => {
+						state.storages = prev.storages || {}
+					},
+					req('GET', '/system/storages'),
+				).then(async (storages) => {
 					const list = Array.isArray(storages) ? storages : []
 					for (const storage of list) {
 						if (!storage || storage.id === undefined) continue
@@ -660,6 +697,7 @@ module.exports = {
 			return this.previewsRerun
 		}
 		if (!this.previewSubscriptions || this.previewSubscriptions.size === 0) return
+		if (this.configValid === false) return
 		// previews disabled in the configuration: subscriptions are kept, images are not fetched
 		if (!(Number(this.config?.preview_interval) > 0)) return
 		this.previewsInProgress = true

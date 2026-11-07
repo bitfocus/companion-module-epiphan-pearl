@@ -24,3 +24,21 @@ describe('poll loop lifecycle', () => {
 		}
 	})
 })
+
+describe('review fixes: connection handling', () => {
+	it('a host typed with a port is a Bad configuration, and meters/previews stay off', async () => {
+		const mock = await startMockPearl()
+		const instance = await createInstance({ mock })
+		try {
+			await instance.configUpdated({ ...instance.config, host: '192.168.1.10:8080' })
+			assert.equal(instance.configValid, false)
+			assert.match(instance.currentStatusMessage, /port/i)
+			instance.meterSubscriptions.set('x', 1)
+			instance.startMeterTimer()
+			assert.equal(instance.meterTimer, undefined)
+		} finally {
+			await instance.destroy()
+			await mock.close()
+		}
+	})
+})
