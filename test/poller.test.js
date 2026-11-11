@@ -577,3 +577,113 @@ describe('enable_metadata', () => {
 		}
 	})
 })
+
+describe('connection status follows the core poll', () => {
+	it('reports ConnectionFailure when the device answers the core poll with an HTTP error', async () => {
+		const mock = await startMockPearl()
+		const instance = await createInstance({ mock })
+		try {
+			assert.equal(instance.currentStatus, InstanceStatus.Ok)
+			mock.failNext('GET', /\/channels$/, 500, '<html><title>500 Internal Server Error</title></html>')
+			await instance.pollAll()
+			assert.equal(instance.currentStatus, InstanceStatus.ConnectionFailure)
+			assert.match(instance.currentStatusMessage, /HTTP 500/)
+
+			// a side request that works must not show the connection as ok while the core poll fails
+			await instance.request('GET', '/system/status', { optional: true, silent: true })
+			assert.equal(instance.currentStatus, InstanceStatus.ConnectionFailure)
+
+			// the next successful core poll does
+			await instance.pollAll()
+			assert.equal(instance.currentStatus, InstanceStatus.Ok)
+		} finally {
+			await instance.destroy()
+			await mock.close()
+		}
+	})
+
+	it('keeps AuthenticationFailure when the core poll fails with 401', async () => {
+		const mock = await startMockPearl()
+		const instance = await createInstance({ mock })
+		try {
+			mock.failNext('GET', /\/channels$/, 401, { status: 'error', message: 'unauthorized' })
+			await instance.pollAll()
+			assert.equal(instance.currentStatus, InstanceStatus.AuthenticationFailure)
+		} finally {
+			await instance.destroy()
+			await mock.close()
+		}
+	})
+
+	it('a network error of an optional side request does not change the status', async () => {
+		const mock = await startMockPearl()
+		const instance = await createInstance({ mock, config: { timeout: 1000 } })
+		try {
+			assert.equal(instance.currentStatus, InstanceStatus.Ok)
+			await mock.close()
+			await assert.rejects(instance.request('GET', '/system/status', { optional: true, silent: true }))
+			assert.equal(instance.currentStatus, InstanceStatus.Ok)
+			// a required request still reports the outage
+			await assert.rejects(instance.request('GET', '/system/status', { silent: true }))
+			assert.equal(instance.currentStatus, InstanceStatus.ConnectionFailure)
+		} finally {
+			await instance.destroy()
+		}
+	})
+})
+
+describe('API detection while the device is unreachable', () => {
+	it('warns once per outage, not on every poll', async () => {
+		const mock = await startMockPearl()
+		const port = mock.port
+		const instance = await createInstance({ mock, config: { timeout: 500 } })
+		try {
+			await mock.close()
+			// as after a start with the device switched off: the version is asked for again on every poll
+			instance.apiDetected = false
+			instance.calls.log.length = 0
+			for (let i = 0; i < 4; i++) await instance.pollAll()
+			const warnings = () =>
+				instance.calls.log.filter((l) => l.level === 'warn' && /API v2\.0 check failed/.test(l.message))
+			assert.equal(warnings().length, 1)
+
+			// once the device answered, the next outage is reported again
+			const again = await startMockPearl({ port })
+			try {
+				await instance.pollAll()
+				assert.equal(instance.apiDetected, true)
+			} finally {
+				await again.close()
+			}
+			instance.apiDetected = false
+			instance.calls.log.length = 0
+			await instance.pollAll()
+			await instance.pollAll()
+			assert.equal(warnings().length, 1)
+		} finally {
+			await instance.destroy()
+		}
+	})
+})
+
+describe('content metadata refresh', () => {
+	it('picks up a title changed on the device with the slow system refresh, without a Get action', async () => {
+		const mock = await startMockPearl()
+		const instance = await createInstance({ mock })
+		try {
+			const before = instance.variableValues.channel_1_metadata_title
+			mock.state.channels['1'].metadata.title = 'Changed in the web UI'
+			// a normal poll keeps the value it has
+			instance.pollCounter = 1
+			await instance.pollAll()
+			assert.equal(instance.variableValues.channel_1_metadata_title, before)
+			// the poll that also refreshes the system information reads it again
+			instance.pollCounter = 30
+			await instance.pollAll()
+			assert.equal(instance.variableValues.channel_1_metadata_title, 'Changed in the web UI')
+		} finally {
+			await instance.destroy()
+			await mock.close()
+		}
+	})
+})

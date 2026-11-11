@@ -118,7 +118,7 @@ describe('utils', () => {
 		assert.equal(utils.toQueryString({}), '')
 		assert.equal(
 			utils.toQueryString({ a: true, b: false, c: undefined, d: null, e: 'x y', f: [1, 2] }),
-			'?a=true&b=false&e=x+y&f=1%2C2',
+			'?a=true&b=false&e=x%20y&f=1%2C2',
 		)
 	})
 

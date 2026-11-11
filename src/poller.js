@@ -187,7 +187,8 @@ module.exports = {
 		const [channelsRes, recordersRes, recordersStatusRes] = coreResults
 
 		if (channelsRes.status !== 'fulfilled' || recordersRes.status !== 'fulfilled') {
-			const reason = (channelsRes.status === 'rejected' ? channelsRes.reason : recordersRes.reason)?.message
+			const error = channelsRes.status === 'rejected' ? channelsRes.reason : recordersRes.reason
+			const reason = error?.message
 			const message = `No valid answer from device${reason ? ': ' + reason : ''}`
 			if (!this.pollErrorLogged) {
 				this.log('error', message)
@@ -195,17 +196,34 @@ module.exports = {
 			} else if (this.config.verbose) {
 				this.log('debug', message)
 			}
+			// The status follows the core poll: without channels and recorders the module has no usable data,
+			// also when the device answers with an HTTP error or an HTML error page (a network error has set
+			// ConnectionFailure in request() already), and set here after all three requests have settled, so a
+			// request of the same poll that succeeded later cannot overwrite it with ok. A wrong password stays
+			// an AuthenticationFailure. Until the core poll succeeds again, applyOkStatus() leaves the status
+			// alone, so a successful side request (meter, preview) does not show the connection as ok.
+			this.pollFailing = true
+			if (error?.status === 401) {
+				this.applyStatus(InstanceStatus.AuthenticationFailure, 'Check username and password')
+			} else {
+				this.applyStatus(
+					InstanceStatus.ConnectionFailure,
+					error?.status
+						? `No valid answer from device (HTTP ${error.status})`
+						: 'No valid answer from device',
+				)
+			}
 			// D8: back off the next poll instead of retrying at the full (possibly very short) interval
 			this.pollFailureCount = (this.pollFailureCount || 0) + 1
-			// an HTTP error answer sets no status in request(); do not leave the previous OK standing
-			if (gen === this.configGeneration && this.currentStatus !== InstanceStatus.AuthenticationFailure) {
-				this.applyStatus(InstanceStatus.ConnectionFailure, message)
-			}
 			return
 		}
 		if (this.pollErrorLogged) {
 			this.log('info', 'Connection to device restored')
 			this.pollErrorLogged = false
+		}
+		if (this.pollFailing) {
+			this.pollFailing = false
+			this.applyOkStatus()
 		}
 		// D8: reset on the first successful poll
 		this.pollFailureCount = 0
@@ -498,11 +516,13 @@ module.exports = {
 			this.log('error', `Updating variables failed: ${error?.message || error}`)
 		}
 
-		// ---- 8. content metadata: not part of the REST API, read once per channel (and again by the Get action)
+		// ---- 8. content metadata: not part of the REST API, read once per channel and again with the slow
+		// system information (every STRUCTURE_REFRESH_EVERY polls), so a title or author changed in the
+		// encoder's web UI shows up in the variables without a Get action or a reconfiguration
 		if (this.config?.enable_metadata === false) return
 		for (const cid of Object.keys(state.channels)) {
 			if (gen !== this.configGeneration) return
-			if (!this.metadataRequested.has(cid)) await this.fetchMetadata(cid)
+			if (!this.metadataRequested.has(cid) || refreshSystemInfo) await this.fetchMetadata(cid)
 		}
 	},
 

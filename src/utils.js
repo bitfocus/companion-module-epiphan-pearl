@@ -179,24 +179,28 @@ function nonBlank(obj) {
 /**
  * Build a URL query string from a key/value object.
  * Booleans become 'true'/'false', undefined/null values are skipped, arrays are joined with commas.
+ * Values are encoded with encodeURIComponent, so a space becomes %20. URLSearchParams would write '+',
+ * which only form decoders read as a space; the encoder's legacy CGI (content metadata) and the bookmark
+ * text were verified on a Pearl-2 with firmware 4.24.6 with %20 only.
  * @param {object} [query]
  * @returns {string} '' or '?a=b&c=d'
  */
 function toQueryString(query) {
 	if (!query || typeof query !== 'object') return ''
-	const params = new URLSearchParams()
+	const parts = []
 	for (const [key, value] of Object.entries(query)) {
 		if (value === undefined || value === null) continue
+		let text
 		if (Array.isArray(value)) {
-			params.set(key, value.join(','))
+			text = value.join(',')
 		} else if (typeof value === 'boolean') {
-			params.set(key, value ? 'true' : 'false')
+			text = value ? 'true' : 'false'
 		} else {
-			params.set(key, String(value))
+			text = String(value)
 		}
+		parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(text)}`)
 	}
-	const str = params.toString()
-	return str ? `?${str}` : ''
+	return parts.length > 0 ? `?${parts.join('&')}` : ''
 }
 
 /**

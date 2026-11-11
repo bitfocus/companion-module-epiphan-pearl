@@ -280,7 +280,6 @@ const meter = {
 				base: 'v1',
 				optional: true,
 				silent: true,
-				noStatus: true,
 			})
 		} catch (error) {
 			this.log('debug', `Level poll failed: ${error?.message || error}`)
