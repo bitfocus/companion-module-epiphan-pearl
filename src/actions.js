@@ -253,11 +253,13 @@ module.exports = {
 					rid === 'all' ? `/recorders/control/${enc(op)}` : `/recorders/${enc(rid)}/control/${enc(op)}`
 
 				if (op === 'reset' && this.isV2) {
-					// reset only exists in the legacy API on older firmware
+					// reset is not part of the v2.0 API (the legacy API has it, also on 4.24.6). Which status the
+					// device answers to the v2.0 path is unverified: fall back for every "unknown command" answer,
+					// not only 404. Any other error (e.g. 409) means the device understood and refused it.
 					try {
 						await this.request('POST', path, { silent: true })
 					} catch (error) {
-						if (error?.status !== 404) throw error
+						if (![400, 404, 405, 501].includes(error?.status)) throw error
 						await this.request('POST', path, { base: 'v1' })
 					}
 				} else {
@@ -386,13 +388,18 @@ module.exports = {
 					return
 				}
 				const numeric = Number(lid)
-				// v1 wants the id in the body, v2 wants it as a query parameter; both accept both
-				await this.request('PUT', `/channels/${enc(cid)}/layouts/active`, {
-					query: { id: lid },
-					body: { id: Number.isFinite(numeric) ? numeric : lid },
-				})
+				// Measured on a Pearl-2 with firmware 4.24.6: v2.0 takes the id as query parameter, but only
+				// without a JSON body; with a body it ignores the query parameter ("Missing layout id"). v1 takes
+				// the id in the JSON body. So each API version gets exactly the form that was verified.
+				await this.request(
+					'PUT',
+					`/channels/${enc(cid)}/layouts/active`,
+					this.isV2 ? { query: { id: lid } } : { body: { id: Number.isFinite(numeric) ? numeric : lid } },
+				)
 				this.log('debug', `Layout ${lid} activated on channel ${cid}`)
-				this.schedulePollSoon()
+				// like recorder and stream commands: poll again until the device reports the new layout, so
+				// the layout feedback and the active-layout variable follow even when the switch takes longer
+				this.schedulePollSoon(() => String(this.state.channels[cid]?.active_layout?.id) === String(lid))
 			}),
 		}
 
@@ -466,8 +473,13 @@ module.exports = {
 				const cid = parseChannel(label, action.options.channelId)
 				if (!cid) return
 				const text = bookmarkText(await parse(action.options.text), action.options.appendTime === true)
-				// v2 wants the text as a query parameter, v1 in the body; send both
-				await this.request('POST', `/channels/${enc(cid)}/bookmarks`, { query: { text }, body: { text } })
+				// Measured on a Pearl-2 with firmware 4.24.6: v2.0 takes the text as query parameter, but only
+				// without a JSON body ("Missing bookmark name" otherwise); v1 takes it in the JSON body
+				await this.request(
+					'POST',
+					`/channels/${enc(cid)}/bookmarks`,
+					this.isV2 ? { query: { text } } : { body: { text } },
+				)
 				this.log('info', `Bookmark added to channel ${cid}: ${text}`)
 				this.schedulePollSoon()
 			}),

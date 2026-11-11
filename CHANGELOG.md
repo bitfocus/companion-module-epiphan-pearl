@@ -15,9 +15,15 @@ Fixes from the Bitfocus review of 3.0.0 (module structure, Yarn 4, polling, upgr
 - The encoder **Password** is stored as a secret now (existing connections are converted).
 - Polling stops after the connection is disabled or saved with an invalid host; a host typed with a port gets a clear hint.
 - The Audio meter feedback draws its bars again.
-- A failing encoder API now shows Connection failure; failed preview or level requests no longer do.
-- Upgrade fixes: old layout/stream/recorder feedback colours survive, `---` recorder and stream actions are no longer turned into toggles, single touch OK feedbacks keep their inversion.
+- The connection status follows the regular status query: a failing encoder API shows Connection failure (also for HTTP errors), and a slow preview or level request no longer marks the connection as failed.
+- Upgrade fixes: old layout/stream/recorder feedback colours survive (also the pre-2.2 streaming feedback), `---` recorder and stream actions do nothing again and are named in the log instead of becoming toggles, single touch OK feedbacks keep their inversion.
 - Audio gain steps on an unpaired input move each channel from its own value; aborting a button's actions cancels the request to the encoder.
+- Changing the layout and inserting a marker use the request form verified on a real Pearl-2 with firmware 4.24.6. The previous form could be rejected by the encoder.
+- After changing the layout, the layout feedback and the active-layout variable follow as soon as the encoder has switched, also when the switch takes longer.
+- Spaces in title, author and filename prefix of the content metadata, and in marker texts, are transferred in the form verified on the encoder.
+- Resetting a recorder works also when the encoder answers the newer command with an error other than "not found".
+- Content metadata changed in the encoder's web interface shows up in the variables within about a minute.
+- While the encoder is switched off, the log no longer repeats the same warning every few seconds.
 
 ---
 

@@ -131,6 +131,8 @@ class EpiphanEncoder extends InstanceBase {
 		this.pollCounter = 0
 		/** consecutive failed polls; drives the poller's failure backoff (D8, poller.nextPollDelayMs) */
 		this.pollFailureCount = 0
+		/** true while the core poll fails; then only the core poll may set the status back to ok */
+		this.pollFailing = false
 		/** '/api' or '/api/v2.0', decided by determineApiBase() */
 		this.apiBasePath = '/api'
 		/** last status passed to updateStatus (tracked by api.applyStatus) */
@@ -258,9 +260,11 @@ class EpiphanEncoder extends InstanceBase {
 		this.previewFailedKeys.clear()
 		this.pollCounter = 0
 		this.pollErrorLogged = false
+		this.pollFailing = false
 		// a new configuration may be a different device entirely; it should not inherit the old one's backoff
 		this.pollFailureCount = 0
 		this.apiDetected = false
+		this.apiCheckWarned = false
 
 		// publish definitions for the (still empty) state right away; the first poll refreshes them
 		this.updateSystem()
@@ -369,6 +373,7 @@ class EpiphanEncoder extends InstanceBase {
 				silent: true,
 			})
 			this.apiDetected = true
+			this.apiCheckWarned = false
 			if (typeof version === 'string' || typeof version?.version === 'string') {
 				this.detectedFirmware = typeof version === 'string' ? version : version.version
 			}
@@ -384,7 +389,15 @@ class EpiphanEncoder extends InstanceBase {
 				this.log('info', `Firmware ${version} is older than ${MIN_API_V2_FIRMWARE}, using legacy API`)
 			}
 		} catch (error) {
-			this.log('warn', `API v2.0 check failed (${error?.message || error}), using legacy API for now`)
+			// the poller asks again on every poll while the device is unreachable: warn once per outage, not
+			// several times a minute for as long as the device is off
+			const message = `API v2.0 check failed (${error?.message || error}), using legacy API for now`
+			if (!this.apiCheckWarned) {
+				this.log('warn', message)
+				this.apiCheckWarned = true
+			} else if (this.config?.verbose) {
+				this.log('debug', message)
+			}
 		}
 		// the version probe already reported 'Ok'; with outdated firmware that becomes a warning
 		if (this.currentStatus === InstanceStatus.Ok) this.applyOkStatus()
