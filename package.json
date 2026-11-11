@@ -15,7 +15,7 @@
 	},
 	"devDependencies": {
 		"@companion-module/tools": "^3.2.0",
-		"eslint": "^9.36.0",
+		"eslint": "^10.14.0",
 		"prettier": "^3.9.10"
 	},
 	"repository": {
