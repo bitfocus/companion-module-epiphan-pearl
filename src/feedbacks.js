@@ -783,7 +783,7 @@ module.exports = {
 					const width = Math.round(Number(feedback.image?.width) || METER_DEFAULT_SIZE)
 					const height = Math.round(Number(feedback.image?.height) || METER_DEFAULT_SIZE)
 					return {
-						imageBuffer: renderMeter(width, height, levels),
+						imageBuffer: Buffer.from(renderMeter(width, height, levels)).toString('base64'),
 						imageBufferEncoding: { pixelFormat: 'RGBA' },
 						imageBufferPosition: { x: 0, y: 0, width, height },
 					}

@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.1] (2026-11-11)
+
+Fixes from the Bitfocus review of 3.0.0 (module structure, Yarn 4, polling, upgrade scripts).
+
+- The encoder **Password** is stored as a secret now (existing connections are converted).
+- Polling stops after the connection is disabled or saved with an invalid host; a host typed with a port gets a clear hint.
+- The Audio meter feedback draws its bars again.
+- A failing encoder API now shows Connection failure; failed preview or level requests no longer do.
+- Upgrade fixes: old layout/stream/recorder feedback colours survive, `---` recorder and stream actions are no longer turned into toggles, single touch OK feedbacks keep their inversion.
+- Audio gain steps on an unpaired input move each channel from its own value; aborting a button's actions cancels the request to the encoder.
+
+---
+
 ## [3.0.0] (2026-10-09)
 
 The control set now matches the Epiphan Encoders Stream Deck plugin: the same actions, feedbacks, variables,
@@ -22,6 +35,8 @@ production connection.
 - Requires **Companion 5.1 or newer**: the module is built on `@companion-module/base` 2.2 and runs on the `node26` runtime.
 - Get layout data and Get Content Metadata no longer ask for a custom variable. Choose where to keep the result in the action's _Store result_ setting, like for other actions that return a value. Existing buttons are converted automatically.
 - The connection setting **Port** is a number field now (existing connections are converted).
+- The encoder **Password** is stored as a secret now (existing connections are converted).
+- An upgraded "All Streams" button now means "any publisher of the channel": its Streaming state feedback lights when at least one stream is live (2.x needed every stream), and its Toggle stops all streams when any is running. Recorder and stream actions that were set to `---` (do nothing) are no longer converted; they stay on the button and are named in the connection log.
 
 ### Added
 
@@ -32,7 +47,7 @@ production connection.
   event by id) and `audio` (nudge the gain of an analog input or the delay of any audio input by a step; on a
   Stream Deck+ the dial does the same). `recorder` offers Start / Stop and Pause / Resume, each a toggle that
   reads the recorder's state, plus plain Start and Stop, and can address all recorders at once; `stream` all publishers of a channel.
-- **Confirm with a second press** on Apply Preset, Reboot / Shutdown and Storage eject, on by default: the
+- **Confirm with a second press** on Apply Preset, Reboot / Shutdown, on by default: the
   first press arms the button and shows `Press again`, the same button pressed again within 3 seconds sends
   the command.
 - Feedbacks `singletouch_active`, `event_state`, `event_applies`, `system` (CPU load, temperature and AFU
@@ -57,7 +72,7 @@ production connection.
 - Get Content Metadata returns the metadata as JSON; keep it with the action's _Store result_ setting.
 - Set Content Metadata only sends non-empty fields unless **Also send empty fields** is checked.
 - Connection setting **Poll channel content metadata** to turn the metadata requests off.
-- A removed action that is still on a button is reported once per start in the connection log, with the
+- A removed action that is still on a button is reported once, on the first start after the upgrade, in the connection log, with the
   number of buttons that carry it.
 - Encoders in the same network are found automatically (Bonjour) and can be selected by their device name in the
   new connection setting **Encoder**. **Manual** is the default, so existing connections keep their

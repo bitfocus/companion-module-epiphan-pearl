@@ -7,7 +7,7 @@ It talks to the encoders' REST API v2.0 (firmware 4.24.1 and newer) and falls ba
 The control set matches the sibling Epiphan Encoders Stream Deck plugin one for one: Recorder, Stream, Layout, Single
 Touch, Bookmark, Preview, Output Source, Apply Preset, Event, System Status, Reboot / Shutdown, Audio and Storage.
 From Companion you can switch layouts, start/stop/pause streams and recorders, route outputs, nudge an audio input's
-gain and delay, trigger single touch, insert recording bookmarks, eject storage, apply configuration presets, control
+gain and delay, trigger single touch, insert recording bookmarks, apply configuration presets, control
 CMS scheduled events, and show live preview thumbnails and device state (storage, CPU, AFU, schedule) on your
 buttons — all with matching ready-made presets and icons.
 
@@ -38,7 +38,7 @@ References while working on the code:
   `variables`, `presets`, `config`, `upgrades`, `utils`, plus the shared pieces the control set is built from — `style`
   (palette, state words, standard texts), `icons` (one PNG per preset category), `confirm` (the two-press gate),
   `rotary` (tick coalescing), `audio` (gain/delay read-modify-write helpers) and `meter` (the audio level meter's
-  drawing helpers and its 500 ms level poll). `index.js` is only the entrypoint.
+  drawing helpers and its 500 ms level poll). `src/main.js` is only the entrypoint.
 - `test/` holds the `node:test` suites plus `test/harness.js` (stub of `@companion-module/base`) and `test/mock-pearl.js`
   (in-memory Pearl serving the v2.0 and legacy endpoints the module uses).
 

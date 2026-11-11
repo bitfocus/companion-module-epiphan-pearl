@@ -22,6 +22,7 @@ describe('upgrade scripts', () => {
 				'repairConfigV300',
 				'', // the base library's result-store conversion is an anonymous function
 				'portAsNumberV300',
+				'passwordAsSecretV300',
 			],
 		)
 		for (const fn of upgrades) assert.equal(typeof fn, 'function')
@@ -37,11 +38,6 @@ describe('upgrade scripts', () => {
 		const { upgradeScripts } = require('../src/instance')
 		assert.equal(upgradeScripts.length, upgrades.length + 1)
 		assert.equal(upgradeScripts[0].name, 'convertToBooleanFeedbacks')
-		assert.deepEqual(Object.keys(upgradeScripts[0].upgradeMap), [
-			'channelLayout',
-			'streamingState',
-			'recorderRecording',
-		])
 		assert.deepEqual(
 			upgradeScripts.slice(1).map((fn) => fn.name),
 			upgrades.map((fn) => fn.name),
@@ -641,7 +637,7 @@ describe('module-base 2.x option shape in convertToParityV300', () => {
 
 describe('Get layout data / Get Content Metadata results', () => {
 	it('moves the destination variable of both actions into the stored result of the action', () => {
-		const script = upgrades.at(-2)
+		const script = upgrades.at(-3)
 		const wrapped = (value) => ({ isExpression: false, value })
 		const actions = [
 			{
@@ -678,5 +674,55 @@ describe('portAsNumberV300', () => {
 		assert.deepEqual(run({}), { host_port: 80 })
 		assert.equal(run({ host_port: 443 }), null)
 		assert.equal(run(null), null)
+	})
+})
+
+describe('review fixes (v3.0.0)', () => {
+	const wrapped = (value) => ({ isExpression: false, value })
+
+	it('script 0 moves wrapped fg/bg colours into the style as plain colours', () => {
+		installStub()
+		const { upgradeScripts } = require('../src/instance')
+		const feedback = {
+			id: 'f1',
+			controlId: 'c1',
+			feedbackId: 'channelLayout',
+			options: { channelIdlayoutId: wrapped('1-2'), fg: wrapped(16777215), bg: wrapped(16711680) },
+		}
+		const result = upgradeScripts[0]({}, { config: null, secrets: null, actions: [], feedbacks: [feedback] })
+		assert.equal(result.updatedFeedbacks.length, 1)
+		assert.deepEqual(result.updatedFeedbacks[0].style, { color: 16777215, bgcolor: 16711680 })
+		assert.equal('fg' in result.updatedFeedbacks[0].options, false)
+	})
+
+	it('a "---" (99) recorder or stream action is left alone instead of becoming a toggle', () => {
+		const script = upgrades[5]
+		const actions = [
+			{
+				id: 'a1',
+				controlId: 'c1',
+				actionId: 'recorderRecording',
+				options: { recorderId: '1', startStopAction: 99 },
+			},
+			{
+				id: 'a2',
+				controlId: 'c2',
+				actionId: 'controlStreaming',
+				options: { channelIdpublisherId: '1-2', startStopAction: 99 },
+			},
+		]
+		const result = script({}, { config: null, secrets: null, actions, feedbacks: [] })
+		assert.deepEqual(result.updatedActions, [])
+		assert.equal(actions[0].actionId, 'recorderRecording')
+		assert.equal(actions[1].actionId, 'controlStreaming')
+	})
+
+	it('moves the password from the config into the secrets', () => {
+		const script = upgrades.at(-1)
+		const result = script({}, { config: { host: 'h', password: 'pw' }, secrets: null, actions: [], feedbacks: [] })
+		assert.deepEqual(result.updatedConfig, { host: 'h' })
+		assert.deepEqual(result.updatedSecrets, { password: 'pw' })
+		const again = script({}, { config: { host: 'h' }, secrets: { password: 'pw' }, actions: [], feedbacks: [] })
+		assert.equal(again.updatedConfig, null)
 	})
 })

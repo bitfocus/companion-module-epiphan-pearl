@@ -574,16 +574,15 @@ describe('actions against a v2.0 device', () => {
 			assert.deepEqual(req.body, { local_audio: { gain: 30 } })
 		})
 
-		it('stereo_pair false patches both channels to the same value', async () => {
+		it('stereo_pair false moves each channel from its own value', async () => {
 			mock.state.inputs['analog-b'].settings.local_audio.channels.channelA.gain = 20
 			mock.state.inputs['analog-b'].settings.local_audio.channels.channelB.gain = 24
 			instance.rotaryWindowMs = 10
 			await runAction(instance, 'audio', { inputId: 'analog-b', control: 'gain', direction: 'up', step: 2 })
 			await waitFor(() => recorded(mock, 'PATCH', `${V2}/inputs/analog-b/settings`).length === 1)
 			const req = one(mock, 'PATCH', `${V2}/inputs/analog-b/settings`)
-			// read from channel A (20 + 2), both channels move to that value
 			assert.deepEqual(req.body, {
-				local_audio: { channels: { channelA: { gain: 22 }, channelB: { gain: 22 } } },
+				local_audio: { channels: { channelA: { gain: 22 }, channelB: { gain: 26 } } },
 			})
 		})
 
@@ -600,7 +599,7 @@ describe('actions against a v2.0 device', () => {
 			const list = recorded(mock, 'PATCH', `${V2}/inputs/analog-b/settings`)
 			assert.equal(list.length, 1)
 			assert.deepEqual(list[0].body, {
-				local_audio: { channels: { channelA: { gain: 26 }, channelB: { gain: 26 } } },
+				local_audio: { channels: { channelA: { gain: 26 }, channelB: { gain: 30 } } },
 			})
 		})
 

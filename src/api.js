@@ -1,3 +1,4 @@
+const { actionSignal } = require('./abort')
 const { InstanceStatus } = require('@companion-module/base')
 const { fetch, Agent } = require('undici')
 const { toQueryString, splitPair } = require('./utils')
@@ -187,7 +188,9 @@ module.exports = {
 		const init = {
 			method: verb,
 			headers,
-			signal: AbortSignal.timeout(timeout),
+			signal: AbortSignal.any(
+				[AbortSignal.timeout(timeout), opts.signal ?? actionSignal.getStore()].filter(Boolean),
+			),
 			dispatcher: this.ensureDispatcher(),
 		}
 		if (verb !== 'GET' && opts.body !== undefined) {
@@ -209,10 +212,13 @@ module.exports = {
 			const message = isTimeout
 				? `Request timed out after ${timeout} ms: ${verb} ${url}`
 				: `Connection failed: ${verb} ${url} - ${reason}`
-			this.applyStatus(
-				InstanceStatus.ConnectionFailure,
-				isTimeout ? 'Request timed out' : cause?.code || error?.message || 'Connection failed',
-			)
+			// previews and level polls are best effort: only the core poll decides the connection status
+			if (!opts.noStatus) {
+				this.applyStatus(
+					InstanceStatus.ConnectionFailure,
+					isTimeout ? 'Request timed out' : cause?.code || error?.message || 'Connection failed',
+				)
+			}
 			if (!opts.silent) this.log('error', message)
 			throw new EncoderApiError(message, { status: 0, ...errInfo })
 		}
@@ -411,6 +417,7 @@ module.exports = {
 						raw: true,
 						optional: true,
 						silent: true,
+						noStatus: true,
 					},
 				)
 				if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) return null

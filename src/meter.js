@@ -233,7 +233,7 @@ const meter = {
 	 * setTimeout so a slow device widens the gap instead of queueing ticks. Idempotent.
 	 */
 	startMeterTimer() {
-		if (this.meterTimer || !this.hasMeterSubscriptions()) return
+		if (this.meterTimer || !this.hasMeterSubscriptions() || this.configValid === false) return
 		const generation = this.configGeneration
 		const stale = () => generation !== this.configGeneration || !this.hasMeterSubscriptions()
 		const runOnce = () => {
@@ -276,7 +276,12 @@ const meter = {
 		const generation = this.configGeneration
 		let list
 		try {
-			list = await this.request('GET', '/sources/status', { base: 'v1', optional: true, silent: true })
+			list = await this.request('GET', '/sources/status', {
+				base: 'v1',
+				optional: true,
+				silent: true,
+				noStatus: true,
+			})
 		} catch (error) {
 			this.log('debug', `Level poll failed: ${error?.message || error}`)
 			list = []

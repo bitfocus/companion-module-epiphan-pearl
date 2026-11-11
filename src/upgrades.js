@@ -133,9 +133,9 @@ function recordRemovedLegacy(kind, id, controlId) {
 }
 
 /** legacy `recorderRecording` / `recorderControlAll` numeric-or-string op -> the new `recorder.op` */
-const RECORDER_OP_MAP = { 0: 'stop', 1: 'start', 2: 'reset', 3: 'toggle', 99: 'toggle' }
+const RECORDER_OP_MAP = { 0: 'stop', 1: 'start', 2: 'reset', 3: 'toggle' }
 /** legacy `controlStreaming` numeric op -> the new `stream.op` */
-const STREAM_OP_MAP = { 0: 'stop', 1: 'start', 3: 'toggle', 99: 'toggle' }
+const STREAM_OP_MAP = { 0: 'stop', 1: 'start', 3: 'toggle' }
 /** legacy `storageState` value -> the new `storage_level.level` */
 const STORAGE_STATE_MAP = { ready: 'ok', nodev: 'nomedia', dev: 'notready', devro: 'ro', formatting: 'formatting' }
 /** legacy `afuState` value -> the new `system.condition` */
@@ -208,6 +208,11 @@ function convertToParityV300(context, props) {
 				break
 			}
 			case 'controlStreaming': {
+				// '---' (99) did nothing in 2.x; it must not become a toggle, so leave it unconverted and report it
+				if (Number(opt.startStopAction) === 99) {
+					recordRemovedLegacy('action', `${action.actionId} (---)`, action.controlId)
+					break
+				}
 				const value = opt.channelIdpublisherId
 				const pair = splitPair(value)
 				action.actionId = 'stream'
@@ -220,6 +225,10 @@ function convertToParityV300(context, props) {
 				break
 			}
 			case 'recorderRecording': {
+				if (Number(opt.startStopAction) === 99) {
+					recordRemovedLegacy('action', `${action.actionId} (---)`, action.controlId)
+					break
+				}
 				action.actionId = 'recorder'
 				action.options = {
 					recorderId: opt.recorderId ?? '',
@@ -380,7 +389,9 @@ function convertToParityV300(context, props) {
 			case 'singleTouchOk':
 				feedback.feedbackId = 'singletouch_active'
 				feedback.options = { stcId: opt.stcId ?? '', state: 'error' }
-				feedback.isInverted = !feedback.isInverted
+				feedback.isInverted = isWrappedOption(feedback.isInverted)
+					? { ...feedback.isInverted, value: !feedback.isInverted.value }
+					: !feedback.isInverted
 				result.updatedFeedbacks.push(feedback)
 				break
 			case 'storageState':
@@ -581,6 +592,51 @@ function portAsNumberV300(context, props) {
 	return result
 }
 
+/**
+ * Script 0: move the old fg/bg colour options of the legacy feedbacks into the boolean feedback's style.
+ * Companion 5 hands options wrapped as `{ isExpression, value }`, which base's helper copies as is, so the
+ * colour would end up wrapped. This unwraps constant values (an expression is dropped, it cannot be a style).
+ */
+const BOOLEAN_FEEDBACK_COLOURS = {
+	channelLayout: { fg: 'color', bg: 'bgcolor' },
+	streamingState: { fg: 'color', bg: 'bgcolor' },
+	recorderRecording: { fg: 'color', bg: 'bgcolor' },
+}
+function convertToBooleanFeedbacks(context, props) {
+	const result = { updatedConfig: null, updatedActions: [], updatedFeedbacks: [] }
+	for (const feedback of props.feedbacks || []) {
+		const rules = feedback && BOOLEAN_FEEDBACK_COLOURS[feedback.feedbackId]
+		if (!rules) continue
+		let changed = false
+		for (const [optionKey, styleKey] of Object.entries(rules)) {
+			const raw = feedback.options?.[optionKey]
+			if (raw === undefined) continue
+			if (!feedback.style) feedback.style = {}
+			if (isWrappedOption(raw)) {
+				if (!raw.isExpression) feedback.style[styleKey] = raw.value
+			} else {
+				feedback.style[styleKey] = raw
+			}
+			delete feedback.options[optionKey]
+			changed = true
+		}
+		if (changed) result.updatedFeedbacks.push(feedback)
+	}
+	return result
+}
+
+// The password is a secret-text field now: it moves from the config into the connection's secrets
+function passwordAsSecretV300(context, props) {
+	const result = { updatedConfig: null, updatedSecrets: null, updatedActions: [], updatedFeedbacks: [] }
+	if (!props.config || !('password' in props.config)) return result
+	const { password, ...rest } = props.config
+	result.updatedConfig = rest
+	if (typeof password === 'string' && password !== '' && typeof props.secrets?.password !== 'string') {
+		result.updatedSecrets = { ...(props.secrets || {}), password }
+	}
+	return result
+}
+
 // The order is part of the contract: scripts are only ever appended, never reordered or removed.
 module.exports = [
 	// v2.2.0: default values for use_api_v2 / verbose
@@ -604,8 +660,11 @@ module.exports = [
 	CreateUseActionResultStoreUpgradeScript({ getLayoutData: 'destination', getContentMetadata: 'destination' }),
 	// v3.0.0 (module-base 2.x): the port is a number field now, it was text
 	portAsNumberV300,
+	// v3.0.0 (module-base 2.x): the password is a secret now, it was a plain config field
+	passwordAsSecretV300,
 ]
 
+module.exports.convertToBooleanFeedbacks = convertToBooleanFeedbacks
 module.exports.CONFIG_DEFAULTS = CONFIG_DEFAULTS
 module.exports.CONFIG_DEFAULT_KEYS_V220 = CONFIG_DEFAULT_KEYS_V220
 module.exports.CONFIG_DEFAULT_KEYS_V230 = CONFIG_DEFAULT_KEYS_V230
