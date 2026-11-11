@@ -1,6 +1,6 @@
 {
 	"name": "epiphan-pearl",
-	"version": "3.0.0",
+	"version": "3.0.1",
 	"homepage": "https://github.com/bitfocus/companion-module-epiphan-pearl#readme",
 	"main": "src/main.js",
 	"scripts": {
@@ -12,12 +12,12 @@
 	"license": "MIT",
 	"dependencies": {
 		"@companion-module/base": "2.2.2",
-		"undici": "^8.12.3"
+		"undici": "^8.12.4"
 	},
 	"devDependencies": {
 		"@companion-module/tools": "^3.2.0",
-		"eslint": "^9.36.0",
-		"prettier": "^3.6.2"
+		"eslint": "^10.14.0",
+		"prettier": "^3.9.10"
 	},
 	"repository": {
 		"type": "git",

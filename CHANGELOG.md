@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.1] (2026-11-11)
+
+Fixes from the Bitfocus review of 3.0.0 (module structure, Yarn 4, polling, upgrade scripts).
+
+- The encoder **Password** is stored as a secret now (existing connections are converted).
+- Polling stops after the connection is disabled or saved with an invalid host; a host typed with a port gets a clear hint.
+- The Audio meter feedback draws its bars again.
+- A failing encoder API now shows Connection failure; failed preview or level requests no longer do.
+- Upgrade fixes: old layout/stream/recorder feedback colours survive, `---` recorder and stream actions are no longer turned into toggles, single touch OK feedbacks keep their inversion.
+- Audio gain steps on an unpaired input move each channel from its own value; aborting a button's actions cancels the request to the encoder.
+
+---
+
 ## [3.0.0] (2026-10-09)
 
 The control set now matches the Epiphan Encoders Stream Deck plugin: the same actions, feedbacks, variables,
