@@ -30,6 +30,23 @@ describe('request layer', () => {
 		assert.ok(Array.isArray(list))
 	})
 
+	it('reports a connection dropped while the body is read as an EncoderApiError, not a bare "terminated"', async () => {
+		mock.truncateNext('GET', '/api/v2.0/recorders')
+		await assert.rejects(
+			() => instance.request('GET', '/recorders', { silent: true }),
+			(error) => {
+				assert.ok(error instanceof EncoderApiError)
+				assert.equal(error.status, 0)
+				assert.match(error.message, /^Connection lost while reading the response: GET .*\/recorders - /)
+				return true
+			},
+		)
+		assert.equal(instance.currentStatus, InstanceStatus.ConnectionFailure)
+		// the next request works and the status recovers
+		await instance.request('GET', '/recorders')
+		assert.equal(instance.currentStatus, InstanceStatus.Ok)
+	})
+
 	it('returns true for an ok envelope without result', async () => {
 		const result = await instance.request('POST', '/channels/1/publishers/0/control/stop')
 		assert.equal(result, true)

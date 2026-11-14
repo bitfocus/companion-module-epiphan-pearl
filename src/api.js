@@ -268,11 +268,34 @@ module.exports = {
 		}
 
 		let result
+		try {
+			if (opts.raw) {
+				result = Buffer.from(await response.arrayBuffer())
+			} else {
+				result = await response.text()
+			}
+		} catch (error) {
+			// the device closed the connection while sending the body (undici: "terminated"); report it like any
+			// other connection failure, with the underlying cause (e.g. UND_ERR_SOCKET)
+			const isTimeout = error?.name === 'TimeoutError' || error?.name === 'AbortError'
+			const cause = error?.cause
+			const reason = `${cause?.message || error?.message || error}${cause?.code ? ` (${cause.code})` : ''}`
+			const message = isTimeout
+				? `Request timed out after ${timeout} ms reading the response: ${verb} ${url}`
+				: `Connection lost while reading the response: ${verb} ${url} - ${reason}`
+			if (!opts.optional) {
+				this.applyStatus(
+					InstanceStatus.ConnectionFailure,
+					isTimeout ? 'Request timed out' : cause?.code || error?.message || 'Connection failed',
+				)
+			}
+			if (!opts.silent) this.log('error', message)
+			throw new EncoderApiError(message, { status: 0, ...errInfo })
+		}
 		if (opts.raw) {
-			result = Buffer.from(await response.arrayBuffer())
 			if (config.verbose) this.log('debug', `Response ${response.status} ${result.length} bytes`)
 		} else {
-			const text = await response.text()
+			const text = result
 			if (config.verbose)
 				this.log(
 					'debug',

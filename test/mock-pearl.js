@@ -1154,6 +1154,13 @@ async function startMockPearl({
 				}
 
 				const injected = takeInjectedFailure(req.method, url.pathname)
+				if (injected && injected.truncate) {
+					// announce a long body, send a part of it and drop the socket (the client sees "terminated")
+					res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': '1000' })
+					res.write('{"status":"ok","result":[')
+					setTimeout(() => res.socket?.destroy(), 20)
+					return
+				}
 				if (injected) {
 					res.writeHead(injected.status, { 'Content-Type': 'application/json' })
 					res.end(JSON.stringify(injected.body))
@@ -1237,6 +1244,10 @@ async function startMockPearl({
 		/** Answer the next `method path` (full pathname string or RegExp) with `status` and `body` instead of the route */
 		failNext(method, path, status, body = { status: 'error', message: 'injected failure' }) {
 			injectedFailures.push({ method, path, status, body })
+		},
+		/** Answer the next `method path` with a body that is cut off half way (the connection is dropped) */
+		truncateNext(method, path) {
+			injectedFailures.push({ method, path, truncate: true })
 		},
 		setClockSkew(ms) {
 			clock.skewMs = Number(ms) || 0
