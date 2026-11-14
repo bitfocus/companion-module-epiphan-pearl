@@ -1,6 +1,6 @@
 {
 	"name": "epiphan-pearl",
-	"version": "3.0.1",
+	"version": "3.0.2",
 	"homepage": "https://github.com/bitfocus/companion-module-epiphan-pearl#readme",
 	"main": "src/main.js",
 	"scripts": {

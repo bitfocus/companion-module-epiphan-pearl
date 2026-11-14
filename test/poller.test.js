@@ -422,6 +422,37 @@ describe('variables across polls', () => {
 	})
 })
 
+describe('a failed optional request does not look like a configuration change', () => {
+	for (const [label, path, config] of [
+		['presets', '/api/v2.0/system/presets', {}],
+		['schedule events', '/api/v2.0/schedule/events', { poll_events: true }],
+		['single touch controls', '/api/v2.0/system/singletouchcontrol', {}],
+	]) {
+		it(`keeps the last ${label} when their request fails, so nothing is rebuilt or logged`, async () => {
+			const mock = await startMockPearl()
+			const instance = await createInstance({ mock, config })
+			try {
+				const key = instance.structureKey(instance.state)
+				const actions = countCalls(instance, 'setActionDefinitions')
+				instance.calls.log.length = 0
+				instance.pollCounter = 30 // the next poll refreshes the slow changing data (presets)
+				mock.failNext('GET', path, 500)
+				await instance.pollAll()
+				assert.equal(instance.structureKey(instance.state), key)
+				assert.equal(actions.n, 0)
+				assert.ok(!instance.calls.log.some((l) => /configuration has changed/.test(l.message)))
+				// and the recovery poll does not log it either
+				await instance.pollAll()
+				assert.equal(actions.n, 0)
+				assert.ok(!instance.calls.log.some((l) => /configuration has changed/.test(l.message)))
+			} finally {
+				await instance.destroy()
+				await mock.close()
+			}
+		})
+	}
+})
+
 describe('poller resilience', () => {
 	it('keeps the previous state and reports ConnectionFailure when the device disappears', async () => {
 		const mock = await startMockPearl()

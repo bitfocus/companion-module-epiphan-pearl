@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.2] (2026-11-14)
+
+- A failed request for the presets, the schedule events or the single touch controls no longer logs "Device configuration has changed" (twice, on failure and on recovery) and rebuilds all actions, feedbacks and presets; the last known lists are kept.
+- A connection that the encoder drops while it is sending its answer is reported as a connection failure with its cause, instead of a bare "terminated".
+
 ## [3.0.1] (2026-11-11)
 
 Fixes from the Bitfocus review of 3.0.0 (module structure, Yarn 4, polling, upgrade scripts).
