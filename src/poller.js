@@ -373,7 +373,12 @@ module.exports = {
 				}),
 			)
 			round2.push(
-				req('GET', '/system/singletouchcontrol', { optional: true }).then(async (controls) => {
+				carryOver(
+					() => {
+						state.singleTouch = prev.singleTouch || {}
+					},
+					req('GET', '/system/singletouchcontrol', { optional: true }),
+				).then(async (controls) => {
 					const list = Array.isArray(controls) ? controls : []
 					for (const stc of list) {
 						if (!stc || stc.id === undefined) continue
@@ -406,7 +411,12 @@ module.exports = {
 				)
 				// feeds choicesEventRefs() and the event_state / event_applies feedbacks for a specific event id (D5)
 				round2.push(
-					req('GET', '/schedule/events', { query: { limit: 10 }, optional: true }).then((list) => {
+					carryOver(
+						() => {
+							state.events.list = prev.events?.list || []
+						},
+						req('GET', '/schedule/events', { query: { limit: 10 }, optional: true }),
+					).then((list) => {
 						state.events.list = Array.isArray(list) ? list : []
 					}),
 				)
@@ -427,7 +437,12 @@ module.exports = {
 					}),
 				)
 				round2.push(
-					req('GET', '/system/presets', { query: { details: true }, optional: true }).then((presets) => {
+					carryOver(
+						() => {
+							state.presets = prev.presets || []
+						},
+						req('GET', '/system/presets', { query: { details: true }, optional: true }),
+					).then((presets) => {
 						state.presets = Array.isArray(presets)
 							? presets
 									.filter((p) => p && typeof p.name === 'string')
