@@ -15,7 +15,7 @@
 		"undici": "^8.13.0"
 	},
 	"devDependencies": {
-		"@companion-module/tools": "^3.2.0",
+		"@companion-module/tools": "^3.2.1",
 		"eslint": "^10.15.0",
 		"prettier": "^3.10.1"
 	},
